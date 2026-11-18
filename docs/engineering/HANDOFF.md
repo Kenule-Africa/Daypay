@@ -3,9 +3,8 @@
 ## Current state
 
 - **Phase:** 1 — Project Foundation and Infrastructure.
-- **Active tasks:** `IMP-P1-002` (in testing) and `IMP-P1-003` (blocked); statuses remain in [TASKS.md](TASKS.md).
-- **Objective:** Finish native Rust workspace verification without changing the approved task register.
-- **Working tree:** Contains uncommitted Phase 1 application, frontend, infrastructure, CI, and tracking changes. Inspect Git status and the diff before editing; do not treat them as committed evidence.
+- **Active tasks:** `IMP-P1-002` and `IMP-P1-003` need locked Rust verification. `IMP-P1-004` is complete. See [TASKS.md](TASKS.md) for the remaining Phase 1 statuses.
+- **Working tree:** Kickoff is committed at `83ee97f`. Branch `optimize-agent-context` is at `89691a8`. Phase 1 application, frontend, database, CI and tracking changes are uncommitted.
 
 ## Evidence to load
 
@@ -16,34 +15,23 @@
 
 ## Last verified work
 
-The six-crate workspace metadata, offline lockfile resolution, workspace check,
-library build, and direct rustfmt checks were verified as recorded in
-[PROGRESS.md](PROGRESS.md). Cargo test, Cargo fmt, and Clippy remain affected by
-the native linker and Windows Application Control blockers; no unverified
-success should be reported.
+The current frontend passed lint, its production build, TypeScript and an HTTP smoke test with a controlled API. Rust workspace formatting passed. Three root tests passed for roadmap tracking, provider tracking and local credential initialization. See [PROGRESS.md](PROGRESS.md) for the limits of each check.
 
 ## Active blockers
 
-Native Rust linking requires an MSVC linker and Windows SDK. Cargo fmt and
-Clippy are blocked by Windows Application Control. Database integration checks
-also require an accessible PostgreSQL service; details and owners are in
-[BLOCKERS.md](BLOCKERS.md).
+The registry is unreachable and SQLx is absent from the local cache. The lockfile still describes the kickoff crates. This Windows environment also lacks a usable native linker and SDK. PostgreSQL and Docker runtime checks and a hosted CI run are outstanding. See [BLOCKERS.md](BLOCKERS.md).
 
 ## Next action
 
-Use a Windows Developer PowerShell with the MSVC linker and Windows SDK, or
-another approved Rust build runner. Run from `backend/`:
+Use a development runner with registry access or a populated cache and a working Rust linker. From `backend/`, generate and review the dependency lockfile, then run:
 
 ```text
-cargo metadata --format-version 1 --locked --offline
+cargo generate-lockfile
+cargo metadata --format-version 1 --locked
 cargo fmt --all -- --check
-cargo clippy --workspace --all-targets --locked --offline -- -D warnings
-cargo build --workspace --locked --offline
-cargo test --workspace --locked --offline
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo build --workspace --locked
+cargo test --workspace --locked
 ```
 
-Record commands and outcomes in [PROGRESS.md](PROGRESS.md) and update
-[TASKS.md](TASKS.md) only when the roadmap acceptance evidence justifies a
-status change. The next Phase 1 task after crate verification is `IMP-P1-004`;
-local PostgreSQL setup is `IMP-P1-005`. Keep approvals, technical verification,
-and live activation distinct.
+Follow the [local setup](../../README.md) to start PostgreSQL and verify the restricted application role. Run `node --env-file=.env --test scripts/backend-health.test.mjs` from the root against the built API. Start the worker against the same database and confirm startup and shutdown. Record results here and in [PROGRESS.md](PROGRESS.md). The session instructions require explicit authorization before committing or pushing.

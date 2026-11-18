@@ -7,3 +7,9 @@ description = "Process entry point for durable background work."
 
 [lints]
 workspace = true
+
+[dependencies]
+deypay-common = { path = "../deypay-common" }
+deypay-infrastructure = { path = "../deypay-infrastructure" }
+tokio.workspace = true
+tracing.workspace = true

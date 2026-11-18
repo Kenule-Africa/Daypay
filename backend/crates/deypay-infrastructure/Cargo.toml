@@ -7,3 +7,8 @@ description = "PostgreSQL repositories and external provider adapters."
 
 [lints]
 workspace = true
+
+[dependencies]
+deypay-common = { path = "../deypay-common" }
+sqlx.workspace = true
+tokio.workspace = true

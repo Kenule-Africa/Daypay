@@ -1,0 +1,17 @@
+\set ON_ERROR_STOP on
+DO $$
+BEGIN
+    IF current_setting('server_version_num')::int < 160000 OR
+       current_database() <> 'deypay' OR current_user <> 'deypay_app' THEN
+        RAISE EXCEPTION 'Unexpected database, role or server version';
+    END IF;
+    IF EXISTS (
+        SELECT FROM pg_roles WHERE rolname = current_user
+        AND (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls)
+    ) OR has_database_privilege(current_user, current_database(), 'CREATE')
+      OR has_schema_privilege(current_user, 'public', 'CREATE') THEN
+        RAISE EXCEPTION 'Application role has unexpected administrative privileges';
+    END IF;
+END
+$$;
+SELECT current_database(), current_user, current_setting('server_version');

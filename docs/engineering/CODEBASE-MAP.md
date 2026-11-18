@@ -27,7 +27,7 @@ Rust workspace: [`backend/Cargo.toml`](../../backend/Cargo.toml)
 - Database migrations: **Planned** (`backend/migrations/`)
 - Additional API routing: **Planned**
 - Provider integrations/adapters: **Planned**
-- Backend tests: Rust unit tests beside source; integration coverage is **Planned**
+- Backend tests: Rust unit tests beside source and the API/PostgreSQL integration suite in `scripts/backend-health.test.mjs`
 - Frontend: `frontend/app/`; frontend checks: `frontend/tests/`
 - Local PostgreSQL bootstrap and verification: `infrastructure/postgres/`
 - CI workflow: `.github/workflows/phase-one.yml`
