@@ -1,0 +1,9 @@
+[package]
+name = "deypay-infrastructure"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "PostgreSQL repositories and external provider adapters."
+
+[lints]
+workspace = true

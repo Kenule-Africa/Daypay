@@ -1,0 +1,9 @@
+[package]
+name = "deypay-application"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "Application use cases and transaction orchestration."
+
+[lints]
+workspace = true

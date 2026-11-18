@@ -1,0 +1,18 @@
+[workspace]
+members = [
+    "crates/deypay-domain",
+    "crates/deypay-application",
+    "crates/deypay-infrastructure",
+    "crates/deypay-common",
+    "crates/deypay-api",
+    "crates/deypay-worker",
+]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace.lints.rust]
+unsafe_code = "forbid"

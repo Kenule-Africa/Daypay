@@ -1,0 +1,9 @@
+[package]
+name = "deypay-worker"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "Process entry point for durable background work."
+
+[lints]
+workspace = true

@@ -1,0 +1,9 @@
+[package]
+name = "deypay-common"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "Primitives shared across DEYPAY crates."
+
+[lints]
+workspace = true
