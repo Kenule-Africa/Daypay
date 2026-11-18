@@ -6,6 +6,8 @@ publish.workspace = true
 description = "Application use cases and transaction orchestration."
 
 [dependencies]
+sha2.workspace = true
+unicode-properties = { version = "0.1", default-features = false, features = ["general-category"] }
 serde_json.workspace = true
 uuid.workspace = true
 deypay-domain = { path = "../deypay-domain" }

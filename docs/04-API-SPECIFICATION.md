@@ -698,19 +698,13 @@ Public.
 
 **Response**
 
-HTTP 201.
+HTTP 202 for a valid submission, replay or conflict with an existing identity or reserved username. These cases return the same body and headers.
 
 ```json
-{
-  "data": {
-    "user_id": "0c59378d-5bb4-43b7-83c6-7d95f8dd60d7",
-    "username": "exampleuser",
-    "email_verification_required": true,
-    "phone_verification_required": true,
-    "kyc_status": "not_started"
-  }
-}
+{"data": {}}
 ```
+
+The public request retains the four fields above. Registration requires trusted first name, last name, country and explicit acceptance of both current notices bound to the same submission. Public registration remains disabled (HTTP 503) pending reconciliation of evidence capture and production approvals.
 
 ## 13.2 Registration Rules
 

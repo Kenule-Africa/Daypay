@@ -9,8 +9,22 @@ description = "HTTP entry point for the DEYPAY API."
 workspace = true
 
 [dependencies]
+serde.workspace = true
+serde_json.workspace = true
+deypay-application = { path = "../deypay-application" }
 axum.workspace = true
 deypay-common = { path = "../deypay-common" }
 deypay-infrastructure = { path = "../deypay-infrastructure" }
 tokio.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+sqlx = { workspace = true, features = ["macros", "migrate"] }
+
+[features]
+postgres-tests = []
+
+[[test]]
+name = "registration_http"
+required-features = ["postgres-tests"]

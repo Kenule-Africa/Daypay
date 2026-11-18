@@ -1,5 +1,14 @@
 # Engineering progress
 
+## 2026-11-18 · Phase 3 registration and usernames
+
+Working tree based on `c2fb966`. `IMP-P3-001` remains Blocked and `IMP-P3-009` is In testing. The API and use case take no financial action and issue no session. Verification messages are queued as transactional intents. The [decision register](DECISIONS.md) records the four-field contract, uniform 202 response and provisional password policy.
+
+- On a new loopback PostgreSQL 18.7 cluster, all eight ordered migrations applied with `psql -X -1 -v ON_ERROR_STOP=1`. With the restricted runtime grant, a new submission, normalized email replay, canonical username collision and reserved-name conflict produced one unverified identity and one consent record with the supplied timestamp. Two verification intents were present. Session, wallet and transaction counts were zero. An injected failure in the second intent rolled the new registration back.
+- `cargo fmt --all -- --check` passed. Both `node --test scripts/engineering-tracking.test.mjs` checks passed. `cargo fetch --locked` succeeded after network access was enabled. On the working tree, `cargo test --locked --workspace --features postgres-tests -- --test-threads=2` passed all 22 tests. Six were unit tests and 16 used disposable PostgreSQL 18.7 (three HTTP registration, five registration persistence and eight existing persistence tests). HTTP tests used real salted Argon2id with test-only costs and a deterministic compromise verdict. Cases included stale consent, unavailable screening, canonical conflicts, simultaneous email and handle claims, no sessions or wallets, restricted-role grants and rollback. Locked Clippy with all workspace targets and the PostgreSQL test feature passed with warnings denied after correcting a byte-slice assertion in the Argon2id test. The corrected test also passed on a focused rerun. No CI run covers this working tree.
+
+- `cargo build --locked --workspace` passed. Against a fresh cluster, `node --test scripts/backend-health.test.mjs` passed all three applicable live checks, including HTTP 503 for public registration, absence of a session cookie and absence of the submitted email and password in captured logs. The Windows runner skipped the POSIX worker shutdown test. An earlier run during compilation saw one unexpected 503 from database readiness. The standalone rerun passed with the database healthy and during the simulated outage.
+
 ## 2026-11-18 · Verified GitHub Actions run
 
 Commit `02fda26633b38946f1bb4d15d0ad86cee0a57656` passed the [Phase 1 verification Actions run](https://github.com/Kenule-Africa/Daypay/actions/runs/44344981832).

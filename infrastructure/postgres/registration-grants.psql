@@ -1,0 +1,2 @@
+-- The runtime receives only this fixed registration operation.
+GRANT EXECUTE ON FUNCTION identity.register_customer(text,text,text,text,text,text,text,text,text,bigint) TO deypay_app;

@@ -9,12 +9,16 @@ description = "PostgreSQL repositories and external provider adapters."
 workspace = true
 
 [dependencies]
+argon2 = { version = "0.5.3", features = ["zeroize"] }
+getrandom = "0.2"
+zeroize = "1"
+sha2.workspace = true
 uuid.workspace = true
 deypay-application = { path = "../deypay-application" }
 deypay-domain = { path = "../deypay-domain" }
 deypay-common = { path = "../deypay-common" }
 sqlx = { workspace = true, features = ["macros", "migrate", "uuid", "json"] }
-tokio.workspace = true
+tokio = { workspace = true, features = ["sync"] }
 
 [dev-dependencies]
 serde_json.workspace = true
@@ -24,4 +28,8 @@ postgres-tests = []
 
 [[test]]
 name = "persistence"
+required-features = ["postgres-tests"]
+
+[[test]]
+name = "registration"
 required-features = ["postgres-tests"]

@@ -76,7 +76,7 @@ Backend engineering owns these P0 foundations. Task 001 supplies ordered migrati
 
 | Task ID | Roadmap task | Status |
 |---|---|---|
-| IMP-P3-001 | Registration. | Backlog |
+| IMP-P3-001 | Registration. | Blocked |
 | IMP-P3-002 | Email verification. | Backlog |
 | IMP-P3-003 | Phone verification. | Backlog |
 | IMP-P3-004 | Password hashing. | Backlog |
@@ -84,7 +84,7 @@ Backend engineering owns these P0 foundations. Task 001 supplies ordered migrati
 | IMP-P3-006 | Session management. | Backlog |
 | IMP-P3-007 | Logout. | Backlog |
 | IMP-P3-008 | Password recovery. | Backlog |
-| IMP-P3-009 | Username uniqueness. | Backlog |
+| IMP-P3-009 | Username uniqueness. | In testing |
 | IMP-P3-010 | Customer profile. | Backlog |
 | IMP-P3-011 | Session revocation. | Backlog |
 | IMP-P3-012 | Authentication rate limiting. | Backlog |

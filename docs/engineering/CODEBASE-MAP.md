@@ -27,9 +27,9 @@ Rust workspace: [`backend/Cargo.toml`](../../backend/Cargo.toml)
 - Shared configuration/runtime: `backend/crates/deypay-common/src/`
 - PostgreSQL pool and readiness query: `backend/crates/deypay-infrastructure/src/database.rs`
 - Database migrations: `backend/migrations/`, embedded by `deypay-infrastructure`. SQLx integration cases are in `backend/crates/deypay-infrastructure/tests/`.
-- Additional API routing: **Planned**
+- Customer registration uses `backend/crates/deypay-api/src/registration.rs` for HTTP, `backend/crates/deypay-application/src/registration.rs` for enrollment and `backend/migrations/202611180008_registration.sql` for the atomic write. The API binary keeps public registration disabled.
 - Provider integrations/adapters: **Planned**
-- Backend tests: Rust unit tests beside source and the API/PostgreSQL integration suite in `scripts/backend-health.test.mjs`
+- Backend tests include Rust unit tests beside source, registration HTTP tests in `backend/crates/deypay-api/tests/registration_http.rs`, SQLx persistence tests in `backend/crates/deypay-infrastructure/tests/`, and live service checks in `scripts/backend-health.test.mjs`.
 - Frontend: `frontend/app/`; frontend checks: `frontend/tests/`
 - Local PostgreSQL bootstrap and verification: `infrastructure/postgres/`
 - CI workflow: `.github/workflows/phase-one.yml`

@@ -66,7 +66,19 @@ async function checkApi(t, databaseUrl, expectedStatus) {
   assert.equal(ready.headers.get("cache-control"), "no-store");
   assert.deepEqual(await ready.json(), { status: expectedStatus === 200 ? "ready" : "unavailable" });
   assert.equal((await fetch(origin + "/health/live")).status, 200);
+  const password = "Synthetic-Registration1!";
+  const registration = await fetch(origin + "/api/v1/auth/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "smoke@example.test", phone: "+2348012345678", username: "smoke", password }),
+  });
+  assert.equal(registration.status, 503);
+  assert.equal(registration.headers.get("cache-control"), "no-store");
+  assert.equal(registration.headers.get("set-cookie"), null);
+  assert.equal((await registration.json()).error.code, "SERVICE_UNAVAILABLE");
   const output = Buffer.concat(stdout).toString().trim();
+  const logs = output + Buffer.concat(stderr).toString();
+  assert.ok(!logs.includes(password) && !logs.includes("smoke@example.test"));
   checkLogCredentials(output, databaseUrl);
   checkLogCredentials(Buffer.concat(stderr).toString(), databaseUrl);
   const lines = output.split("\n");
