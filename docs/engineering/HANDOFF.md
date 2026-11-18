@@ -3,8 +3,8 @@
 ## Current state
 
 - **Phase:** 1 — Project Foundation and Infrastructure.
-- **Active tasks:** `IMP-P1-002` and `IMP-P1-003` need locked Rust verification. `IMP-P1-004` is complete. See [TASKS.md](TASKS.md) for the remaining Phase 1 statuses.
-- **Working tree:** Kickoff is committed at `83ee97f`. Branch `optimize-agent-context` is at `89691a8`. Phase 1 application, frontend, database, CI and tracking changes are uncommitted.
+- **Active tasks:** `IMP-P1-002` and `IMP-P1-010` failed the lockfile gate. The [per-task acceptance record](PROGRESS.md#phase-1-acceptance-at-8ec19a1) covers all twelve tasks.
+- **Working tree:** Branch `optimize-agent-context` is at `8ec19a1`, which contains the Phase 1 foundation. The owner's revised prompt and the current acceptance, signal handling and worker-test changes are uncommitted.
 
 ## Evidence to load
 
@@ -15,18 +15,17 @@
 
 ## Last verified work
 
-The current frontend passed lint, its production build, TypeScript and an HTTP smoke test with a controlled API. Rust workspace formatting passed. Three root tests passed for roadmap tracking, provider tracking and local credential initialization. See [PROGRESS.md](PROGRESS.md) for the limits of each check.
+Local frontend lint, build, typecheck and HTTP smoke passed, as did Rust formatting, six-crate discovery and three root tests. The owner reports that CI passed PostgreSQL provisioning, Rust checks, API health/outage tests and the frontend job before the lockfile check failed. The previous run did not exercise the worker lifecycle. Its run URL, SHA and log have yet to be independently checked.
 
 ## Active blockers
 
-The registry is unreachable and SQLx is absent from the local cache. The lockfile still describes the kickoff crates. This Windows environment also lacks a usable native linker and SDK. PostgreSQL and Docker runtime checks and a hosted CI run are outstanding. See [BLOCKERS.md](BLOCKERS.md).
+The reviewed lockfile is stale. This Windows host cannot reach the registry, lacks cached SQLx and a usable MSVC build environment, and has no accessible PostgreSQL or Docker runtime. See [BLOCKERS.md](BLOCKERS.md).
 
 ## Next action
 
-Use a development runner with registry access or a populated cache and a working Rust linker. From `backend/`, generate and review the dependency lockfile, then run:
+Recover the complete generated lockfile from the failed backend job's diff, or run `cargo generate-lockfile` from `backend/` on a trusted registry-enabled machine. Review the resolved dependencies. From `backend/`, run:
 
 ```text
-cargo generate-lockfile
 cargo metadata --format-version 1 --locked
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
@@ -34,4 +33,4 @@ cargo build --workspace --locked
 cargo test --workspace --locked
 ```
 
-Follow the [local setup](../../README.md) to start PostgreSQL and verify the restricted application role. Run `node --env-file=.env --test scripts/backend-health.test.mjs` from the root against the built API. Start the worker against the same database and confirm startup and shutdown. Record results here and in [PROGRESS.md](PROGRESS.md). The session instructions require explicit authorization before committing or pushing.
+Follow the [local setup](../../README.md) to start PostgreSQL and verify its restricted role. On Linux, run `node --env-file=.env --test scripts/backend-health.test.mjs` at the root. Require all four tests to pass, including worker shutdown on SIGTERM and rejection of an unreachable database. Run API, worker and frontend together against that database and verify the homepage shows “Available”. Once publication is authorized, record a green two-job Actions run, its SHA and the full-stack result in [PROGRESS.md](PROGRESS.md). Phase 2 awaits that gate. Committing, pushing or merging requires explicit authorization.

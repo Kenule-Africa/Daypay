@@ -6,6 +6,8 @@ For backlog items, the roadmap task wording and phase objective describe the wor
 
 ## Active work record
 
+For each phase, apply its exit criteria in Document 08 before starting the next phase. Record dated evidence for runtime behavior, unit and integration tests, applicable security controls and failure recovery. For financial work also verify ledger invariants, idempotency, concurrency and recovery. Identify the tested revision and environment, along with any gaps. Compilation alone cannot close a phase.
+
 | Task | Owner / priority | Dependencies and requirement | Acceptance and verification |
 |---|---|---|---|
 | IMP-P1-002 | Backend engineering / P0 | Repository baseline, roadmap §§9–10, 14 | Cargo resolves the current workspace with its reviewed lockfile. |
@@ -32,18 +34,20 @@ For backlog items, the roadmap task wording and phase objective describe the wor
 
 ## Phase 1 · PROJECT FOUNDATION AND INFRASTRUCTURE (§14)
 
+The [acceptance results](PROGRESS.md#phase-1-acceptance-at-8ec19a1) give the verdict, evidence source and outstanding action for each ID. The CI lockfile check failed. The phase gate is open.
+
 | Task ID | Roadmap task | Status |
 |---|---|---|
 | IMP-P1-001 | Initialize repository. | Completed |
 | IMP-P1-002 | Create Rust workspace. | Blocked |
 | IMP-P1-003 | Create backend crates. | Blocked |
 | IMP-P1-004 | Initialize Next.js frontend. | Completed |
-| IMP-P1-005 | Configure PostgreSQL. | Blocked |
-| IMP-P1-006 | Configure Docker development services. | Blocked |
-| IMP-P1-007 | Implement application configuration. | In testing |
+| IMP-P1-005 | Configure PostgreSQL. | Completed |
+| IMP-P1-006 | Configure Docker development services. | Completed |
+| IMP-P1-007 | Implement application configuration. | Completed |
 | IMP-P1-008 | Implement structured logging. | In testing |
 | IMP-P1-009 | Create health endpoints. | In testing |
-| IMP-P1-010 | Establish CI pipeline. | In testing |
+| IMP-P1-010 | Establish CI pipeline. | Blocked |
 | IMP-P1-011 | Configure linting and formatting. | In testing |
 | IMP-P1-012 | Create initial integration test infrastructure. | In testing |
 

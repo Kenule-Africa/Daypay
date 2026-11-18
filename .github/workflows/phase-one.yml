@@ -38,7 +38,7 @@ jobs:
           cargo clippy --locked --workspace --all-targets -- -D warnings
           cargo build --locked --workspace
           cargo test --locked --workspace
-      - name: Check live HTTP, PostgreSQL readiness and outage behavior
+      - name: Check live HTTP, PostgreSQL readiness, worker lifecycle and outages
         run: node --env-file=.env --test scripts/backend-health.test.mjs
       - name: Require the resolved dependency lockfile in the reviewed commit
         run: git diff --exit-code -- backend/Cargo.lock

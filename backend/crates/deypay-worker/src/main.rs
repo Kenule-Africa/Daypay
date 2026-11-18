@@ -16,10 +16,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         tracing::error!("Worker database check failed");
         return Err("Worker startup failed".into());
     }
+    let shutdown = shutdown_signal()?;
     tracing::info!("Worker connected; no job handlers registered");
-    let signal = shutdown_signal().await;
+    shutdown.await;
     pool.close().await;
     tracing::info!("Worker stopped");
-    signal?;
     Ok(())
 }
