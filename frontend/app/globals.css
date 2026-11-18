@@ -1,0 +1,11 @@
+:root { color-scheme: light; font-family: "Inter", system-ui, sans-serif; color: #14352c; background: #f5f7f2; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { max-width: 58rem; margin: auto; padding: 2rem clamp(1.25rem, 4vw, 3rem); }
+header { font-weight: 750; letter-spacing: .14em; padding-bottom: 1.5rem; border-bottom: 1px solid #baccc1; }
+section { margin: clamp(3rem, 10vw, 7rem) 0; }
+h1 { font-size: clamp(2.5rem, 7vw, 4rem); letter-spacing: -.055em; line-height: 1.1; margin: 0 0 2rem; }
+dl { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; justify-content: space-between; border-block: 1px solid #baccc1; padding: 1.5rem 0; }
+dt { font-weight: 600; }
+dd { margin: 0; color: #7d3926; }
+dd[data-ready="true"] { color: #12613b; }

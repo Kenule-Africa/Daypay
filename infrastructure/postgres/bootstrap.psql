@@ -1,0 +1,19 @@
+\set ON_ERROR_STOP on
+\getenv app_password DEYPAY_DB_PASSWORD
+BEGIN;
+
+DO $$
+BEGIN
+    IF current_database() <> 'deypay' THEN
+        RAISE EXCEPTION 'Connect to the local deypay database to bootstrap the role';
+    END IF;
+END
+$$;
+
+SET LOCAL password_encryption = 'scram-sha-256';
+CREATE ROLE deypay_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD :'app_password';
+REVOKE ALL ON DATABASE deypay FROM PUBLIC;
+GRANT CONNECT ON DATABASE deypay TO deypay_app;
+REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+GRANT USAGE ON SCHEMA public TO deypay_app;
+COMMIT;

@@ -7,3 +7,10 @@ description = "HTTP entry point for the DEYPAY API."
 
 [lints]
 workspace = true
+
+[dependencies]
+axum.workspace = true
+deypay-common = { path = "../deypay-common" }
+deypay-infrastructure = { path = "../deypay-infrastructure" }
+tokio.workspace = true
+tracing.workspace = true

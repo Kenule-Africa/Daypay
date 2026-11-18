@@ -1,0 +1,68 @@
+name: Phase 1 verification
+on:
+  pull_request:
+  push:
+    branches: [main, "feat/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - name: Prepare stable Rust
+        run: |
+          rustup default stable
+          rustup component add rustfmt clippy
+      - name: Check tracking and provision disposable PostgreSQL
+        run: |
+          node --test scripts/engineering-tracking.test.mjs scripts/local-environment.test.mjs
+          node scripts/init-local.mjs
+          docker compose config --quiet
+          docker compose up --wait --wait-timeout 90 postgres
+          docker compose exec -T postgres sh -ec 'PGPASSWORD="$DEYPAY_DB_PASSWORD" psql -X -h 127.0.0.1 -U deypay_app -d deypay -f /opt/deypay/verify.psql'
+      - name: Resolve and verify the Rust workspace
+        working-directory: backend
+        run: |
+          cargo fmt --all -- --check
+          cargo fetch
+          cargo clippy --locked --workspace --all-targets -- -D warnings
+          cargo build --locked --workspace
+          cargo test --locked --workspace
+      - name: Check live HTTP, PostgreSQL readiness and outage behavior
+        run: node --env-file=.env --test scripts/backend-health.test.mjs
+      - name: Require the resolved dependency lockfile in the reviewed commit
+        run: git diff --exit-code -- backend/Cargo.lock
+      - name: Stop disposable services
+        if: always()
+        run: if test -f .env; then docker compose down --volumes; fi
+
+  frontend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+      - run: npm run typecheck
+      - run: npm test

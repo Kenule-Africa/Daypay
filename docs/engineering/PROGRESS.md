@@ -18,6 +18,8 @@ Formal approvals and phase exit criteria remain open. [TASKS.md](TASKS.md) recor
 
 ## 2026-11-18 · Rust workspace verification
 
+The kickoff changes were subsequently committed at `83ee97f`. A clean working tree and matching local main and origin/main tracking refs were verified before Phase 1 continuation.
+
 IMP-P1-002 is in testing. IMP-P1-003 has all six crate manifests and source roots and is blocked on native verification. The four libraries build offline. The API and worker have binary entry points that exit with a diagnostic until their services are implemented. Axum routes, the Tokio runtime, SQLx repositories and migrations belong to subsequent tasks.
 
 | Verification | Result |
@@ -33,3 +35,17 @@ IMP-P1-002 is in testing. IMP-P1-003 has all six crate manifests and source root
 | `cargo test --workspace --locked --offline` | Failed at native linking. No Rust tests ran. |
 
 The environment reported Git 2.56.0.windows.4, Rust/Cargo 1.100.0, Node 26.13.0 and npm 11.20.0. Rust is installed under the user profile and its bin directory was added to the verification process PATH. PostgreSQL client tools and Docker were unavailable on PATH, and TCP connection to 127.0.0.1:5432 was refused. See [BLOCKERS.md](BLOCKERS.md) for scope.
+
+## 2026-11-18 · Resumed Phase 1 verification
+
+Kickoff is committed on main at `83ee97f`. The working tree is based on `optimize-agent-context` at `89691a8`, which contains the updated repository instructions. The Phase 1 API, worker, frontend, database setup and CI changes are uncommitted. The earlier Cargo results above apply to the kickoff manifests.
+
+| Task | Checks against the current working tree |
+|---|---|
+| IMP-P1-004 | Completed. In `frontend/`, `npm run build`, `npm run lint`, `npm run typecheck` and `npm test` passed. The smoke test started the production Next.js server and exercised its ready and unavailable UI states over HTTP with a controlled API. |
+| IMP-P1-002 / 003 / 011 | `cargo fmt --all -- --check` passed. Locked offline metadata, Clippy, build and test commands exited 101 resolving SQLx. Online lockfile generation could not reach the registry. All four checks stopped before compilation. |
+| IMP-P1-005 / 006 | Compose YAML parsed and its local mount paths resolved. Local PostgreSQL refused the connection on port 5432. The Docker CLI and psql were unavailable. Server startup and runtime privileges still require verification. |
+| IMP-P1-007 / 008 / 009 | Rust checked the standalone configuration test module with `--emit=metadata`. API and worker execution, JSON logging and real health responses remain unverified. |
+| IMP-P1-010 / 012 | Both tracking checks and the local credential-initialization regression passed. The regression checks distinct credentials, the restricted runtime login, preservation of an existing environment and console output for leaked credentials. Workflow YAML parsed. The backend HTTP suite passed its JavaScript syntax check. Its runtime checks and the hosted workflow run are pending. |
+
+The current lockfile must be regenerated against the application dependencies before a locked build can verify Phase 1. See [HANDOFF.md](HANDOFF.md) for the next commands.

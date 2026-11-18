@@ -8,8 +8,12 @@ For backlog items, the roadmap task wording and phase objective describe the wor
 
 | Task | Owner / priority | Dependencies and requirement | Acceptance and verification |
 |---|---|---|---|
-| IMP-P1-002 | Backend engineering / P0 | Repository baseline; roadmap §§9–10, 14 | Cargo resolves the backend workspace and its committed lockfile offline. |
+| IMP-P1-002 | Backend engineering / P0 | Repository baseline, roadmap §§9–10, 14 | Cargo resolves the current workspace with its reviewed lockfile. |
 | IMP-P1-003 | Backend engineering / P0 | IMP-P1-002; architecture §39 | Cargo metadata lists all six planned crates with API and worker binary targets. Format, lint and build/test the workspace and record the outcome. |
+| IMP-P1-004 | Frontend engineering / P0 | Repository baseline, roadmap §14 | Build and start the Next.js app, check lint and types, and exercise the page over HTTP. See [PROGRESS.md](PROGRESS.md). |
+| IMP-P1-005 / 006 | Infrastructure / P0 | Local database settings and PostgreSQL bootstrap, roadmap §14 | Start PostgreSQL with Compose and run the role, privilege and connection checks as the runtime login. |
+| IMP-P1-007 / 008 / 009 | Backend engineering / P0 | Current workspace and PostgreSQL, roadmap §14 | Exercise configuration validation, inspect JSON logs for secret leakage, and verify API liveness and readiness with the database available and unavailable. |
+| IMP-P1-010 / 011 / 012 | Engineering / P0 | Backend, frontend and development database, roadmap §14 | Run the workflow on GitHub and record the lint, formatting, build, unit and integration results. |
 
 ## Phase 0 · REQUIREMENTS AND ARCHITECTURE BASELINE (§13)
 
@@ -31,17 +35,17 @@ For backlog items, the roadmap task wording and phase objective describe the wor
 | Task ID | Roadmap task | Status |
 |---|---|---|
 | IMP-P1-001 | Initialize repository. | Completed |
-| IMP-P1-002 | Create Rust workspace. | In testing |
+| IMP-P1-002 | Create Rust workspace. | Blocked |
 | IMP-P1-003 | Create backend crates. | Blocked |
-| IMP-P1-004 | Initialize Next.js frontend. | Backlog |
-| IMP-P1-005 | Configure PostgreSQL. | Backlog |
-| IMP-P1-006 | Configure Docker development services. | Backlog |
-| IMP-P1-007 | Implement application configuration. | Backlog |
-| IMP-P1-008 | Implement structured logging. | Backlog |
-| IMP-P1-009 | Create health endpoints. | Backlog |
-| IMP-P1-010 | Establish CI pipeline. | Backlog |
-| IMP-P1-011 | Configure linting and formatting. | Backlog |
-| IMP-P1-012 | Create initial integration test infrastructure. | Backlog |
+| IMP-P1-004 | Initialize Next.js frontend. | Completed |
+| IMP-P1-005 | Configure PostgreSQL. | Blocked |
+| IMP-P1-006 | Configure Docker development services. | Blocked |
+| IMP-P1-007 | Implement application configuration. | In testing |
+| IMP-P1-008 | Implement structured logging. | In testing |
+| IMP-P1-009 | Create health endpoints. | In testing |
+| IMP-P1-010 | Establish CI pipeline. | In testing |
+| IMP-P1-011 | Configure linting and formatting. | In testing |
+| IMP-P1-012 | Create initial integration test infrastructure. | In testing |
 
 ## Phase 2 · DATABASE AND DOMAIN FOUNDATIONS (§15)
 
