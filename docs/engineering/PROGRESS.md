@@ -1,5 +1,27 @@
 # Engineering progress
 
+## 2026-11-18 · Verified GitHub Actions run
+
+Commit `02fda26633b38946f1bb4d15d0ad86cee0a57656` passed the [Phase 1 verification Actions run](https://github.com/Kenule-Africa/Daypay/actions/runs/44344981832).
+
+| Task | Verified result |
+|---|---|
+| IMP-P1-002 | Passed. `backend/Cargo.lock` is committed at this revision and contains the resolved dependency graph. The backend job ran `cargo fetch` and locked Cargo commands successfully. |
+| IMP-P1-003 | Passed. The backend job ran Rust formatting, locked workspace Clippy, workspace build and workspace tests successfully on Ubuntu 24.04. |
+| IMP-P1-004 | Passed. The frontend job ran `npm ci`, lint, production build, typecheck and Node tests successfully. |
+| IMP-P1-005 / 006 | Passed. The backend job parsed Compose configuration, started the disposable PostgreSQL service, waited for health and verified the runtime database login and privileges. |
+| IMP-P1-007 | Passed. The backend workflow ran local credential initialization and environment tests. |
+| IMP-P1-008 | Passed. The backend health suite ran the JSON API and worker processes, checking startup and credential leakage; the backend job succeeded. |
+| IMP-P1-009 | Passed. The backend health suite exercised API liveness and database readiness, including available and unavailable database outcomes. |
+| IMP-P1-010 | Passed. Both backend and frontend jobs succeeded for commit `02fda266`; the lockfile consistency guard passed. |
+| IMP-P1-011 | Passed. Rust formatting and warnings-denied workspace Clippy passed in backend CI; frontend lint passed in frontend CI. |
+| IMP-P1-012 | Passed. CI ran tracking/local-environment tests, disposable PostgreSQL checks, live API/worker outage tests and the infrastructure persistence test target. |
+| IMP-P2-001–012 | Passed. The backend persistence step ran locked infrastructure Clippy and the `postgres-tests` persistence test suite against disposable PostgreSQL, in addition to the earlier native PostgreSQL evidence. |
+
+The run emitted Node.js 20 deprecation warnings for `actions/checkout` and `actions/setup-node`; these warnings did not fail either job.
+
+The corrected lockfile is an actual `02fda266` commit change. This run closes the resolved Cargo dependency, workspace, native-linking, lockfile and CI blockers for the recorded Phase 1/2 acceptance. It does not verify real provider capabilities, live KYC/provider integrations or production financial execution.
+
 ## Phase 2 · Persistence verification
 
 2026-11-18 · IMP-P2-012. On fresh PostgreSQL 18.7 all seven migrations, three SQL constraint suites and runtime-role restrictions passed. All 11 parameterized repository SELECTs prepared and executed under that restricted role. rustc with MSVC ran the exact 38-digit boundary unit test (1 passed). Cargo formatting and both tracker tests passed. Locked Clippy, build and SQLx tests exited 101 resolving uncached uuid. The two-session PostgreSQL claim query passed natively. Executing its Rust test, the transaction-bound outbox/audit writer, the repository adapters and SQLx migration replay still requires a registry-enabled runner.

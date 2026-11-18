@@ -4,7 +4,7 @@
 
 For backlog items, the roadmap task wording and phase objective describe the work. At selection, record the responsible owner, priority, related specification, dependencies, task-specific acceptance and test requirements in the active work record below. Use the status values in §37.3. Completed entries refer to dated verification in [PROGRESS.md](PROGRESS.md). Open decisions and external dependencies are in [DECISIONS.md](DECISIONS.md) and [BLOCKERS.md](BLOCKERS.md).
 
-The product owner authorized eligible Phase 2 foundation work in parallel on 2026-11-18. Phase 1 and its existing acceptance criteria remain open.
+The product owner authorized eligible Phase 2 foundation work in parallel on 2026-11-18. GitHub Actions commit `02fda26633b38946f1bb4d15d0ad86cee0a57656` completed the resolved lockfile, backend and frontend verification on 2026-11-18.
 
 ## Active work record
 
@@ -36,22 +36,22 @@ For each phase, apply its exit criteria in Document 08 before starting the next 
 
 ## Phase 1 · PROJECT FOUNDATION AND INFRASTRUCTURE (§14)
 
-The [acceptance results](PROGRESS.md#phase-1-acceptance-at-8ec19a1) give the verdict, evidence source and outstanding action for each ID. The CI lockfile check failed. The phase gate is open.
+The [acceptance results](PROGRESS.md#phase-1-acceptance-at-8ec19a1) give the prior verdict and evidence source for each ID. Commit `02fda26633b38946f1bb4d15d0ad86cee0a57656` passed the successful backend and frontend Actions run linked in [PROGRESS.md](PROGRESS.md).
 
 | Task ID | Roadmap task | Status |
 |---|---|---|
 | IMP-P1-001 | Initialize repository. | Completed |
-| IMP-P1-002 | Create Rust workspace. | Blocked |
-| IMP-P1-003 | Create backend crates. | Blocked |
+| IMP-P1-002 | Create Rust workspace. | Completed |
+| IMP-P1-003 | Create backend crates. | Completed |
 | IMP-P1-004 | Initialize Next.js frontend. | Completed |
 | IMP-P1-005 | Configure PostgreSQL. | Completed |
 | IMP-P1-006 | Configure Docker development services. | Completed |
 | IMP-P1-007 | Implement application configuration. | Completed |
-| IMP-P1-008 | Implement structured logging. | In testing |
-| IMP-P1-009 | Create health endpoints. | In testing |
-| IMP-P1-010 | Establish CI pipeline. | Blocked |
-| IMP-P1-011 | Configure linting and formatting. | In testing |
-| IMP-P1-012 | Create initial integration test infrastructure. | In testing |
+| IMP-P1-008 | Implement structured logging. | Completed |
+| IMP-P1-009 | Create health endpoints. | Completed |
+| IMP-P1-010 | Establish CI pipeline. | Completed |
+| IMP-P1-011 | Configure linting and formatting. | Completed |
+| IMP-P1-012 | Create initial integration test infrastructure. | Completed |
 
 ## Phase 2 · DATABASE AND DOMAIN FOUNDATIONS (§15)
 
@@ -59,18 +59,18 @@ Backend engineering owns these P0 foundations. Task 001 supplies ordered migrati
 
 | Task ID | Roadmap task | Status |
 |---|---|---|
-| IMP-P2-001 | Create database migration framework. | In testing |
-| IMP-P2-002 | Implement customer identity tables. | In testing |
-| IMP-P2-003 | Implement authentication tables. | In testing |
-| IMP-P2-004 | Implement KYC tables. | In testing |
-| IMP-P2-005 | Implement asset registry. | In testing |
-| IMP-P2-006 | Implement wallet profiles. | In testing |
-| IMP-P2-007 | Implement transaction records. | In testing |
-| IMP-P2-008 | Implement provider operation records. | In testing |
-| IMP-P2-009 | Implement webhook inbox. | In testing |
-| IMP-P2-010 | Implement outbox and durable jobs. | In testing |
-| IMP-P2-011 | Implement audit tables. | In testing |
-| IMP-P2-012 | Implement repository interfaces. | In testing |
+| IMP-P2-001 | Create database migration framework. | Completed |
+| IMP-P2-002 | Implement customer identity tables. | Completed |
+| IMP-P2-003 | Implement authentication tables. | Completed |
+| IMP-P2-004 | Implement KYC tables. | Completed |
+| IMP-P2-005 | Implement asset registry. | Completed |
+| IMP-P2-006 | Implement wallet profiles. | Completed |
+| IMP-P2-007 | Implement transaction records. | Completed |
+| IMP-P2-008 | Implement provider operation records. | Completed |
+| IMP-P2-009 | Implement webhook inbox. | Completed |
+| IMP-P2-010 | Implement outbox and durable jobs. | Completed |
+| IMP-P2-011 | Implement audit tables. | Completed |
+| IMP-P2-012 | Implement repository interfaces. | Completed |
 
 ## Phase 3 · AUTHENTICATION AND CUSTOMER IDENTITY (§16)
 

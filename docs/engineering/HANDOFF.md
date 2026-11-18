@@ -1,46 +1,28 @@
 # Engineering handoff
 
-## Phase 2 handoff
-
-Work in the primary DEYPAY checkout on `main` at `5e633d9`. Phase 2 was developed against `72db680` while `main` was at the kickoff revision. The owner subsequently merged that exact Phase 1 tree into `main`. Phase 2 changes are unstaged. The owner is handling Phase 1 acceptance separately.
-
-All twelve Phase 2 tasks are **In testing**. Seven migrations, the SQL constraint cases and runtime-role checks passed on native disposable PostgreSQL 18.7. The SQL behind eleven repository lookups ran under the restricted role. Outbox and audit writes use a caller-owned transaction, and SQLx migration files have enforced LF line endings. The standalone Rust money test passed with MSVC. See [the verification record](PROGRESS.md#phase-2--persistence-verification).
-
-**Next task: IMP-P2-001 verification.** From `backend/` on a registry-enabled runner, generate and review this branch's Cargo.lock against its Phase 2 manifests. Run locked Clippy, build, workspace tests, then the [disposable SQLx suite](../../README.md#phase-2-database-foundation). The suite covers migration replay, database constraints, concurrent claims, permissions and the Rust adapter. Record the tested revision and results before closing tasks. No Phase 2 revision has run in Actions.
-
-### Earlier Phase 1 handoff
-
 ## Current state
 
-- **Phase:** 1 — Project Foundation and Infrastructure.
-- **Active tasks:** `IMP-P1-002` and `IMP-P1-010` failed the lockfile gate. The [per-task acceptance record](PROGRESS.md#phase-1-acceptance-at-8ec19a1) covers all twelve tasks.
-- **Baseline:** The Phase 1 foundation was committed at `8ec19a1`, followed by the shutdown and acceptance changes at `72db680`.
+- **Verified commit:** `02fda26633b38946f1bb4d15d0ad86cee0a57656`.
+- **Successful verification:** [GitHub Actions run 44344981832](https://github.com/Kenule-Africa/Daypay/actions/runs/44344981832).
+- **Completed phases:** Phase 1 — Project Foundation and Infrastructure; Phase 2 — Database and Domain Foundations.
+- **Next phase:** Phase 3 — Authentication and Customer Identity (§16).
+- **Next task:** `IMP-P3-001` — Registration, after reading its roadmap dependencies and authoritative specifications.
 
-## Evidence to load
+## Verified evidence
 
-- Sources: `backend/Cargo.toml`, `backend/Cargo.lock`, `backend/crates/deypay-domain/Cargo.toml`, `backend/crates/deypay-domain/src/`, `backend/crates/deypay-application/Cargo.toml`, `backend/crates/deypay-application/src/`, `backend/crates/deypay-infrastructure/Cargo.toml`, `backend/crates/deypay-infrastructure/src/`, `backend/crates/deypay-api/Cargo.toml`, `backend/crates/deypay-api/src/`, `backend/crates/deypay-worker/Cargo.toml`, `backend/crates/deypay-worker/src/`, `backend/crates/deypay-common/Cargo.toml`, and `backend/crates/deypay-common/src/`.
-- Requirements: [architecture §39](../02-SYSTEM-ARCHITECTURE.md), [test strategy](../07-TEST-STRATEGY.md), and roadmap Phase 1 §14 and §§37–39.
-- Verification history: [PROGRESS.md](PROGRESS.md).
-- Environment and release gates: [BLOCKERS.md](BLOCKERS.md).
+- Both backend and frontend jobs passed on Ubuntu 24.04.
+- Backend CI passed formatting, locked workspace Clippy, build, workspace tests, local environment/tracking checks, Compose PostgreSQL provisioning, API/worker health and outage tests, and the PostgreSQL persistence test suite.
+- Frontend CI passed `npm ci`, lint, build, typecheck and Node tests.
+- The lockfile consistency guard passed with the corrected `backend/Cargo.lock`.
+- The prior Phase 2 native PostgreSQL and restricted-role evidence remains in [PROGRESS.md](PROGRESS.md).
 
-## Last verified work
+## Remaining implementation follow-ups
 
-Local frontend lint, build, typecheck and HTTP smoke passed, as did Rust formatting, six-crate discovery and three root tests. The owner reports that CI passed PostgreSQL provisioning, Rust checks, API health/outage tests and the frontend job before the lockfile check failed. The later [backend job at 72db680](https://github.com/Kenule-Africa/Daypay/actions/runs/44253202369/job/134628600410) independently confirms the worker lifecycle and HTTP checks passed on the Phase 1 baseline. Its lockfile guard failed. The recovered Phase 1 lockfile blob and its scope are recorded in PROGRESS.md.
-
-## Active blockers
-
-The reviewed lockfile is stale. This Windows host cannot reach the registry and lacks cached dependencies. PostgreSQL 18.7 and the MSVC linker were exercised during Phase 2. The separate Phase 1 full-stack acceptance run is outstanding. See [BLOCKERS.md](BLOCKERS.md).
+- Deposit-address provisioning and customer ownership remain downstream of `IMP-P6-007`/`IMP-P6-008`, and `IMP-P9-001`/`IMP-P9-002`.
+- Customer-isolation behavior must be re-verified through authenticated registration and wallet/deposit flows under `IMP-P3-001`–`IMP-P3-013`, `IMP-P6-004` and `IMP-P9-001`–`IMP-P9-004`.
+- Provider operation, webhook and durable-job foundations still require the later framework tasks `IMP-P8-001`–`IMP-P8-014`; account-specific provider capability evidence remains unverified.
+- Phase 0 approvals and live financial execution remain outside technical foundation completion.
 
 ## Next action
 
-Recover the complete generated lockfile from the failed backend job's diff, or run `cargo generate-lockfile` from `backend/` on a trusted registry-enabled machine. Review the resolved dependencies. From `backend/`, run:
-
-```text
-cargo metadata --format-version 1 --locked
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets --locked -- -D warnings
-cargo build --workspace --locked
-cargo test --workspace --locked
-```
-
-Follow the [local setup](../../README.md) to start PostgreSQL and verify its restricted role. On Linux, run `node --env-file=.env --test scripts/backend-health.test.mjs` at the root. Require all four tests to pass, including worker shutdown on SIGTERM and rejection of an unreachable database. Run API, worker and frontend together against that database and verify the homepage shows “Available”. Once publication is authorized, record a green two-job Actions run, its SHA and the full-stack result in [PROGRESS.md](PROGRESS.md). The owner authorized independent Phase 2 foundation work while this gate remains open. Committing, pushing or merging requires explicit authorization.
+For `IMP-P3-001`, read the task dependencies and Phase 3 section of [the roadmap](../08-IMPLEMENTATION-PLAN.md), [FRS](../01-FRS.md), [architecture](../02-SYSTEM-ARCHITECTURE.md), [database design](../03-DATABASE-DESIGN.md), [API specification](../04-API-SPECIFICATION.md), and [security](../06-SECURITY-COMPLIANCE.md). Then verify the current source against the existing identity and authentication migrations before editing.
