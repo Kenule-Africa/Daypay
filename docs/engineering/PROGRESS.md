@@ -49,3 +49,28 @@ Kickoff is committed on main at `83ee97f`. The working tree is based on `optimiz
 | IMP-P1-010 / 012 | Both tracking checks and the local credential-initialization regression passed. The regression checks distinct credentials, the restricted runtime login, preservation of an existing environment and console output for leaked credentials. Workflow YAML parsed. The backend HTTP suite passed its JavaScript syntax check. Its runtime checks and the hosted workflow run are pending. |
 
 The current lockfile must be regenerated against the application dependencies before a locked build can verify Phase 1. See [HANDOFF.md](HANDOFF.md) for the next commands.
+
+## Phase 1 acceptance at 8ec19a1
+
+2026-11-18. Local HEAD and its remote-tracking ref are `8ec19a116f034e2f546f9e55227a3d96370fe088`. That commit contains the Phase 1 implementation. At session start the only modification was the owner's updated `docs/prompt.md`.
+
+**Evidence sources.** Local results below were observed in this checkout. “Reported CI” refers to the owner's account of the latest Actions run in [the assignment](../prompt.md), interpreted against [the workflow](../../.github/workflows/phase-one.yml). The supplied report says the frontend job, Rust checks, PostgreSQL provisioning and HTTP suite passed before the Cargo.lock consistency check failed. The Actions log, tested SHA and run URL were unavailable for independent inspection. The new working-tree changes have no hosted run.
+
+| Task | Verdict | Evidence and remaining action |
+|---|---|---|
+| IMP-P1-001 | Passed | Local Git history and branch refs confirm the repository and committed foundation. |
+| IMP-P1-002 | Failed | The tracked lockfile lists only six local packages. Reported CI changed it during fetch. Recover the CI-generated lockfile or generate it with Cargo against crates.io, then verify full locked metadata. |
+| IMP-P1-003 | Blocked | Local `cargo metadata --no-deps --locked` lists four libraries and two binaries. Reported CI built and tested its resolved graph. Build and test both binaries against the reviewed lockfile with the current shutdown changes. |
+| IMP-P1-004 | Passed | Local frontend lint, production build, typecheck and HTTP smoke test passed. The built page displayed both expected states against a controlled API. The frontend CI job also passed as reported. |
+| IMP-P1-005 | Passed (reported CI) | The provisioning step includes an authenticated TCP query that checks the database, runtime role, restricted privileges and server version. The local port refused connections. Retain the CI run reference with the final evidence. |
+| IMP-P1-006 | Passed (reported CI) | The same step validates Compose and waits for the PostgreSQL container health check. Docker is unavailable on this Windows host. Retain the runner evidence. |
+| IMP-P1-007 | Passed (local and reported CI) | Local credential initialization checks passed. Reported Rust tests cover configuration defaults and invalid settings, and HTTP tests launched the API with its runtime environment. Configuration and bootstrap source did not change in this session. |
+| IMP-P1-008 | Blocked | Reported CI checked the API JSON startup message and absence of the connection URL. Rerun the expanded API/worker checks for JSON events and credentials in stdout and stderr. |
+| IMP-P1-009 | Blocked | Reported CI exercised live HTTP 200 and readiness 200/503. Rerun the suite against the current API, which registers its shutdown handler before announcing startup. |
+| IMP-P1-010 | Failed | Reported backend CI failed the reviewed-lockfile consistency check. Run both jobs against the corrected revision and record the green run and tested SHA. |
+| IMP-P1-011 | Blocked | Local Rust formatting and frontend lint passed. Reported CI passed Clippy before the current runtime edits. Rerun locked Clippy with warnings denied. |
+| IMP-P1-012 | Blocked | Three local tracking/credential tests and one frontend HTTP test passed. Reported CI passed both previous API/PostgreSQL cases. Run the expanded suite on Linux, including worker startup, SIGTERM exit and database outage. |
+
+**Local blockers.** Online `cargo generate-lockfile` exited 101 connecting to index.crates.io. Locked offline metadata, Clippy, build and test each exited 101 resolving SQLx. Formatting passed. The expanded suite passed `node --check`; the worker outage case stopped at spawn with ENOENT. The environment has no built worker, Docker or psql. No worker behavior was observed locally.
+
+**Phase gate.** Roadmap §14 requires a developer to run the full local application and its tests. Record a run with frontend, API, worker and PostgreSQL together, verify that the frontend shows the live API as available, and attach the locked CI result before opening Phase 2.

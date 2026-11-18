@@ -29,13 +29,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .route("/health/ready", get(readiness))
         .with_state(pool.clone());
     let listener = TcpListener::bind(address).await?;
+    let shutdown = shutdown_signal()?;
     tracing::info!(address = %listener.local_addr()?, "API listening");
     axum::serve(listener, app)
-        .with_graceful_shutdown(async {
-            if shutdown_signal().await.is_err() {
-                tracing::error!("Unable to monitor shutdown signals");
-            }
-        })
+        .with_graceful_shutdown(shutdown)
         .await?;
     pool.close().await;
     tracing::info!("API stopped");

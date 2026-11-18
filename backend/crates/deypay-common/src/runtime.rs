@@ -12,16 +12,24 @@ pub fn init_logging(level: &str) -> Result<(), &'static str> {
         .map_err(|_| "Failed to initialize structured logging")
 }
 
-pub async fn shutdown_signal() -> io::Result<()> {
+pub fn shutdown_signal() -> io::Result<impl Future<Output = ()>> {
     #[cfg(unix)]
     {
         use tokio::signal::unix::{SignalKind, signal};
+        let mut interrupt = signal(SignalKind::interrupt())?;
         let mut terminate = signal(SignalKind::terminate())?;
-        tokio::select! {
-            result = tokio::signal::ctrl_c() => result,
-            _ = terminate.recv() => Ok(()),
-        }
+        Ok(async move {
+            tokio::select! {
+                _ = interrupt.recv() => (),
+                _ = terminate.recv() => (),
+            }
+        })
     }
-    #[cfg(not(unix))]
-    tokio::signal::ctrl_c().await
+    #[cfg(windows)]
+    {
+        let mut interrupt = tokio::signal::windows::ctrl_c()?;
+        Ok(async move {
+            interrupt.recv().await;
+        })
+    }
 }

@@ -26,6 +26,6 @@ Use stable Rust with rustfmt and Clippy, Node.js 22 LTS and PostgreSQL 16 or new
 
 ## Verification
 
-From `backend/`, run `cargo fmt --all -- --check`, `cargo clippy --locked --workspace --all-targets -- -D warnings`, `cargo build --locked --workspace` and `cargo test --locked --workspace`. After building the binaries and starting the development database, run `node --env-file=.env --test scripts/backend-health.test.mjs` from the repository root.
+From `backend/`, run `cargo fmt --all -- --check`, `cargo clippy --locked --workspace --all-targets -- -D warnings`, `cargo build --locked --workspace` and `cargo test --locked --workspace`. After building the binaries and starting the development database, run `node --env-file=.env --test scripts/backend-health.test.mjs` from the repository root. This covers API liveness and readiness, worker startup failure on a database outage and, on POSIX, graceful worker shutdown on SIGTERM. On Windows, stop the connected worker with Ctrl+C and check for the shutdown log and a zero exit code.
 
 From `frontend/`, run `npm run lint`, `npm run build`, `npm run typecheck` and `npm test`. The HTTP smoke test starts the built frontend with a controlled API to exercise available and unavailable states. From the root, run `node --test scripts/engineering-tracking.test.mjs scripts/local-environment.test.mjs` to verify the roadmap tracker, provider register and local credential setup.
