@@ -4,6 +4,8 @@
 
 For backlog items, the roadmap task wording and phase objective describe the work. At selection, record the responsible owner, priority, related specification, dependencies, task-specific acceptance and test requirements in the active work record below. Use the status values in §37.3. Completed entries refer to dated verification in [PROGRESS.md](PROGRESS.md). Open decisions and external dependencies are in [DECISIONS.md](DECISIONS.md) and [BLOCKERS.md](BLOCKERS.md).
 
+The product owner authorized eligible Phase 2 foundation work in parallel on 2026-11-18. Phase 1 and its existing acceptance criteria remain open.
+
 ## Active work record
 
 For each phase, apply its exit criteria in Document 08 before starting the next phase. Record dated evidence for runtime behavior, unit and integration tests, applicable security controls and failure recovery. For financial work also verify ledger invariants, idempotency, concurrency and recovery. Identify the tested revision and environment, along with any gaps. Compilation alone cannot close a phase.
@@ -53,20 +55,22 @@ The [acceptance results](PROGRESS.md#phase-1-acceptance-at-8ec19a1) give the ver
 
 ## Phase 2 · DATABASE AND DOMAIN FOUNDATIONS (§15)
 
+Backend engineering owns these P0 foundations. Task 001 supplies ordered migrations. Tasks 002–004 establish identity and KYC, 005–007 add the asset, wallet and transaction relationships, and 008–011 add provider, event and audit persistence. Task 012 uses those structures through application-owned contracts. Acceptance requires PostgreSQL constraints, role checks, migration replay and Rust adapter tests. See [Phase 2 evidence](PROGRESS.md#phase-2--persistence-verification).
+
 | Task ID | Roadmap task | Status |
 |---|---|---|
-| IMP-P2-001 | Create database migration framework. | Backlog |
-| IMP-P2-002 | Implement customer identity tables. | Backlog |
-| IMP-P2-003 | Implement authentication tables. | Backlog |
-| IMP-P2-004 | Implement KYC tables. | Backlog |
-| IMP-P2-005 | Implement asset registry. | Backlog |
-| IMP-P2-006 | Implement wallet profiles. | Backlog |
-| IMP-P2-007 | Implement transaction records. | Backlog |
-| IMP-P2-008 | Implement provider operation records. | Backlog |
-| IMP-P2-009 | Implement webhook inbox. | Backlog |
-| IMP-P2-010 | Implement outbox and durable jobs. | Backlog |
-| IMP-P2-011 | Implement audit tables. | Backlog |
-| IMP-P2-012 | Implement repository interfaces. | Backlog |
+| IMP-P2-001 | Create database migration framework. | In testing |
+| IMP-P2-002 | Implement customer identity tables. | In testing |
+| IMP-P2-003 | Implement authentication tables. | In testing |
+| IMP-P2-004 | Implement KYC tables. | In testing |
+| IMP-P2-005 | Implement asset registry. | In testing |
+| IMP-P2-006 | Implement wallet profiles. | In testing |
+| IMP-P2-007 | Implement transaction records. | In testing |
+| IMP-P2-008 | Implement provider operation records. | In testing |
+| IMP-P2-009 | Implement webhook inbox. | In testing |
+| IMP-P2-010 | Implement outbox and durable jobs. | In testing |
+| IMP-P2-011 | Implement audit tables. | In testing |
+| IMP-P2-012 | Implement repository interfaces. | In testing |
 
 ## Phase 3 · AUTHENTICATION AND CUSTOMER IDENTITY (§16)
 

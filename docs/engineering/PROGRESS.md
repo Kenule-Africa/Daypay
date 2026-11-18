@@ -1,5 +1,28 @@
 # Engineering progress
 
+## Phase 2 · Persistence verification
+
+2026-11-18 · IMP-P2-012. On fresh PostgreSQL 18.7 all seven migrations, three SQL constraint suites and runtime-role restrictions passed. All 11 parameterized repository SELECTs prepared and executed under that restricted role. rustc with MSVC ran the exact 38-digit boundary unit test (1 passed). Cargo formatting and both tracker tests passed. Locked Clippy, build and SQLx tests exited 101 resolving uncached uuid. The two-session PostgreSQL claim query passed natively. Executing its Rust test, the transaction-bound outbox/audit writer, the repository adapters and SQLx migration replay still requires a registry-enabled runner.
+
+2026-11-18 · IMP-P2-008–011. Seven ordered migration files and all three SQL case files passed on a clean PostgreSQL 18.7 cluster. Cases cover scoped callbacks, forged-before-valid delivery, duplicate payout attempts and settlements, atomic rollback, job leases, audit immutability and maker-checker separation. Formatting and tracking tests passed. The same missing SQLx cache blocked offline lint, build and the Rust integration suite.
+
+2026-11-18 · IMP-P2-005–007. On clean PostgreSQL 18.7, all five migration files and the identity and money/wallet cases passed. Verified 38-digit exact round-trip, rejection of fractional, oversized and NaN amounts, assetless fees, NGN wallet substitution, asset-unit changes, duplicate idempotency keys and history deletion. No assets, network routes or precision policies seeded. Formatting and tracker tests passed; locked Clippy/build/SQLx tests stopped at dependency resolution.
+
+2026-11-18 · IMP-P2-002–004. Native PostgreSQL 18.7 ran in a fresh password-authenticated loopback cluster. psql applied migrations 001–003 in order and identity_constraints.sql passed (unique email/handle, device ownership, password hash and KYC state). Workspace formatting and both tracker tests passed; offline Clippy, build and SQLx test execution stopped at missing SQLx.
+
+2026-11-18 · IMP-P2-001. Embedded ordered SQLx migrations and a clean-database/replay integration test. Workspace formatting and both tracking tests passed. Locked Clippy, build and SQLx tests stopped before compilation at unavailable SQLx. PostgreSQL 18 and MSVC are installed now. First disposable initdb timed out during file synchronization; retrying with a disposable cluster. No new CI result.
+
+The primary checkout advanced to `5e633d9`, whose tracked tree matched the Phase 1 base `72db680`. The Phase 2 work was transferred to the primary checkout after checking for overlapping edits.
+
+The Phase 1 [backend CI job at 72db680](https://github.com/Kenule-Africa/Daypay/actions/runs/44253202369/job/134628600410) passed its Rust, database, HTTP and worker lifecycle steps and failed the lockfile check. The full lockfile recovered from its diff hashes to Git blob `0a50b9a1169930302c88e6de00847b45d50b0e7e`. This graph predates Phase 2's UUID dependency. No Phase 2 test result is inferred from that run.
+
+### Commands and remaining evidence
+
+- After each group, `cargo fmt --all -- --check` and `node --test scripts/engineering-tracking.test.mjs` passed. Locked offline workspace build and Clippy (all targets/features, warnings denied) and `cargo test --locked --offline -p deypay-infrastructure --features postgres-tests --test persistence` stopped at dependency resolution. Online `cargo generate-lockfile` exited 101 reaching index.crates.io.
+- For native tests, created a new PostgreSQL 18.7 data directory with `initdb --auth=scram-sha-256`, started `postgres` on an ephemeral loopback port, and used `psql -X -1 -v ON_ERROR_STOP=1 -f <file>` for each ordered migration and then each `tests/cases/*.sql` file. Created a temporary restricted role, applied `phase-two-grants.psql`, exercised `runtime-role.psql`, and prepared and executed all eleven repository SELECTs as that role. Two simultaneous sessions using the suite's `FOR UPDATE SKIP LOCKED` query selected different jobs. The test instance was stopped after each run.
+- Verified workspace target discovery with `cargo metadata --no-deps --locked --offline`, all three tracker/environment tests, and the enforced LF attribute for migration files. `git diff --check` passed.
+- In an MSVC developer environment, `rustc --edition 2024 --test backend/crates/deypay-domain/src/units.rs` produced a test executable. Running it passed the exact-unit range test. The new [SQLx tests](../../backend/crates/deypay-infrastructure/tests/persistence.rs) still require the Rust dependency graph and a disposable PostgreSQL administrator. No CI run is attributed to these uncommitted changes.
+
 ## 2026-11-18 · Foundation kickoff
 
 Git is already initialized on main. Commit `e96db69f5f3f4f4075469ca46d07808e18b98d16` contains all eight reconciled specifications. `git diff --exit-code HEAD -- docs` passed before kickoff. The existing untracked `prompt.md` supplied the session instructions.

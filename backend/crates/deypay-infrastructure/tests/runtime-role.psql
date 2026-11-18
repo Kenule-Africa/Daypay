@@ -1,0 +1,30 @@
+SET LOCAL ROLE deypay_app;
+DO $$
+DECLARE
+    audit_id uuid := gen_random_uuid();
+    outbox_id uuid := gen_random_uuid();
+BEGIN
+    INSERT INTO audit.audit_events(id,actor_type,action,resource_type) VALUES(audit_id,'SYSTEM','TEST','fixture');
+    BEGIN
+        INSERT INTO integrations.outbox_events(id,aggregate_type,aggregate_id,event_type,payload)
+            VALUES(outbox_id,'test',audit_id,'fixture','{}');
+        INSERT INTO audit.audit_events(id,actor_type,action,resource_type) VALUES(audit_id,'SYSTEM','TEST','fixture');
+        RAISE EXCEPTION 'duplicate audit ID accepted';
+    EXCEPTION WHEN unique_violation THEN NULL; END;
+    IF EXISTS (SELECT FROM integrations.outbox_events WHERE id=outbox_id) THEN RAISE EXCEPTION 'orphaned outbox event'; END IF;
+    PERFORM id,status FROM identity.users LIMIT 1;
+    PERFORM source_amount_minor FROM payments.transactions LIMIT 1;
+    BEGIN
+        PERFORM token_hash FROM identity.sessions LIMIT 1;
+        RAISE EXCEPTION 'runtime can read token hashes';
+    EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN
+        DELETE FROM audit.audit_events;
+        RAISE EXCEPTION 'runtime can delete audit evidence';
+    EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+    BEGIN
+        CREATE TABLE wallets.unexpected_runtime_table(id integer);
+        RAISE EXCEPTION 'runtime can modify schema';
+    EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+END;
+$$;

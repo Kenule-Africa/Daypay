@@ -29,6 +29,7 @@ pgpass.conf
 *.sql.zst
 *.sql.zip
 !**/migrations/**/*.sql
+!backend/crates/deypay-infrastructure/tests/cases/*.sql
 dumps/
 backups/
 pgdata/

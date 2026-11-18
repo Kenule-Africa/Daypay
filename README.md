@@ -24,6 +24,14 @@ Use stable Rust with rustfmt and Clippy, Node.js 22 LTS and PostgreSQL 16 or new
 
 `GET /health/live` checks the running HTTP process. `GET /health/ready` performs a bounded database query and returns HTTP 200 or 503. Probe responses carry only a status and disable caching.
 
+## Phase 2 database foundation
+
+Use PostgreSQL 16+ and SQLx CLI 0.8.6. From `backend/`, set `DATABASE_URL` in the migration process to the schema owner's database connection. Use verified TLS for hosted connections. Run `sqlx migrate run --source migrations`, then `sqlx migrate info --source migrations`. Reapplying the same release verifies checksums and skips applied versions. Run `psql -X -v ON_ERROR_STOP=1 -1 -f ../infrastructure/postgres/phase-two-grants.psql` with the same database and migration owner selected through libpq. The runtime role `deypay_app` is created by the Phase 1 bootstrap. Its grants cover the repository projections and insertion of outbox and audit records. The SQLx event writer borrows the caller's database transaction. Launch the API and worker with their runtime login.
+
+Migrations are forward-only. On a populated database, recover by a reviewed corrective migration or restore a verified backup into a separate database before switching traffic. A failed transactional migration can be fixed before first successful application. Preserve the contents and checksums of deployed migrations.
+
+For the Rust integration suite, point `DATABASE_URL` at a dedicated disposable PostgreSQL instance with a database-creating test administrator and the restricted `deypay_app` role. From `backend/`, run `cargo test --locked -p deypay-infrastructure --features postgres-tests --test persistence`. SQLx creates a new database per test. Fixtures contain synthetic identities and asset precision. Production registry rows, address assignment policy, encryption/key management, retention policy and financial execution await their respective approvals.
+
 ## Verification
 
 From `backend/`, run `cargo fmt --all -- --check`, `cargo clippy --locked --workspace --all-targets -- -D warnings`, `cargo build --locked --workspace` and `cargo test --locked --workspace`. After building the binaries and starting the development database, run `node --env-file=.env --test scripts/backend-health.test.mjs` from the repository root. This covers API liveness and readiness, worker startup failure on a database outage and, on POSIX, graceful worker shutdown on SIGTERM. On Windows, stop the connected worker with Ctrl+C and check for the shutdown log and a zero exit code.

@@ -1,10 +1,20 @@
 # Engineering handoff
 
+## Phase 2 handoff
+
+Work in the primary DEYPAY checkout on `main` at `5e633d9`. Phase 2 was developed against `72db680` while `main` was at the kickoff revision. The owner subsequently merged that exact Phase 1 tree into `main`. Phase 2 changes are unstaged. The owner is handling Phase 1 acceptance separately.
+
+All twelve Phase 2 tasks are **In testing**. Seven migrations, the SQL constraint cases and runtime-role checks passed on native disposable PostgreSQL 18.7. The SQL behind eleven repository lookups ran under the restricted role. Outbox and audit writes use a caller-owned transaction, and SQLx migration files have enforced LF line endings. The standalone Rust money test passed with MSVC. See [the verification record](PROGRESS.md#phase-2--persistence-verification).
+
+**Next task: IMP-P2-001 verification.** From `backend/` on a registry-enabled runner, generate and review this branch's Cargo.lock against its Phase 2 manifests. Run locked Clippy, build, workspace tests, then the [disposable SQLx suite](../../README.md#phase-2-database-foundation). The suite covers migration replay, database constraints, concurrent claims, permissions and the Rust adapter. Record the tested revision and results before closing tasks. No Phase 2 revision has run in Actions.
+
+### Earlier Phase 1 handoff
+
 ## Current state
 
 - **Phase:** 1 — Project Foundation and Infrastructure.
 - **Active tasks:** `IMP-P1-002` and `IMP-P1-010` failed the lockfile gate. The [per-task acceptance record](PROGRESS.md#phase-1-acceptance-at-8ec19a1) covers all twelve tasks.
-- **Working tree:** Branch `optimize-agent-context` is at `8ec19a1`, which contains the Phase 1 foundation. The owner's revised prompt and the current acceptance, signal handling and worker-test changes are uncommitted.
+- **Baseline:** The Phase 1 foundation was committed at `8ec19a1`, followed by the shutdown and acceptance changes at `72db680`.
 
 ## Evidence to load
 
@@ -15,11 +25,11 @@
 
 ## Last verified work
 
-Local frontend lint, build, typecheck and HTTP smoke passed, as did Rust formatting, six-crate discovery and three root tests. The owner reports that CI passed PostgreSQL provisioning, Rust checks, API health/outage tests and the frontend job before the lockfile check failed. The previous run did not exercise the worker lifecycle. Its run URL, SHA and log have yet to be independently checked.
+Local frontend lint, build, typecheck and HTTP smoke passed, as did Rust formatting, six-crate discovery and three root tests. The owner reports that CI passed PostgreSQL provisioning, Rust checks, API health/outage tests and the frontend job before the lockfile check failed. The later [backend job at 72db680](https://github.com/Kenule-Africa/Daypay/actions/runs/44253202369/job/134628600410) independently confirms the worker lifecycle and HTTP checks passed on the Phase 1 baseline. Its lockfile guard failed. The recovered Phase 1 lockfile blob and its scope are recorded in PROGRESS.md.
 
 ## Active blockers
 
-The reviewed lockfile is stale. This Windows host cannot reach the registry, lacks cached SQLx and a usable MSVC build environment, and has no accessible PostgreSQL or Docker runtime. See [BLOCKERS.md](BLOCKERS.md).
+The reviewed lockfile is stale. This Windows host cannot reach the registry and lacks cached dependencies. PostgreSQL 18.7 and the MSVC linker were exercised during Phase 2. The separate Phase 1 full-stack acceptance run is outstanding. See [BLOCKERS.md](BLOCKERS.md).
 
 ## Next action
 
@@ -33,4 +43,4 @@ cargo build --workspace --locked
 cargo test --workspace --locked
 ```
 
-Follow the [local setup](../../README.md) to start PostgreSQL and verify its restricted role. On Linux, run `node --env-file=.env --test scripts/backend-health.test.mjs` at the root. Require all four tests to pass, including worker shutdown on SIGTERM and rejection of an unreachable database. Run API, worker and frontend together against that database and verify the homepage shows “Available”. Once publication is authorized, record a green two-job Actions run, its SHA and the full-stack result in [PROGRESS.md](PROGRESS.md). Phase 2 awaits that gate. Committing, pushing or merging requires explicit authorization.
+Follow the [local setup](../../README.md) to start PostgreSQL and verify its restricted role. On Linux, run `node --env-file=.env --test scripts/backend-health.test.mjs` at the root. Require all four tests to pass, including worker shutdown on SIGTERM and rejection of an unreachable database. Run API, worker and frontend together against that database and verify the homepage shows “Available”. Once publication is authorized, record a green two-job Actions run, its SHA and the full-stack result in [PROGRESS.md](PROGRESS.md). The owner authorized independent Phase 2 foundation work while this gate remains open. Committing, pushing or merging requires explicit authorization.

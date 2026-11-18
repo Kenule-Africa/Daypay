@@ -21,10 +21,12 @@ Rust workspace: [`backend/Cargo.toml`](../../backend/Cargo.toml)
 - API entry point and current health routes: `backend/crates/deypay-api/src/main.rs`
 - Worker entry point: `backend/crates/deypay-worker/src/main.rs`
 - Domain root: `backend/crates/deypay-domain/src/lib.rs`
+- Domain projections and exact units: `backend/crates/deypay-domain/src/`; repository contracts: `backend/crates/deypay-application/src/repositories.rs`; SQLx implementations: `backend/crates/deypay-infrastructure/src/repositories.rs`.
+- Transaction-bound outbox and audit writes: `backend/crates/deypay-application/src/events.rs` and `backend/crates/deypay-infrastructure/src/events.rs`.
 - Application root: `backend/crates/deypay-application/src/lib.rs`
 - Shared configuration/runtime: `backend/crates/deypay-common/src/`
 - PostgreSQL pool and readiness query: `backend/crates/deypay-infrastructure/src/database.rs`
-- Database migrations: **Planned** (`backend/migrations/`)
+- Database migrations: `backend/migrations/`, embedded by `deypay-infrastructure`. SQLx integration cases are in `backend/crates/deypay-infrastructure/tests/`.
 - Additional API routing: **Planned**
 - Provider integrations/adapters: **Planned**
 - Backend tests: Rust unit tests beside source and the API/PostgreSQL integration suite in `scripts/backend-health.test.mjs`

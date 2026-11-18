@@ -1,0 +1,17 @@
+-- Run as the migration owner after migrations, using the Phase 1 runtime role.
+GRANT USAGE ON SCHEMA identity, compliance, wallets, integrations, audit, payments TO deypay_app;
+GRANT SELECT (id,status) ON identity.users TO deypay_app;
+GRANT SELECT (id,user_id,revoked_at) ON identity.sessions TO deypay_app;
+GRANT SELECT (id,user_id,status) ON compliance.kyc_cases TO deypay_app;
+GRANT SELECT (id,symbol,accounting_precision,enabled) ON wallets.assets TO deypay_app;
+GRANT SELECT (id,user_id,asset_id,status,provisioning_status) ON wallets.wallet_profiles TO deypay_app;
+GRANT SELECT (id,user_id,public_reference,status,source_asset_id,source_amount_minor,destination_asset_id,
+    destination_amount_minor,fee_asset_id,fee_amount_minor) ON payments.transactions TO deypay_app;
+GRANT SELECT (id,provider_id,transaction_id,status,authorized_attempt) ON integrations.provider_operations TO deypay_app;
+GRANT SELECT (id,provider_id,signature_verified,processing_status) ON integrations.webhook_events TO deypay_app;
+GRANT SELECT (id,aggregate_id,event_type,status) ON integrations.outbox_events TO deypay_app;
+GRANT SELECT (id,job_type,status,attempts) ON integrations.jobs TO deypay_app;
+GRANT INSERT (id,aggregate_type,aggregate_id,event_type,payload) ON integrations.outbox_events TO deypay_app;
+GRANT INSERT (id,actor_type,actor_id,action,resource_type,resource_id,reason,correlation_id,metadata)
+    ON audit.audit_events TO deypay_app;
+GRANT SELECT (id,action,resource_type,resource_id) ON audit.audit_events TO deypay_app;

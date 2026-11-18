@@ -9,6 +9,19 @@ description = "PostgreSQL repositories and external provider adapters."
 workspace = true
 
 [dependencies]
+uuid.workspace = true
+deypay-application = { path = "../deypay-application" }
+deypay-domain = { path = "../deypay-domain" }
 deypay-common = { path = "../deypay-common" }
-sqlx.workspace = true
+sqlx = { workspace = true, features = ["macros", "migrate", "uuid", "json"] }
 tokio.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[features]
+postgres-tests = []
+
+[[test]]
+name = "persistence"
+required-features = ["postgres-tests"]

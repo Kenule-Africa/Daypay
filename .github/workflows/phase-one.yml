@@ -40,6 +40,15 @@ jobs:
           cargo test --locked --workspace
       - name: Check live HTTP, PostgreSQL readiness, worker lifecycle and outages
         run: node --env-file=.env --test scripts/backend-health.test.mjs
+      - name: Check persistence against disposable PostgreSQL
+        working-directory: backend
+        shell: bash
+        run: |
+          source ../.env
+          export DATABASE_URL="postgresql://postgres:${POSTGRES_PASSWORD}@127.0.0.1:5432/postgres"
+          unset POSTGRES_PASSWORD DEYPAY_DB_PASSWORD
+          cargo clippy --locked -p deypay-infrastructure --all-targets --features postgres-tests -- -D warnings
+          cargo test --locked -p deypay-infrastructure --features postgres-tests --test persistence
       - name: Require the resolved dependency lockfile in the reviewed commit
         run: git diff --exit-code -- backend/Cargo.lock
       - name: Stop disposable services
