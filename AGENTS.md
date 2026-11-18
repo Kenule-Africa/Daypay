@@ -1,7 +1,27 @@
-# Working on DEYPAY
+# DEYPAY agent workflow
 
-Start with [the execution roadmap](docs/08-IMPLEMENTATION-PLAN.md), especially the current phase, its exit criteria and §§37–39. Use its task IDs and sequence. Read [PROGRESS](docs/engineering/PROGRESS.md), [TASKS](docs/engineering/TASKS.md), [DECISIONS](docs/engineering/DECISIONS.md), [BLOCKERS](docs/engineering/BLOCKERS.md) and [HANDOFF](docs/engineering/HANDOFF.md) before selecting work. Check Git status for changes already in progress.
+## Session startup
 
-Read the relevant specifications before editing. Document 01 owns product behavior, 02 owns system boundaries, 03 owns persistence, 04 owns public API contracts, 05 owns accounting, 06 owns security, 07 owns verification and 08 owns delivery. Preserve unresolved decisions and record discrepancies where they affect a task. Use mocks or approved sandboxes for foundational work and keep credentials out of Git.
+1. Read this file and [the handoff](docs/engineering/HANDOFF.md).
+2. Check Git status and identify the active task ID.
+3. Read only that task in [TASKS.md](docs/engineering/TASKS.md), its phase and exit criteria in [the implementation roadmap](docs/08-IMPLEMENTATION-PLAN.md), and the relevant entries in [CODEBASE-MAP.md](docs/engineering/CODEBASE-MAP.md).
+4. Read the affected source files and the applicable specification sections before editing.
+5. Consult [DECISIONS.md](docs/engineering/DECISIONS.md), [BLOCKERS.md](docs/engineering/BLOCKERS.md), and adjacent modules when dependencies require them.
 
-For each task, check its dependencies and acceptance criteria, run the relevant tests from the roadmap, inspect the diff, then update its status, evidence and next action in the tracking files. Record commands and outcomes, including checks that could not run. Keep approval, technical verification and live activation distinct. A later session must be able to resume from this repository.
+Do not load all specifications or the whole repository by default. Use targeted searches and exact paths, and expand context whenever dependencies, ambiguity, security, or financial correctness require it.
+
+## Authority and reliability
+
+- Evidence is required from the authoritative specification and actual source code; handoffs, maps, prior chats, and assumptions are navigation aids, not proof.
+- Use FRS for product behavior, architecture for boundaries, database design for persistence, API specification for public contracts, ledger specification for accounting, security specification for security/compliance, test strategy for verification, and the implementation roadmap for sequencing.
+- Never invent routes, fields, states, schema, provider capabilities, authentication, security policy, financial rules, or approvals. Record significant unspecified choices through the existing decision process.
+- If specifications conflict or evidence is missing, investigate, report the discrepancy or blocker, and do only safe independent work.
+- For deposits, withdrawals, conversions, transfers, balances, fees, reservations, NGN payments, or reconciliation, inspect every affected ledger, database, API, security, functional-requirement, and test-strategy section plus the relevant source interfaces.
+
+## Implementation and verification
+
+- Work only on the assigned task and preserve existing decisions, task IDs, statuses, and unresolved gates.
+- Make small, reviewable changes using existing patterns. Keep credentials and secrets out of Git.
+- Check dependencies and acceptance criteria first; run focused tests, then broader checks at integration boundaries.
+- Do not claim completion or passing tests without executing and recording the relevant checks. Distinguish type checking, compilation, runtime tests, simulations, provider approval, and live activation.
+- Before completion, inspect the diff, update only directly related documentation and tracking evidence, and leave an actionable handoff. Keep final reports concise.
