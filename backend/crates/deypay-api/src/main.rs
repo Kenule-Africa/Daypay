@@ -27,7 +27,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
             get(|| async { health(StatusCode::OK, r#"{"status":"live"}"#) }),
         )
         .route("/health/ready", get(readiness))
-        .merge(deypay_api::registration::routes(None))
+        .merge(deypay_api::registration::routes(
+            settings.environment,
+            deypay_api::registration::RegistrationSettings::from_env(settings.environment)?,
+        ))
         .with_state(pool.clone());
     let listener = TcpListener::bind(address).await?;
     let shutdown = shutdown_signal()?;

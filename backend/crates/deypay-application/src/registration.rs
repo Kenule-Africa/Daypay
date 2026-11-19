@@ -10,13 +10,8 @@ pub struct Registration<'a> {
     pub country_code: &'a str,
     pub terms_version: &'a str,
     pub privacy_version: &'a str,
-    /// Time the customer explicitly accepted both exact notice versions.
-    pub accepted_at_unix: i64,
-}
-
-pub struct NoticeVersions<'a> {
-    pub terms: &'a str,
-    pub privacy: &'a str,
+    pub accept_terms: bool,
+    pub acknowledge_privacy_notice: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -46,11 +41,10 @@ pub trait RegistrationRepository: Sync {
 pub async fn register(
     repository: &impl RegistrationRepository,
     passwords: &dyn PasswordEnrollment,
-    notices: &NoticeVersions<'_>,
     request: &Registration<'_>,
     password: &str,
 ) -> Result<(), RegistrationError> {
-    request.validate(notices)?;
+    request.validate()?;
     if password.is_empty() {
         return Err(RegistrationError::InvalidInput);
     }
@@ -85,18 +79,14 @@ fn valid_email(email: &str) -> bool {
 }
 
 impl Registration<'_> {
-    pub fn validate(&self, notices: &NoticeVersions<'_>) -> Result<(), RegistrationError> {
+    pub fn validate(&self) -> Result<(), RegistrationError> {
         let phone = self
             .phone
             .strip_prefix('+')
             .ok_or(RegistrationError::InvalidInput)?;
         let handle = self.username.strip_prefix('@').unwrap_or(self.username);
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_err(|_| RegistrationError::Unavailable)?
-            .as_secs();
-        if self.accepted_at_unix <= 0
-            || self.accepted_at_unix as u64 > now
+        if !self.accept_terms
+            || !self.acknowledge_privacy_notice
             || !valid_email(self.email.trim())
             || !(2..=15).contains(&phone.len())
             || phone.starts_with('0')
@@ -112,15 +102,13 @@ impl Registration<'_> {
                 self.privacy_version,
             ]
             .iter()
-            .any(|s| s.contains('\0'))
+            .any(|s| s.chars().any(char::is_control))
             || self.first_name.trim().is_empty()
             || self.last_name.trim().is_empty()
             || self.country_code.len() != 2
             || !self.country_code.bytes().all(|b| b.is_ascii_uppercase())
-            || notices.terms.trim().is_empty()
-            || notices.privacy.trim().is_empty()
-            || self.terms_version != notices.terms
-            || self.privacy_version != notices.privacy
+            || self.terms_version.trim().is_empty()
+            || self.privacy_version.trim().is_empty()
         {
             return Err(RegistrationError::InvalidInput);
         }

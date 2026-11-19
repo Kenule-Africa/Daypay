@@ -7,7 +7,7 @@ use axum::{
     routing::post,
 };
 use deypay_application::registration::{
-    NoticeVersions, PasswordEnrollment, Registration, RegistrationError, register,
+    PasswordEnrollment, Registration, RegistrationError, register,
 };
 use deypay_infrastructure::{database::DatabasePool, registration::PgRegistrationRepository};
 use serde::Deserialize;
@@ -20,30 +20,21 @@ use std::{
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RegistrationBody {
+    first_name: String,
+    last_name: String,
+    country_code: String,
     email: String,
     phone: String,
     username: String,
     password: String,
-}
-
-/// Supplied by a trusted server-side consent flow, never deserialized from HTTP.
-/// The captured contact and handle bind both affirmative acceptances to this submission.
-pub struct AcceptedRegistration {
-    pub email: String,
-    pub phone: String,
-    pub username: String,
-    pub first_name: String,
-    pub last_name: String,
-    pub country_code: String,
-    pub terms_version: String,
-    pub privacy_version: String,
-    pub accepted_at_unix: i64,
+    terms_version: String,
+    privacy_version: String,
+    accept_terms: bool,
+    acknowledge_privacy_notice: bool,
 }
 
 pub struct RegistrationSettings {
     pub passwords: Arc<dyn PasswordEnrollment + Send>,
-    pub terms_version: String,
-    pub privacy_version: String,
     pub attempts_per_minute: NonZeroU32,
 }
 
@@ -52,14 +43,25 @@ struct RegistrationEndpoint {
     window: Mutex<(Instant, u32)>,
 }
 
-pub fn routes(settings: Option<RegistrationSettings>) -> Router<DatabasePool> {
+pub fn routes(
+    environment: deypay_common::config::Environment,
+    settings: Option<RegistrationSettings>,
+) -> Router<DatabasePool> {
+    use deypay_common::config::Environment;
+    let settings =
+        settings.filter(|_| matches!(environment, Environment::Local | Environment::Test));
+    let scope = if settings.is_some() {
+        "sandbox"
+    } else {
+        "published"
+    };
     let endpoint = settings.map(|settings| {
         Arc::new(RegistrationEndpoint {
             settings,
             window: Mutex::new((Instant::now(), 0)),
         })
     });
-    Router::new().route(
+    crate::legal::routes(scope).route(
         "/api/v1/auth/register",
         post(move |State(pool), req| {
             let endpoint = endpoint.clone();
@@ -71,12 +73,12 @@ pub fn routes(settings: Option<RegistrationSettings>) -> Router<DatabasePool> {
 async fn submit(
     pool: DatabasePool,
     endpoint: Option<Arc<RegistrationEndpoint>>,
-    mut req: Request,
+    req: Request,
 ) -> Response {
     let Some(endpoint) = endpoint else {
         return reply(Err(RegistrationError::Unavailable));
     };
-    // Admit before reading the body or performing password work. The public router has no enabled configuration.
+    // Admit before reading the body or performing password work.
     {
         let Ok(mut window) = endpoint.window.lock() else {
             return reply(Err(RegistrationError::Unavailable));
@@ -89,9 +91,6 @@ async fn submit(
         }
         window.1 += 1;
     }
-    let Some(evidence) = req.extensions_mut().remove::<Arc<AcceptedRegistration>>() else {
-        return reply(Err(RegistrationError::Unavailable));
-    };
     if !req
         .headers()
         .get(header::CONTENT_TYPE)
@@ -110,32 +109,22 @@ async fn submit(
     let Ok(body) = serde_json::from_slice::<RegistrationBody>(&bytes) else {
         return invalid_request();
     };
-    if evidence.email != body.email
-        || evidence.phone != body.phone
-        || evidence.username != body.username
-    {
-        return reply(Err(RegistrationError::InvalidInput));
-    }
     let input = Registration {
         email: &body.email,
         phone: &body.phone,
         username: &body.username,
-        first_name: &evidence.first_name,
-        last_name: &evidence.last_name,
-        country_code: &evidence.country_code,
-        terms_version: &evidence.terms_version,
-        privacy_version: &evidence.privacy_version,
-        accepted_at_unix: evidence.accepted_at_unix,
-    };
-    let notices = NoticeVersions {
-        terms: &endpoint.settings.terms_version,
-        privacy: &endpoint.settings.privacy_version,
+        first_name: &body.first_name,
+        last_name: &body.last_name,
+        country_code: &body.country_code,
+        terms_version: &body.terms_version,
+        privacy_version: &body.privacy_version,
+        accept_terms: body.accept_terms,
+        acknowledge_privacy_notice: body.acknowledge_privacy_notice,
     };
     reply(
         register(
             &PgRegistrationRepository(pool),
             endpoint.settings.passwords.as_ref(),
-            &notices,
             &input,
             &body.password,
         )

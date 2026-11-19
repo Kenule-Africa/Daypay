@@ -76,7 +76,7 @@ Backend engineering owns these P0 foundations. Task 001 supplies ordered migrati
 
 | Task ID | Roadmap task | Status |
 |---|---|---|
-| IMP-P3-001 | Registration. | Blocked |
+| IMP-P3-001 | Registration. | In review |
 | IMP-P3-002 | Email verification. | Backlog |
 | IMP-P3-003 | Phone verification. | Backlog |
 | IMP-P3-004 | Password hashing. | Backlog |

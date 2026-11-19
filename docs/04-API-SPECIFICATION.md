@@ -689,10 +689,17 @@ Public.
 
 ```json
 {
-  "email": "customer@example.com",
+  "first_name": "Ada",
+  "last_name": "Okafor",
+  "email": "ada@example.com",
   "phone": "+2348012345678",
-  "password": "user-supplied-secret",
-  "username": "exampleuser"
+  "country_code": "NG",
+  "username": "adaokafor",
+  "password": "A1!xxx",
+  "terms_version": "1.0",
+  "privacy_version": "1.0",
+  "accept_terms": true,
+  "acknowledge_privacy_notice": true
 }
 ```
 
@@ -704,7 +711,13 @@ HTTP 202 for a valid submission, replay or conflict with an existing identity or
 {"data": {}}
 ```
 
-The public request retains the four fields above. Registration requires trusted first name, last name, country and explicit acceptance of both current notices bound to the same submission. Public registration remains disabled (HTTP 503) pending reconciliation of evidence capture and production approvals.
+All eleven fields are required. The example uses the sandbox drafts. Require two independently selected booleans equal to true and the exact active versions. DEYPAY generates the acceptance time and correlation ID. Unknown fields, including a client timestamp, return 400. Invalid field values, stale versions or a declined acknowledgement return 422. Rate limiting returns 429. An inactive release, unavailable mandatory screening, or disabled registration returns 503. DEYPAY creates an unverified customer and queues verification. The acknowledgement contains no identity, credentials or session cookie.
+
+### Registration legal documents
+
+`GET /api/v1/legal/documents` returns `data.scope` and an ordered `data.documents` array for the current registration release. The identifiers are DEP-LEG-001 (Terms), DEP-LEG-002 (Privacy) and DEP-LEG-003 (checkbox wording). Each entry includes `document_id`, `title`, `version`, `status`, `sha256` and a version-specific `url`. Clients display the sandbox label when `status` is `sandbox_draft`. Present separate, initially unchecked Terms and Privacy controls with links to those revisions. Optional marketing is a separate choice outside this request.
+
+`GET /api/v1/legal/documents/{document_id}/{version}` returns the referenced UTF-8 Markdown bytes, with `X-Deypay-Legal-Status` and `Cache-Control: no-store`. A digest covers exactly those bytes. Versions remain available within their release scope after a current release is replaced. Unknown revisions and the internal DEP-LEG-004 evidence specification return 404. Production lists only formally published releases. An empty list means there is no current release, and a registry outage returns 503.
 
 ## 13.2 Registration Rules
 

@@ -10,7 +10,7 @@ impl RegistrationRepository for PgRegistrationRepository {
         password_hash: &str,
     ) -> Result<(), RegistrationError> {
         // No existing customer identifier crosses this boundary on a replay or collision.
-        sqlx::query("SELECT identity.register_customer($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)")
+        sqlx::query("SELECT identity.register_customer($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)")
             .bind(input.email.trim())
             .bind(input.phone)
             .bind(input.username)
@@ -20,10 +20,16 @@ impl RegistrationRepository for PgRegistrationRepository {
             .bind(input.country_code)
             .bind(input.terms_version)
             .bind(input.privacy_version)
-            .bind(input.accepted_at_unix)
+            .bind(input.accept_terms)
+            .bind(input.acknowledge_privacy_notice)
             .execute(&self.0)
             .await
-            .map_err(|_| RegistrationError::Unavailable)?;
+            .map_err(
+                |error| match error.as_database_error().and_then(|e| e.code()).as_deref() {
+                    Some("DP422") => RegistrationError::InvalidInput,
+                    _ => RegistrationError::Unavailable,
+                },
+            )?;
         Ok(())
     }
 }

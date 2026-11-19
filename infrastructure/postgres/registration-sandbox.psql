@@ -1,0 +1,5 @@
+-- Initial opt-in only. Reapplying setup preserves any later active release.
+INSERT INTO customers.current_registration_release(scope,release_id)
+    SELECT scope,id FROM customers.registration_legal_releases
+    WHERE scope='sandbox' AND terms_version='1.0' AND privacy_version='1.0'
+ON CONFLICT (scope) DO NOTHING;

@@ -13,7 +13,7 @@ function serviceBinary(service) {
 }
 
 function runtimeEnvironment(databaseUrl) {
-  const env = { ...process.env, APP_ENV: "test", DATABASE_URL: databaseUrl, LOG_LEVEL: "info" };
+  const env = { ...process.env, APP_ENV: "test", DATABASE_URL: databaseUrl, LOG_LEVEL: "info", DEYPAY_REGISTRATION_MODE: "off" };
   delete env.POSTGRES_PASSWORD;
   delete env.DEYPAY_DB_PASSWORD;
   return env;
@@ -70,7 +70,9 @@ async function checkApi(t, databaseUrl, expectedStatus) {
   const registration = await fetch(origin + "/api/v1/auth/register", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email: "smoke@example.test", phone: "+2348012345678", username: "smoke", password }),
+    body: JSON.stringify({ first_name: "Smoke", last_name: "Test", country_code: "NG",
+      email: "smoke@example.test", phone: "+2348012345678", username: "smoke", password,
+      terms_version: "1.0", privacy_version: "1.0", accept_terms: true, acknowledge_privacy_notice: true }),
   });
   assert.equal(registration.status, 503);
   assert.equal(registration.headers.get("cache-control"), "no-store");

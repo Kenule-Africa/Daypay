@@ -2,16 +2,17 @@
 
 ## Current state
 
-- **Verified commit:** `02fda26633b38946f1bb4d15d0ad86cee0a57656`.
+- **Phase 1 and 2 CI revision:** `02fda26633b38946f1bb4d15d0ad86cee0a57656`.
 - **Successful verification:** [GitHub Actions run 44344981832](https://github.com/Kenule-Africa/Daypay/actions/runs/44344981832).
 - **Completed phases:** Phase 1 — Project Foundation and Infrastructure; Phase 2 — Database and Domain Foundations.
-- **Current batch:** `IMP-P3-001` registration (Blocked) and `IMP-P3-009` username uniqueness (In testing), uncommitted against `c2fb966`.
-- The public binary returns HTTP 503 for registration. In sandbox composition the four-field route requires trusted, submission-bound profile and consent evidence, applies password screening and acknowledges new registrations, replays and reserved names with HTTP 202.
-- PostgreSQL writes the contact-unverified identity, canonical username, credential, profile, immutable consent, audit and two verification intents atomically. Email and phone delivery belong to the subsequent verification tasks.
+- The preceding registration batch is committed at `8f125eb`. The legal integration is a local working-tree change under `IMP-P3-001`, now In review.
+- API §13 defines the eleven-field form and versioned legal links. Enable sandbox registration explicitly in both the database and local/test API. See [sandbox setup](../../README.md#sandbox-registration). Staging and production registration remain closed.
+- A successful submission creates one unverified customer with a profile, username, credential, immutable acceptance evidence, a correlated audit event and two verification intents. DEYPAY manages the identity. Wallets, sessions and financial activation remain downstream.
 
 ## Verified evidence
 
-- This Phase 3 working tree passed the locked build, all-target Clippy and 22 Rust tests. The live Windows smoke rerun passed all three applicable checks. Full commands, the earlier readiness failure and the platform skip are in [PROGRESS.md](PROGRESS.md).
+- The legal integration passed 28 Rust tests, including 21 on disposable PostgreSQL and an executable sandbox/production test. Formatting, locked Clippy, build and the applicable live smoke checks passed locally. See [current verification](PROGRESS.md).
+- The preceding Phase 3 registration batch passed the locked build, all-target Clippy and 22 Rust tests. The live Windows smoke rerun passed all three applicable checks. Full commands, the earlier readiness failure and the platform skip are in [PROGRESS.md](PROGRESS.md).
 - The earlier Phase 1 and 2 backend and frontend jobs passed on Ubuntu 24.04 at `02fda26`.
 - Backend CI passed formatting, locked workspace Clippy, build, workspace tests, local environment/tracking checks, Compose PostgreSQL provisioning, API/worker health and outage tests, and the PostgreSQL persistence test suite.
 - Frontend CI passed `npm ci`, lint, build, typecheck and Node tests.
@@ -27,4 +28,4 @@
 
 ## Next action
 
-The local PostgreSQL and real Argon2id verification passed. Review the registration changes and supply the approved production reserved-name catalog. See [test evidence](PROGRESS.md) and [release gates](BLOCKERS.md). Product and Legal must reconcile capture of FRS §8 evidence with the four-field API. Security must approve the password, screening and abuse controls before public activation. The following roadmap feature is `IMP-P3-002` email verification.
+Review the sandbox integration and [test evidence](PROGRESS.md). The next roadmap task is `IMP-P3-002`, email verification. Legal must resolve the operating entity, eligible jurisdictions, age wording and final publication. Security must approve the password and screening settings, HTTPS and abuse controls. The production reserved-name catalog also remains open. See [release gates](BLOCKERS.md).

@@ -32,6 +32,22 @@ Migrations are forward-only. On a populated database, recover by a reviewed corr
 
 For the Rust integration suite, point `DATABASE_URL` at a dedicated disposable PostgreSQL instance with a database-creating test administrator and the restricted `deypay_app` role. From `backend/`, run `cargo test --locked -p deypay-infrastructure --features postgres-tests --test persistence`. SQLx creates a new database per test. Fixtures contain synthetic identities and asset precision. Production registry rows, address assignment policy, encryption/key management, retention policy and financial execution await their respective approvals.
 
+## Sandbox registration
+
+Use a local or test API and a disposable database. After migrating and applying the two runtime grant scripts above, run `psql -X -v ON_ERROR_STOP=1 -1 -f ../infrastructure/postgres/registration-sandbox.psql` as the migration owner from `backend/`. This selects the three customer-facing v1.0 drafts for that database. The application role can read the catalog and call the fixed registration operation.
+
+Launch the API with its runtime database URL, `APP_ENV=local`, `DEYPAY_REGISTRATION_MODE=sandbox`, and these screening settings. Keep the fixture and settings outside Git.
+
+| Variable | Sandbox value |
+|---|---|
+| `DEYPAY_SCREENING_FILE` | Local UTF-8 password-compromise dataset, one 64-hex-digit SHA-256 password digest per line. Use synthetic credentials in development. |
+| `DEYPAY_SCREENING_SHA256` | Trusted SHA-256 of the complete file, supplied independently of the file. |
+| `DEYPAY_SCREENING_VALID_UNTIL_UNIX` | Trusted expiry in Unix seconds. Missing, corrupt and expired datasets fail closed. |
+
+Sandbox Argon2id defaults to 19,456 KiB, two iterations, one lane and two concurrent hashes. Operators can set `DEYPAY_ARGON2_MEMORY_KIB`, `DEYPAY_ARGON2_ITERATIONS`, `DEYPAY_ARGON2_LANES`, `DEYPAY_HASH_CONCURRENCY` and `DEYPAY_REGISTRATION_ATTEMPTS_PER_MINUTE` (default 30). The mode defaults to off. Staging and production keep registration disabled regardless of the sandbox settings.
+
+Use `GET /api/v1/legal/documents` to discover the current versions and exact Markdown links, then submit the request in [API §13](docs/04-API-SPECIFICATION.md#13-user-registration-apis). To verify the packaged API, run `cargo test --locked --workspace --features postgres-tests` against disposable PostgreSQL with Node available. The SQLx suite starts the binary with an isolated sandbox dataset and exercises the production gate.
+
 ## Verification
 
 From `backend/`, run `cargo fmt --all -- --check`, `cargo clippy --locked --workspace --all-targets -- -D warnings`, `cargo build --locked --workspace` and `cargo test --locked --workspace`. After building the binaries and starting the development database, run `node --env-file=.env --test scripts/backend-health.test.mjs` from the repository root. This covers API liveness and readiness, worker startup failure on a database outage and, on POSIX, graceful worker shutdown on SIGTERM. On Windows, stop the connected worker with Ctrl+C and check for the shutdown log and a zero exit code.

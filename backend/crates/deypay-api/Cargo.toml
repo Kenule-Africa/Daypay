@@ -9,6 +9,7 @@ description = "HTTP entry point for the DEYPAY API."
 workspace = true
 
 [dependencies]
+percent-encoding = "2"
 serde.workspace = true
 serde_json.workspace = true
 deypay-application = { path = "../deypay-application" }

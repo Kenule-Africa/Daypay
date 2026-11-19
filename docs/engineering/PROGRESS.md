@@ -1,5 +1,16 @@
 # Engineering progress
 
+## 2026-11-19 · Registration and legal evidence (IMP-P3-001)
+
+Starting revision `8f125eb` contains the previous registration batch. This working tree replaces four-field registration with the approved eleven-field contract. The real sandbox binary accepts explicit Terms acceptance and Privacy acknowledgement with the configured screening dataset. DEYPAY retains customer identity and KYC ownership.
+
+Migration `202611190001` preserves legacy consent rows and snapshots all four supplied v1.0 drafts as immutable UTF-8/LF content. Only DEP-LEG-001–003 are customer-facing. New registrations bind the customer, both affirmative actions, the Terms, Privacy and wording revisions, database time, channel and audit correlation in one transaction. Existing records receive no invented evidence. Production legal and security approvals are tracked in [BLOCKERS.md](BLOCKERS.md).
+
+- Local Windows/MSVC and disposable PostgreSQL 18.7 passed `cargo fmt --all -- --check`, `cargo clippy --locked --workspace --all-targets --features postgres-tests -- -D warnings`, and `cargo build --locked --workspace`.
+- `cargo test --locked --workspace --features postgres-tests -- --test-threads=2` passed 28 tests: seven unit tests and 21 PostgreSQL tests. These include a real API process with the runtime database role and a checksum-validated screening file. The tests checked draft isolation, synthetic publication, exact document bytes, required fields, duplicate/concurrent claims, failure rollback and a populated legacy upgrade.
+- All 13 registration HTTP and persistence tests passed again after the sandbox setup change, including a check that rerunning setup preserves the active legal release.
+- `node --test scripts/backend-health.test.mjs` passed three live checks. Windows skipped its POSIX worker shutdown check. `node --test scripts/engineering-tracking.test.mjs scripts/local-environment.test.mjs` passed all three checks. This evidence is local to the working tree.
+
 ## 2026-11-18 · Phase 3 registration and usernames
 
 Working tree based on `c2fb966`. `IMP-P3-001` remains Blocked and `IMP-P3-009` is In testing. The API and use case take no financial action and issue no session. Verification messages are queued as transactional intents. The [decision register](DECISIONS.md) records the four-field contract, uniform 202 response and provisional password policy.
