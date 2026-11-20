@@ -1,5 +1,13 @@
 # Engineering progress
 
+## 2026-11-20 · MVP contact verification
+
+Baseline `dfa9368`. Registration requires the existing eleven fields, stores the E.164 phone number and queues only email verification. Migration `202611200001` advances initial contact states on confirmed email. It also reconciles legacy contact states against the recorded email proof, including returning a contact-only account to `CONTACT_UNVERIFIED` if its email was never confirmed. Each correction is audited. Historical phone intents, both proof timestamps, and KYC or restricted states are preserved. DEYPAY continues to evaluate KYC and financial eligibility separately.
+
+- Local Windows checks passed on the working tree: `cargo fmt --all -- --check`, `cargo clippy --locked --workspace --all-targets --features postgres-tests -- -D warnings`, and `cargo build --locked --workspace`.
+- `cargo test --locked --workspace --features postgres-tests -- --test-threads=2` passed all 36 tests, including 27 on disposable PostgreSQL 18.7. The HTTP tests rejected missing and malformed phones. Concurrent registration queued one email intent. Concurrent confirmation consumed the proof once and left the phone unverified, with no session, KYC case, wallet or transaction. The populated upgrade preserved the historical phone intent through repeated dispatcher polling and audited three legacy contact-state corrections.
+- The backend health, engineering tracking and local environment Node suites passed all six applicable checks. Windows skipped the POSIX worker SIGTERM check. Hosted Resend delivery and confirmation remain open under `IMP-P3-002`.
+
 ## Email verification (IMP-P3-002)
 
 Based on committed registration revision `f374463`. The API implements the two §14 verification routes. The worker converts committed email intents into leased jobs, signs a destination-bound proof with a worker-only key and retries the same message under its original Resend idempotency key. Confirmation atomically records the email verification timestamp and audit event.

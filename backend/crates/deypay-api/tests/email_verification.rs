@@ -114,6 +114,10 @@ async fn age_requests(pool: &PgPool) -> sqlx::Result<()> {
 async fn registration_delivery_then_concurrent_confirmation(pool: PgPool) -> sqlx::Result<()> {
     let (app, worker_db) = setup(&pool).await?;
     register(&pool, "ada@example.test", "ada").await?;
+    let intents: Vec<String> = sqlx::query_scalar(
+        "SELECT event_type FROM integrations.outbox_events WHERE aggregate_id=(SELECT id FROM identity.users WHERE email='ada@example.test')",
+    ).fetch_all(&pool).await?;
+    assert_eq!(intents, ["EMAIL_VERIFICATION_REQUESTED"]);
     sqlx::query("SELECT integrations.dispatch_verification_email(5)")
         .execute(&worker_db)
         .await?;
@@ -138,7 +142,7 @@ async fn registration_delivery_then_concurrent_confirmation(pool: PgPool) -> sql
     let (a, b) = tokio::join!(verify(&app, bearer), verify(&app, bearer));
     assert!([a, b].contains(&StatusCode::OK) && [a, b].contains(&StatusCode::UNPROCESSABLE_ENTITY));
     assert_eq!(verify(&app, bearer).await, StatusCode::UNPROCESSABLE_ENTITY);
-    assert!(sqlx::query_scalar::<_,bool>("SELECT email_verified_at IS NOT NULL AND phone_verified_at IS NULL AND status='CONTACT_UNVERIFIED'
+    assert!(sqlx::query_scalar::<_,bool>("SELECT email_verified_at IS NOT NULL AND phone_e164='+2348012345678' AND phone_verified_at IS NULL AND status='CONTACT_VERIFIED'
       AND NOT EXISTS(SELECT FROM identity.sessions) AND NOT EXISTS(SELECT FROM wallets.wallet_profiles)
       AND NOT EXISTS(SELECT FROM payments.transactions) AND NOT EXISTS(SELECT FROM compliance.kyc_cases)
       AND (SELECT count(*) FROM audit.audit_events WHERE action='EMAIL_VERIFIED')=1 FROM identity.users").fetch_one(&pool).await?);

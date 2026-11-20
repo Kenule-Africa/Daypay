@@ -218,7 +218,9 @@ Establish security, monitoring, reconciliation, incident response and operationa
 | Capability | MVP Scope |
 |---|---|
 | Customer registration | Included |
-| Email and phone verification | Included |
+| Email verification | Required for MVP contact verification |
+| Phone number collection | Required at registration |
+| Phone OTP and verification | Deferred — Post-MVP |
 | Authentication and sessions | Included |
 | Unique username | Included |
 | KYC | Included |
@@ -959,6 +961,8 @@ Implement secure customer identity and access.
 
 **IMP-P3-003:** Phone verification.
 
+Deferred — Post-MVP by product owner decision. Phase 3 registration still requires an E.164 phone number. Email confirmation satisfies the contact requirement. Continue the MVP sequence with IMP-P3-004.
+
 **IMP-P3-004:** Password hashing.
 
 **IMP-P3-005:** Login.
@@ -989,6 +993,8 @@ Implement secure customer identity and access.
 ## Exit Criteria
 
 Customers can register and authenticate securely, and unauthorized requests are rejected.
+
+MVP acceptance requires email confirmation while the collected phone remains unverified. Phone OTP is outside the MVP exit criteria. KYC and financial eligibility retain their own gates.
 
 ---
 
@@ -1954,6 +1960,7 @@ Each implementation task must contain:
 - In review.
 - In testing.
 - Blocked.
+- Deferred — Post-MVP.
 - Completed.
 
 ## 37.4 Dependency Tracking

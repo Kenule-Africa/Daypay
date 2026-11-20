@@ -135,6 +135,15 @@ async fn public_signup_is_unverified_and_non_enumerating(pool: PgPool) -> sqlx::
         ),
         ("CONTACT_UNVERIFIED", "Ada", "Okafor", "NG")
     );
+    assert!(
+        sqlx::query_scalar::<_, bool>(
+            "SELECT phone_e164='+2348012345678' AND phone_verified_at IS NULL
+             AND ARRAY(SELECT event_type FROM integrations.outbox_events WHERE aggregate_id=u.id)
+                 = ARRAY['EMAIL_VERIFICATION_REQUESTED'] FROM identity.users u",
+        )
+        .fetch_one(&pool)
+        .await?
+    );
     assert_eq!(
         sqlx::query_scalar::<_, i64>(
             "SELECT count(*) FROM customers.registration_consent_evidence"
@@ -153,6 +162,7 @@ async fn required_fields_and_acknowledgements_are_enforced(pool: PgPool) -> sqlx
         "first_name",
         "last_name",
         "country_code",
+        "phone",
         "accept_terms",
         "acknowledge_privacy_notice",
         "terms_version",
@@ -174,6 +184,7 @@ async fn required_fields_and_acknowledgements_are_enforced(pool: PgPool) -> sqlx
         ("first_name", " ".into()),
         ("last_name", "".into()),
         ("country_code", "ng".into()),
+        ("phone", "08012345678".into()),
         ("password", "weak".into()),
     ] {
         let mut body = original.clone();

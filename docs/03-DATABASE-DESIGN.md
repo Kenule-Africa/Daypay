@@ -410,7 +410,8 @@ Constraints:
 - Primary key on id.
 - Unique normalized email where applicable.
 - Unique verified phone according to approved policy.
-- Controlled account status.
+- MVP registration supplies `phone_e164` and leaves `phone_verified_at` NULL.
+- Controlled account status. `CONTACT_VERIFIED` requires a non-NULL `email_verified_at`. Confirming email advances accounts in either initial contact state.
 - Valid timestamp relationships.
 
 ## 8.2 identity.password_credentials
@@ -1386,6 +1387,8 @@ Where unavailable, use an approved event identity strategy.
 Payload hashes alone may not be sufficient for all event types.
 
 ## 23.3 integrations.outbox_events
+
+MVP registration writes one `EMAIL_VERIFICATION_REQUESTED` intent in the signup transaction. The database rejects new `PHONE_VERIFICATION_REQUESTED` rows. Historical phone intents retain their original state, and the email dispatcher ignores them.
 
 | Column | Type |
 |---|---|

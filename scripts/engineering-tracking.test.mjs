@@ -23,7 +23,7 @@ test("each phase tracks the roadmap's tasks in order, with their original titles
     const location = `Phase ${sourceHeading[2]}`;
     assert.deepEqual(rows.map(m => [m[1], m[2]]), planned.map(m => [m[1], m[2]]), location);
     for (const row of rows) {
-      assert.match(row[3], /^(Backlog|Ready|In progress|In review|In testing|Blocked|Completed)$/, row[1]);
+      assert.match(row[3], /^(Backlog|Ready|In progress|In review|In testing|Blocked|Deferred — Post-MVP|Completed)$/, row[1]);
     }
 
     if (planned.length === 0) {

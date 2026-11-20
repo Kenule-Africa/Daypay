@@ -722,11 +722,11 @@ All eleven fields are required. The example uses the sandbox drafts. Require two
 ## 13.2 Registration Rules
 
 - Email must be normalized.
-- Phone must use E.164 format.
+- The required phone must use E.164 format. Registration stores it with `phone_verified_at` NULL and queues only `EMAIL_VERIFICATION_REQUESTED`.
 - Username must be available.
 - Password must satisfy security policy.
 - Duplicate verified identity rules must be enforced.
-- Customer financial activity must remain disabled until required verification is complete.
+- Financial activity requires separate KYC approval and eligibility checks after contact verification.
 
 ## 13.3 Registration Atomicity
 
@@ -765,11 +765,13 @@ Authenticated session or additional verification challenge.
 
 `POST /api/v1/auth/verify-email`
 
-Submit `{"token":"<selector>.<secret>"}` as JSON. The email points to the configured application origin at `/verify-email#<token>`. Opening the link displays a confirmation button. Selecting it submits the token in the request body. The browser removes the fragment from its history entry. A successful submission returns HTTP 200 with `{"data":{}}` and records only the customer's email verification. Expired, incorrect, exhausted, superseded and consumed tokens return the same 422 response. A malformed JSON contract returns 400, admission limits return 429 and unavailable verification returns 503. Responses use `Cache-Control: no-store`.
+Email is the sole MVP contact-verification requirement. Consuming a valid proof atomically records `email_verified_at` and advances an account in its initial contact state to `CONTACT_VERIFIED`. DEYPAY evaluates KYC and financial eligibility separately.
+
+Submit `{"token":"<selector>.<secret>"}` as JSON. The email points to the configured application origin at `/verify-email#<token>`. Opening the link displays a confirmation button. Selecting it submits the token in the request body. The browser removes the fragment from its history entry. A successful submission returns HTTP 200 with `{"data":{}}`. Expired, incorrect, exhausted, superseded and consumed tokens return the same 422 response. A malformed JSON contract returns 400, admission limits return 429 and unavailable verification returns 503. Responses use `Cache-Control: no-store`.
 
 ## 14.5 Verify Phone
 
-`POST /api/v1/auth/verify-phone`
+`POST /api/v1/auth/verify-phone` is reserved for post-MVP implementation. MVP clients collect the phone number at registration and prompt only for email verification.
 
 ## 14.6 Resend Verification
 
@@ -865,7 +867,7 @@ Recipient resolution must not expose:
 
 ## 16.5 Phone Discovery
 
-Phone-based recipient discovery must respect the recipient's discoverability preference and anti-enumeration controls.
+Phone-based recipient discovery requires a verified phone, the recipient's discoverability preference and anti-enumeration controls. A phone collected at MVP signup remains ineligible while unverified.
 
 ## 16.6 Username Changes
 

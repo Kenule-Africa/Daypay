@@ -602,6 +602,8 @@ Security-relevant events must be recorded.
 
 Verification codes must expire and be rate-limited.
 
+Email is the required MVP contact proof. DEYPAY validates and stores the supplied phone number at registration. Ownership of that number requires a separate proof in a future release. An unverified phone is ineligible as an authentication or recovery factor. DEYPAY owns authentication and KYC. Financial authorization also requires the applicable KYC, eligibility and transaction controls.
+
 ## SEC-AUTH-008 — Account Enumeration
 
 Authentication responses must avoid unnecessarily revealing whether a customer account exists.

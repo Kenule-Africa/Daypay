@@ -92,6 +92,80 @@ async fn migration_preserves_existing_consent_without_fabricating_evidence(
     Ok(())
 }
 
+#[sqlx::test(migrations = false)]
+async fn mvp_upgrade_preserves_phone_history_and_progresses_only_verified_contacts(
+    pool: PgPool,
+) -> sqlx::Result<()> {
+    let version = 202611200001;
+    for migration in MIGRATOR.iter().filter(|m| m.version < version) {
+        sqlx::raw_sql(&migration.sql).execute(&pool).await?;
+    }
+    let repo = sandbox(&pool).await?;
+    register(
+        &repo,
+        &FixturePasswords,
+        &request("old@example.test", "old"),
+        "accepted fixture secret",
+    )
+    .await
+    .unwrap();
+    let mut tx = pool.begin().await?;
+    sqlx::raw_sql("UPDATE identity.users SET email_verified_at=now() WHERE email='old@example.test';
+        INSERT INTO identity.users(email,status,email_verified_at)
+        VALUES ('registered@example.test','REGISTERED',now()), ('risk@example.test','SUSPENDED',now()),
+               ('kyc@example.test','KYC_PENDING',now()), ('waiting@example.test','CONTACT_UNVERIFIED',NULL);
+        INSERT INTO identity.users(email,status,phone_e164,phone_verified_at)
+        VALUES ('phoneonly@example.test','CONTACT_VERIFIED','+2348012349999',now());
+        CREATE TEMP TABLE previous_contacts ON COMMIT DROP AS SELECT * FROM identity.users;
+        CREATE TEMP TABLE previous_phone_events ON COMMIT DROP AS
+            SELECT * FROM integrations.outbox_events WHERE event_type='PHONE_VERIFICATION_REQUESTED';")
+        .execute(&mut *tx).await?;
+    let mvp = MIGRATOR.iter().find(|m| m.version == version).unwrap();
+    sqlx::raw_sql(&mvp.sql).execute(&mut *tx).await?;
+    assert!(sqlx::query_scalar::<_,bool>("SELECT bool_and(
+        u.email_verified_at IS NOT DISTINCT FROM p.email_verified_at AND
+        u.phone_e164 IS NOT DISTINCT FROM p.phone_e164 AND u.phone_verified_at IS NOT DISTINCT FROM p.phone_verified_at AND
+        u.status=CASE WHEN p.email IN ('old@example.test','registered@example.test') THEN 'CONTACT_VERIFIED'
+                      WHEN p.email='phoneonly@example.test' THEN 'CONTACT_UNVERIFIED' ELSE p.status END)
+        FROM previous_contacts p JOIN identity.users u USING(id)").fetch_one(&mut *tx).await?);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM audit.audit_events WHERE action='MVP_CONTACT_STATUS_ALIGNED'"
+        )
+        .fetch_one(&mut *tx)
+        .await?,
+        3
+    );
+    // The second poll runs with only the historical phone intent still pending.
+    for _ in 0..2 {
+        sqlx::query("SELECT integrations.dispatch_verification_email(5)")
+            .execute(&mut *tx)
+            .await?;
+    }
+    assert!(sqlx::query_scalar::<_,bool>("SELECT count(*)=1 AND bool_and(to_jsonb(p)=to_jsonb(e))
+        AND NOT EXISTS(SELECT FROM integrations.jobs j JOIN previous_phone_events h ON j.outbox_event_id=h.id)
+        FROM previous_phone_events p JOIN integrations.outbox_events e USING(id)").fetch_one(&mut *tx).await?);
+    tx.commit().await?;
+    let unproven = sqlx::query(
+        "UPDATE identity.users SET status='CONTACT_VERIFIED' WHERE email='phoneonly@example.test'",
+    )
+    .execute(&pool)
+    .await
+    .unwrap_err();
+    assert_eq!(
+        unproven.as_database_error().and_then(|e| e.constraint()),
+        Some("mvp_contact_verified_requires_email")
+    );
+    let error = sqlx::query("INSERT INTO integrations.outbox_events(aggregate_type,aggregate_id,event_type,payload)
+        SELECT 'CUSTOMER',id,'PHONE_VERIFICATION_REQUESTED','{}' FROM identity.users WHERE email='old@example.test'")
+        .execute(&pool).await.unwrap_err();
+    assert_eq!(
+        error.as_database_error().and_then(|e| e.constraint()),
+        Some("mvp_phone_verification_deferred")
+    );
+    Ok(())
+}
+
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn restricted_runtime_can_register_without_access_to_secrets(
     pool: PgPool,
@@ -160,7 +234,7 @@ async fn registration_is_atomic_and_replay_safe(pool: PgPool) -> sqlx::Result<()
                 (SELECT count(*) FROM audit.audit_events),(SELECT count(*) FROM integrations.outbox_events),
                 (SELECT count(*) FROM identity.sessions)+(SELECT count(*) FROM wallets.wallet_profiles)+(SELECT count(*) FROM payments.transactions)"
     ).fetch_one(&pool).await?;
-    assert_eq!(counts, (1, 1, 1, 1, 1, 2, 0));
+    assert_eq!(counts, (1, 1, 1, 1, 1, 1, 0));
     let notices: (String, String) =
         sqlx::query_as("SELECT terms_version,privacy_version FROM customers.registration_consents")
             .fetch_one(&pool)
@@ -213,7 +287,7 @@ async fn registration_is_atomic_and_replay_safe(pool: PgPool) -> sqlx::Result<()
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
-async fn simultaneous_normalized_email_replays_enqueue_one_pair(pool: PgPool) -> sqlx::Result<()> {
+async fn simultaneous_normalized_email_replays_enqueue_one_email(pool: PgPool) -> sqlx::Result<()> {
     let repo = sandbox(&pool).await?;
     let one = request("One@Example.Test", "first");
     let two = request(" one@example.test ", "second");
@@ -225,7 +299,7 @@ async fn simultaneous_normalized_email_replays_enqueue_one_pair(pool: PgPool) ->
     assert_eq!((a, b), (Ok(()), Ok(())));
     let counts:(i64,i64,i64)=sqlx::query_as("SELECT (SELECT count(*) FROM identity.users),
         (SELECT count(*) FROM customers.usernames),(SELECT count(*) FROM integrations.outbox_events)").fetch_one(&pool).await?;
-    assert_eq!(counts, (1, 1, 2));
+    assert_eq!(counts, (1, 1, 1));
     Ok(())
 }
 
@@ -306,7 +380,7 @@ async fn invalid_requests_and_persistence_failures_leave_no_partial_identity(
         register(&repo, &FixturePasswords, &input, "weak").await,
         Err(RegistrationError::InvalidInput)
     );
-    sqlx::query("ALTER TABLE integrations.outbox_events ADD CHECK (event_type <> 'PHONE_VERIFICATION_REQUESTED')").execute(&pool).await?;
+    sqlx::query("ALTER TABLE integrations.outbox_events ADD CHECK (event_type <> 'EMAIL_VERIFICATION_REQUESTED')").execute(&pool).await?;
     assert_eq!(
         register(&repo, &FixturePasswords, &input, secret).await,
         Err(RegistrationError::Unavailable)

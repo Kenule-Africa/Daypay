@@ -78,7 +78,7 @@ Backend engineering owns these P0 foundations. Task 001 supplies ordered migrati
 |---|---|---|
 | IMP-P3-001 | Registration. | In review |
 | IMP-P3-002 | Email verification. | In testing |
-| IMP-P3-003 | Phone verification. | Backlog |
+| IMP-P3-003 | Phone verification. | Deferred — Post-MVP |
 | IMP-P3-004 | Password hashing. | Backlog |
 | IMP-P3-005 | Login. | Backlog |
 | IMP-P3-006 | Session management. | Backlog |

@@ -765,7 +765,7 @@ Verify username uniqueness.
 
 ## 14.4 Invalid Phone
 
-Verify phone validation.
+Reject a missing phone or invalid E.164 number. Verify that a valid number is stored with a NULL verification timestamp.
 
 ## 14.5 Weak Password
 
@@ -774,6 +774,8 @@ Verify password policy enforcement.
 ## 14.6 Verification Requirements
 
 Verify unverified users cannot perform restricted financial operations.
+
+For MVP, verify that registration queues exactly one email intent, concurrent confirmation advances contact status once, and the phone stays unverified. Check that historical phone intents remain undispatched and that email confirmation creates no KYC approval, session, wallet or transaction.
 
 ## 14.7 Wallet Profile Provisioning
 
@@ -795,7 +797,7 @@ Test:
 - Revoked session.
 - Password reset.
 - Email verification.
-- Phone verification.
+- Phone verification (post-MVP).
 - MFA.
 - Session rotation.
 - Account lock or risk restriction.

@@ -418,15 +418,15 @@ FR-REG-001: The system shall allow users to register with a valid email address.
 
 FR-REG-002: The system shall validate email uniqueness.
 
-FR-REG-003: The system shall support phone number verification.
+FR-REG-003: Registration shall require a valid E.164 phone number and store it as unverified. Phone ownership verification is deferred until after MVP.
 
 FR-REG-004: The system shall validate phone number uniqueness where required.
 
 FR-REG-005: The system shall securely hash passwords using an approved password hashing algorithm.
 
-FR-REG-006: The system shall send an email verification message.
+FR-REG-006: The system shall queue an email verification message at registration. Successful email confirmation satisfies the MVP contact-verification requirement.
 
-FR-REG-007: The system shall send an OTP or equivalent phone verification challenge.
+FR-REG-007 (post-MVP): The system shall support an OTP or equivalent phone verification challenge. MVP registration queues only the email verification intent.
 
 FR-REG-008: The system shall prevent financial transactions before required verification and KYC approval.
 
@@ -448,7 +448,7 @@ The system shall support:
 - Session management.
 - Device management.
 - Email verification.
-- Phone verification.
+- Phone verification (post-MVP).
 - Multi-factor authentication.
 - Secure transaction authorization.
 - Account recovery.
@@ -474,6 +474,8 @@ The system must support:
 
 Account status changes must be auditable.
 
+In the MVP, email confirmation moves a newly registered customer to CONTACT_VERIFIED. The phone verification timestamp stays empty until DEYPAY verifies ownership of that number. DEYPAY retains responsibility for authentication, KYC decisions and the separate eligibility checks required for financial activity.
+
 ---
 
 # 9. CUSTOMER PROFILES AND IDENTITY VERIFICATION
@@ -488,7 +490,7 @@ The profile may contain:
 - Full name.
 - Username.
 - Email.
-- Verified phone number.
+- Collected phone number and its verification status.
 - Date of birth.
 - Country.
 - Residential address.
@@ -966,6 +968,8 @@ Users may change usernames subject to availability, abuse controls and policy.
 
 Customers may optionally allow other users to find them using their verified phone number.
 
+A phone number collected at MVP registration is ineligible for discovery while it is unverified.
+
 Phone discoverability must be configurable.
 
 DEYPAY must protect phone numbers from unauthorized exposure.
@@ -1339,7 +1343,7 @@ Events include:
 
 - Registration.
 - Email verification.
-- Phone verification.
+- Phone verification (post-MVP).
 - KYC submission.
 - KYC approval.
 - KYC rejection.
@@ -2249,7 +2253,7 @@ POST /auth/refresh
 
 POST /auth/verify-email
 
-POST /auth/verify-phone
+POST /auth/verify-phone (post-MVP)
 
 POST /auth/forgot-password
 
@@ -2525,9 +2529,8 @@ The MVP shall not be considered functionally complete until the following workfl
 
 ## 40.1 Registration
 
-- A user can register.
-- Email verification works.
-- Phone verification works where required.
+- A user can register with a valid E.164 phone number.
+- Email confirmation completes contact verification while the stored phone remains unverified.
 - Account is created.
 - User can log in.
 - User can explore non-financial areas.
