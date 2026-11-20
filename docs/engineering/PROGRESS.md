@@ -1,5 +1,25 @@
 # Engineering progress
 
+## 2026-11-20 · MVP contact-verification acceptance
+
+Baseline commit `d29fbfdea482c8ad7d3b4426a2440e0b6c95ccc3` is the exact head of run [44744811033](https://github.com/Kenule-Africa/Daypay/actions/runs/44744811033). The run concluded successfully. Backend job `136317283655` passed setup, tracking and PostgreSQL provisioning, Rust formatting/workspace checks/build/tests, live HTTP/worker/outage checks and persistence checks. Frontend job `136317283809` passed `npm ci`, lint, build, typecheck and Node tests. The job metadata and runner logs confirm the exact checked SHA.
+
+**IMP-P3-001 acceptance verdict: technically accepted for the email-only MVP contact-verification change.**
+
+- Registration requires `phone` and validates a `+`-prefixed phone whose digits and length satisfy the E.164-shaped domain rule. Valid registration stores `phone_e164`; malformed or missing phones are rejected.
+- Registration queues only `EMAIL_VERIFICATION_REQUESTED` for a new customer.
+- Email confirmation sets `email_verified_at` and the `CONTACT_VERIFIED` status without changing `phone_verified_at`.
+- Migration `202611200001_mvp_contact_verification.sql` reconciles contact status from email proof, preserves phone proof timestamps and historical phone intent records, audits status corrections, rejects a contact-verified state without email proof, and rejects new phone-verification outbox events.
+- `mvp_upgrade_preserves_phone_history_and_progresses_only_verified_contacts` verifies migration replay behavior, historical phone intent preservation, audited legacy corrections and the constraints preventing unproven contact verification or new phone intents.
+- The HTTP and persistence regressions verify missing/malformed phones, email-only intent creation, one-time confirmation, an unchanged phone timestamp, and zero sessions, wallets, transactions and KYC cases at confirmation.
+- KYC, session, wallet and financial activation remain separate; the MVP verification does not enable those flows.
+
+This acceptance is technical only. It does not establish hosted Resend delivery or production registration approval.
+
+IMP-P3-002 remains In testing. Real Resend staging delivery and confirmation must still be verified.
+
+IMP-P3-003 is Deferred — Post-MVP. No phone OTP flow is part of this acceptance.
+
 ## 2026-11-20 · MVP contact verification
 
 Baseline `dfa9368`. Registration requires the existing eleven fields, stores the E.164 phone number and queues only email verification. Migration `202611200001` advances initial contact states on confirmed email. It also reconciles legacy contact states against the recorded email proof, including returning a contact-only account to `CONTACT_UNVERIFIED` if its email was never confirmed. Each correction is audited. Historical phone intents, both proof timestamps, and KYC or restricted states are preserved. DEYPAY continues to evaluate KYC and financial eligibility separately.

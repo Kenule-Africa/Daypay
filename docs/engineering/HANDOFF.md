@@ -2,17 +2,20 @@
 
 ## Current state
 
-- **Phase 1 and 2 CI revision:** `02fda26633b38946f1bb4d15d0ad86cee0a57656`.
-- **Successful verification:** [GitHub Actions run 44344981832](https://github.com/Kenule-Africa/Daypay/actions/runs/44344981832).
+- **Exact accepted baseline:** `d29fbfdea482c8ad7d3b4426a2440e0b6c95ccc3`.
+- **Successful verification:** [GitHub Actions run 44744811033](https://github.com/Kenule-Africa/Daypay/actions/runs/44744811033).
 - **Completed phases:** Phase 1 — Project Foundation and Infrastructure; Phase 2 — Database and Domain Foundations.
-- Registration and email verification are committed through `dfa9368`. Registration remains In review. Email verification remains In testing pending hosted delivery evidence.
-- API §13 defines the eleven-field form and versioned legal links. Enable sandbox registration explicitly in both the database and local/test API. See [sandbox setup](../../README.md#sandbox-registration). Staging and production registration remain closed.
-- MVP registration stores the required E.164 phone and queues one email verification intent. Email confirmation moves the customer to `CONTACT_VERIFIED`. The phone stays unverified. DEYPAY retains ownership of authentication and KYC, with separate eligibility and financial controls.
+- **IMP-P3-001:** Completed; the email-only MVP registration/contact-verification change is technically accepted.
+- **IMP-P3-002:** In testing; hosted Resend staging delivery and confirmation remain open.
+- **IMP-P3-003:** Deferred — Post-MVP.
+- API §13 defines the eleven-field form and versioned legal links. Sandbox registration remains explicitly enabled only for local/test. Staging and production registration remain closed.
+- MVP registration requires and stores the E.164 phone and queues only email verification. Email confirmation moves the customer to `CONTACT_VERIFIED`, sets `email_verified_at`, and leaves `phone_verified_at` unchanged. DEYPAY retains authentication and KYC ownership with separate eligibility and financial gates.
 
 ## Verified evidence
 
-- The MVP contact change passed formatting, locked Clippy and build, all 36 Rust tests (27 on disposable PostgreSQL 18.7), and six Node checks on Windows. The populated upgrade preserved the historical phone intent and both proof timestamps. The POSIX worker SIGTERM check was skipped on Windows. [Verification record](PROGRESS.md)
-- `IMP-P3-002` passed formatting, locked Clippy, build, all 35 Rust tests and six applicable Node checks locally. Twenty-six Rust tests used PostgreSQL 18.7. The worker SIGTERM smoke is POSIX-only. The task remains In testing pending a live staging send and confirmation. [Verification record](PROGRESS.md)
+- At baseline `d29fbfdea482c8ad7d3b4426a2440e0b6c95ccc3`, backend job `136317283655` and frontend job `136317283809` both succeeded. The backend run passed workspace formatting, locked Clippy/build/tests, disposable PostgreSQL, live HTTP/worker/outage and persistence checks. The frontend run passed npm install, lint, build, typecheck and Node tests.
+- Registration and email-confirmation regressions passed, including required/malformed phones, email-only outbox intent, `CONTACT_VERIFIED` with unchanged phone verification, historical phone evidence and no session, wallet, transaction or KYC activation.
+- `IMP-P3-002` remains In testing pending real staging delivery and confirmation. [Verification record](PROGRESS.md)
 
 - The legal integration passed 28 Rust tests, including 21 on disposable PostgreSQL and an executable sandbox/production test. Formatting, locked Clippy, build and the applicable live smoke checks passed locally. See [current verification](PROGRESS.md).
 - The preceding Phase 3 registration batch passed the locked build, all-target Clippy and 22 Rust tests. The live Windows smoke rerun passed all three applicable checks. Full commands, the earlier readiness failure and the platform skip are in [PROGRESS.md](PROGRESS.md).
