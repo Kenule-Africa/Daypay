@@ -1,0 +1,4 @@
+GRANT EXECUTE ON FUNCTION identity.admit_email_request(text,integer),
+    identity.request_verification_email(text,text,integer,integer),
+    identity.consume_verification_email(uuid,text,text,integer) TO deypay_app;
+   

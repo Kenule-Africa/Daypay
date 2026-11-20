@@ -27,6 +27,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
             get(|| async { health(StatusCode::OK, r#"{"status":"live"}"#) }),
         )
         .route("/health/ready", get(readiness))
+        .merge(deypay_api::email_verification::routes(
+            deypay_api::email_verification::Policy::from_env(settings.environment)?,
+        ))
         .merge(deypay_api::registration::routes(
             settings.environment,
             deypay_api::registration::RegistrationSettings::from_env(settings.environment)?,

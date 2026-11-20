@@ -5,11 +5,13 @@
 - **Phase 1 and 2 CI revision:** `02fda26633b38946f1bb4d15d0ad86cee0a57656`.
 - **Successful verification:** [GitHub Actions run 44344981832](https://github.com/Kenule-Africa/Daypay/actions/runs/44344981832).
 - **Completed phases:** Phase 1 — Project Foundation and Infrastructure; Phase 2 — Database and Domain Foundations.
-- The preceding registration batch is committed at `8f125eb`. The legal integration is a local working-tree change under `IMP-P3-001`, now In review.
+- Registration and its legal integration are committed through `f374463`. Registration remains In review. The working tree adds email verification under `IMP-P3-002`.
 - API §13 defines the eleven-field form and versioned legal links. Enable sandbox registration explicitly in both the database and local/test API. See [sandbox setup](../../README.md#sandbox-registration). Staging and production registration remain closed.
 - A successful submission creates one unverified customer with a profile, username, credential, immutable acceptance evidence, a correlated audit event and two verification intents. DEYPAY manages the identity. Wallets, sessions and financial activation remain downstream.
 
 ## Verified evidence
+
+- `IMP-P3-002` passed formatting, locked Clippy, build, all 35 Rust tests and six applicable Node checks locally. Twenty-six Rust tests used PostgreSQL 18.7. The worker SIGTERM smoke is POSIX-only. The task remains In testing pending a live staging send and confirmation. [Verification record](PROGRESS.md)
 
 - The legal integration passed 28 Rust tests, including 21 on disposable PostgreSQL and an executable sandbox/production test. Formatting, locked Clippy, build and the applicable live smoke checks passed locally. See [current verification](PROGRESS.md).
 - The preceding Phase 3 registration batch passed the locked build, all-target Clippy and 22 Rust tests. The live Windows smoke rerun passed all three applicable checks. Full commands, the earlier readiness failure and the platform skip are in [PROGRESS.md](PROGRESS.md).
@@ -23,9 +25,9 @@
 
 - Deposit-address provisioning and customer ownership remain downstream of `IMP-P6-007`/`IMP-P6-008`, and `IMP-P9-001`/`IMP-P9-002`.
 - Customer-isolation behavior must be re-verified through authenticated registration and wallet/deposit flows under `IMP-P3-001`–`IMP-P3-013`, `IMP-P6-004` and `IMP-P9-001`–`IMP-P9-004`.
-- Provider operation, webhook and durable-job foundations still require the later framework tasks `IMP-P8-001`–`IMP-P8-014`; account-specific provider capability evidence remains unverified.
+- The email worker handles verification delivery. General provider operations, webhook handling and durable polling remain with `IMP-P8-001`–`IMP-P8-014`. Financial provider capabilities still require written evidence.
 - Phase 0 approvals and live financial execution remain outside technical foundation completion.
 
 ## Next action
 
-Review the sandbox integration and [test evidence](PROGRESS.md). The next roadmap task is `IMP-P3-002`, email verification. Legal must resolve the operating entity, eligible jurisdictions, age wording and final publication. Security must approve the password and screening settings, HTTPS and abuse controls. The production reserved-name catalog also remains open. See [release gates](BLOCKERS.md).
+Review the email verification [test evidence](PROGRESS.md). Staging needs a verified Resend sending domain, scoped credentials, a dedicated worker login and the approved confirmation origin. The next roadmap task is `IMP-P3-003`, phone verification. Production registration and legal approvals remain open. See [release gates](BLOCKERS.md).

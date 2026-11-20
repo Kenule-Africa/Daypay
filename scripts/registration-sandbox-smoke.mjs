@@ -15,6 +15,7 @@ url.searchParams.set("options", "-c role=deypay_app");
 const dir = await mkdtemp(join(tmpdir(), "deypay-screening-"));
 const sha = data => createHash("sha256").update(data).digest("hex");
 const blocked = "Compromised-Test1!";
+const invalidVerificationToken = "00000000-0000-0000-0000-000000000001." + "ab".repeat(32);
 const body = { first_name: "Ada", last_name: "Okafor", country_code: "NG", username: "ada",
   email: "ada@example.test", phone: "+2348012345678", password: "Sandbox-Only1!",
   terms_version: "1.0", privacy_version: "1.0", accept_terms: true, acknowledge_privacy_notice: true };
@@ -28,7 +29,7 @@ async function check(environment) {
     DEYPAY_REGISTRATION_MODE: "sandbox", DEYPAY_SCREENING_FILE: file, DEYPAY_SCREENING_SHA256: sha(dataset),
     DEYPAY_SCREENING_VALID_UNTIL_UNIX: String(Math.floor(Date.now()/1000)+3600), DEYPAY_ARGON2_MEMORY_KIB: "32",
     DEYPAY_ARGON2_ITERATIONS: "2", DEYPAY_ARGON2_LANES: "1", DEYPAY_HASH_CONCURRENCY: "1",
-    DEYPAY_REGISTRATION_ATTEMPTS_PER_MINUTE: "10"
+    DEYPAY_REGISTRATION_ATTEMPTS_PER_MINUTE: "10", EMAIL_VERIFICATION_ENABLED: String(environment==="test")
   }});
   const closed = once(proc, "close");
   const lines = createInterface({input: proc.stdout});
@@ -70,6 +71,16 @@ async function check(environment) {
         assert.equal(res.headers.get("set-cookie"),null);
         assert.deepEqual(await res.json(),{data:{}});
       }
+      for (const [path, payload, status] of [
+        ["resend-verification", {email:body.email}, 202],
+        ["verify-email", {token:invalidVerificationToken}, 422],
+      ]) {
+        const result = await fetch(origin+"/api/v1/auth/"+path,{method:"POST",headers:{"content-type":"application/json"},
+          body:JSON.stringify(payload),signal:AbortSignal.timeout(30000)});
+        assert.equal(result.status,status);
+        const response = await result.text();
+        assert.ok(!response.includes(invalidVerificationToken) && !response.includes(body.email));
+      }
     }
   } finally {
     clearTimeout(timer);
@@ -77,7 +88,7 @@ async function check(environment) {
     await closed;
     lines.close();
   }
-  for (const secret of [blocked,body.password,body.email]) assert.ok(!output.join("\n").includes(secret),"Sensitive registration log");
+  for (const secret of [blocked,body.password,body.email,invalidVerificationToken]) assert.ok(!output.join("\n").includes(secret),"Sensitive authentication log");
 }
 
 try { await check("test"); await check("production"); }

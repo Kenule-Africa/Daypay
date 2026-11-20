@@ -765,6 +765,8 @@ Authenticated session or additional verification challenge.
 
 `POST /api/v1/auth/verify-email`
 
+Submit `{"token":"<selector>.<secret>"}` as JSON. The email points to the configured application origin at `/verify-email#<token>`. Opening the link displays a confirmation button. Selecting it submits the token in the request body. The browser removes the fragment from its history entry. A successful submission returns HTTP 200 with `{"data":{}}` and records only the customer's email verification. Expired, incorrect, exhausted, superseded and consumed tokens return the same 422 response. A malformed JSON contract returns 400, admission limits return 429 and unavailable verification returns 503. Responses use `Cache-Control: no-store`.
+
 ## 14.5 Verify Phone
 
 `POST /api/v1/auth/verify-phone`
@@ -772,6 +774,8 @@ Authenticated session or additional verification challenge.
 ## 14.6 Resend Verification
 
 `POST /api/v1/auth/resend-verification`
+
+For email verification submit `{"email":"customer@example.com"}`. Registration initiates the first email. A valid resend request returns HTTP 202 with `{"data":{}}` for known, unknown, already-verified and per-address throttled recipients. An eligible resend supersedes the previous link. Each endpoint also has a deployment-wide request limit.
 
 ## 14.7 Forgot Password
 

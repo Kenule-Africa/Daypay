@@ -1,6 +1,8 @@
 //! PostgreSQL repositories and external provider adapters.
 
 pub mod database;
+pub mod email_delivery;
+pub mod email_verification;
 pub mod events;
 pub mod legal;
 pub mod password_hashing;

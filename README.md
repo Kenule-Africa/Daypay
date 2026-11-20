@@ -53,3 +53,22 @@ Use `GET /api/v1/legal/documents` to discover the current versions and exact Mar
 From `backend/`, run `cargo fmt --all -- --check`, `cargo clippy --locked --workspace --all-targets -- -D warnings`, `cargo build --locked --workspace` and `cargo test --locked --workspace`. After building the binaries and starting the development database, run `node --env-file=.env --test scripts/backend-health.test.mjs` from the repository root. This covers API liveness and readiness, worker startup failure on a database outage and, on POSIX, graceful worker shutdown on SIGTERM. On Windows, stop the connected worker with Ctrl+C and check for the shutdown log and a zero exit code.
 
 From `frontend/`, run `npm run lint`, `npm run build`, `npm run typecheck` and `npm test`. The HTTP smoke test starts the built frontend with a controlled API to exercise available and unavailable states. From the root, run `node --test scripts/engineering-tracking.test.mjs scripts/local-environment.test.mjs` to verify the roadmap tracker, provider register and local credential setup.
+## Email verification
+
+The API and worker opt in with `EMAIL_VERIFICATION_ENABLED=true`. Registration keeps its own release gates. Local and test processes use sandbox consent records. Staging and production accept only identities with published registration evidence.
+
+After applying the SQLx migrations, apply `infrastructure/postgres/email-verification-api-grants.psql` as the database owner alongside the existing API grants. Provision a dedicated least-privilege worker login, then apply `infrastructure/postgres/email-verification-worker-grants.psql` with `psql -v worker_role=<worker-login>` in the application database. Give each process its own `DATABASE_URL`. The worker grants allow four delivery operations. Only the API can consume a verification proof.
+
+| Worker setting | Value |
+|---|---|
+| `EMAIL_PROVIDER` | `mock` in local/test, `resend` in staging/production. The mock retains the last message in process memory for tests. |
+| `EMAIL_FROM` | `DEYPAY <deypay@kenuleafrica.xyz>` for Resend. |
+| `RESEND_API_KEY` | Worker-only sending credential scoped to the verified sending domain. Supply through the deployment secret store. |
+| `EMAIL_VERIFY_TOKEN_KEY` | A server-generated, cryptographically random 32-byte key encoded as 64 hex characters. Keep it stable across workers and restarts. For planned rotation, drain live deliveries and let outstanding links expire. |
+| `EMAIL_VERIFY_BASE_URL` | The operator-approved absolute confirmation URL ending in `/verify-email`. HTTPS is required outside local/test. Local example: `http://127.0.0.1:8000/verify-email`. Route this path, `/verify-email.js` and the verification POST to the API on the same origin. |
+| `EMAIL_VERIFY_TTL_SECONDS` | Default 900. The worker starts the expiry clock on first claim. |
+| `EMAIL_TIMEOUT_SECONDS`, `EMAIL_MAX_ATTEMPTS`, `EMAIL_RETRY_BASE_SECONDS` | Defaults 10, 5 and 5. Backoff doubles to 900 seconds. A longer provider retry delay is respected while the link remains valid. |
+
+API defaults are 60 seconds between requests per address (`EMAIL_RESEND_COOLDOWN_SECONDS`), five emails per address per hour including the initial intent (`EMAIL_RESEND_LIMIT_PER_HOUR`), five incorrect proofs per challenge (`EMAIL_VERIFY_MAX_GUESSES`) and 120 requests per endpoint per minute across replicas (`EMAIL_VERIFY_REQUESTS_PER_MINUTE`).
+
+At deployment, verify the sender domain and leave link tracking disabled for verification mail. A provider acknowledgement records delivery submission. The only operation that verifies the address is the customer's confirmation POST. Monitor terminal `VERIFY_EMAIL` jobs by status and `last_error`. A customer can request a fresh message after a terminal failure and the resend cooldown.

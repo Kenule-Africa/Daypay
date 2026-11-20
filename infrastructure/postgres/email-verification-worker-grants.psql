@@ -1,0 +1,7 @@
+-- Apply as owner with the dedicated worker login supplied as a psql identifier variable.
+GRANT CONNECT ON DATABASE :"DBNAME" TO :"worker_role";
+GRANT USAGE ON SCHEMA integrations TO :"worker_role";
+GRANT EXECUTE ON FUNCTION integrations.dispatch_verification_email(integer),
+    integrations.claim_verification_email(text,integer,integer),
+    integrations.prepare_verification_email(uuid,uuid,text,text),
+    integrations.finish_verification_email(uuid,uuid,text,bigint,uuid) TO :"worker_role";

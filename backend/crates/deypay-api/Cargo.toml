@@ -20,6 +20,7 @@ tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+uuid.workspace = true
 tower = { version = "0.5", features = ["util"] }
 sqlx = { workspace = true, features = ["macros", "migrate"] }
 
@@ -28,4 +29,8 @@ postgres-tests = []
 
 [[test]]
 name = "registration_http"
+required-features = ["postgres-tests"]
+
+[[test]]
+name = "email_verification"
 required-features = ["postgres-tests"]

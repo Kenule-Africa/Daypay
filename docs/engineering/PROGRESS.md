@@ -1,5 +1,15 @@
 # Engineering progress
 
+## Email verification (IMP-P3-002)
+
+Based on committed registration revision `f374463`. The API implements the two §14 verification routes. The worker converts committed email intents into leased jobs, signs a destination-bound proof with a worker-only key and retries the same message under its original Resend idempotency key. Confirmation atomically records the email verification timestamp and audit event.
+
+Local Windows formatting and all three tracking/environment checks passed. An independent disposable PostgreSQL 18.7 run applied all ten migrations and verified registration, challenge issuance, durable acknowledgement with a provider receipt, successful consumption and replay rejection. Hosted sender verification, real delivery and existing production registration approvals remain open.
+
+- Final local checks passed: `cargo fmt --all -- --check`, `cargo clippy --locked --workspace --all-targets --features postgres-tests -- -D warnings`, and `cargo build --locked --workspace`. Initial formatting and Clippy checks caught in-progress edits to the tests and the delivery receipt signature. Both were rerun successfully on the reconciled source.
+- `cargo test --locked --workspace --features postgres-tests -- --test-threads=1` passed all 35 Rust tests. Of these, 26 used disposable PostgreSQL. All five email verification integration cases passed with separate restricted API and worker roles. They covered concurrent claims and consumption, expiry, address and customer binding, resend and guess limits, retry payload stability, worker recovery and unchanged financial/KYC state.
+- The Resend adapter passed its loopback HTTP contract test for success, malformed acknowledgement, retryable and permanent conflicts, rate limits, service failure, permission failure and redirects. The executable API smoke exercised verification with redacted responses and logs. The combined Node smoke/tracking/environment run passed six checks. Windows skipped the POSIX worker SIGTERM check.
+
 ## 2026-11-19 · Registration and legal evidence (IMP-P3-001)
 
 Starting revision `8f125eb` contains the previous registration batch. This working tree replaces four-field registration with the approved eleven-field contract. The real sandbox binary accepts explicit Terms acceptance and Privacy acknowledgement with the configured screening dataset. DEYPAY retains customer identity and KYC ownership.

@@ -20,6 +20,7 @@ Rust workspace: [`backend/Cargo.toml`](../../backend/Cargo.toml)
 
 - API entry point and current health routes: `backend/crates/deypay-api/src/main.rs`
 - Worker entry point: `backend/crates/deypay-worker/src/main.rs`
+- Email verification routes and confirmation page live in `deypay-api/src/email_verification.rs` and `verify_email.html`. Worker claims, protected proofs and delivery adapters live in `deypay-infrastructure/src/email_verification.rs` and `email_delivery.rs`. Migration `202611190002_email_verification.sql` binds outbox intents, leases and single-use confirmation to PostgreSQL.
 - Domain root: `backend/crates/deypay-domain/src/lib.rs`
 - Domain projections and exact units: `backend/crates/deypay-domain/src/`; repository contracts: `backend/crates/deypay-application/src/repositories.rs`; SQLx implementations: `backend/crates/deypay-infrastructure/src/repositories.rs`.
 - Transaction-bound outbox and audit writes: `backend/crates/deypay-application/src/events.rs` and `backend/crates/deypay-infrastructure/src/events.rs`.

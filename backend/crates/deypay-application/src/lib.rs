@@ -1,5 +1,6 @@
 //! Application use cases and transaction orchestration.
 
+pub mod email_verification;
 pub mod events;
 pub mod passwords;
 pub mod registration;

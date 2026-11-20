@@ -56,7 +56,7 @@ pub async fn register(
     repository.insert_unverified(request, &hash).await
 }
 
-fn valid_email(email: &str) -> bool {
+pub fn valid_email(email: &str) -> bool {
     let Some((local, domain)) = email.split_once('@') else {
         return false;
     };

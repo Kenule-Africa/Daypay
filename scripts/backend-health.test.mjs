@@ -13,7 +13,7 @@ function serviceBinary(service) {
 }
 
 function runtimeEnvironment(databaseUrl) {
-  const env = { ...process.env, APP_ENV: "test", DATABASE_URL: databaseUrl, LOG_LEVEL: "info", DEYPAY_REGISTRATION_MODE: "off" };
+  const env = { ...process.env, APP_ENV: "test", DATABASE_URL: databaseUrl, LOG_LEVEL: "info", DEYPAY_REGISTRATION_MODE: "off", EMAIL_VERIFICATION_ENABLED: "false" };
   delete env.POSTGRES_PASSWORD;
   delete env.DEYPAY_DB_PASSWORD;
   return env;
@@ -78,9 +78,18 @@ async function checkApi(t, databaseUrl, expectedStatus) {
   assert.equal(registration.headers.get("cache-control"), "no-store");
   assert.equal(registration.headers.get("set-cookie"), null);
   assert.equal((await registration.json()).error.code, "SERVICE_UNAVAILABLE");
+  const emailPage = await fetch(origin + "/verify-email");
+  assert.equal(emailPage.headers.get("referrer-policy"), "no-referrer");
+  assert.match(await emailPage.text(), /Verify email/);
+  const token = "synthetic-verification-secret";
+  const verification = await fetch(origin + "/api/v1/auth/verify-email", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token }),
+  });
+  assert.equal(verification.status, 503);
+  assert.ok(!(await verification.text()).includes(token));
   const output = Buffer.concat(stdout).toString().trim();
   const logs = output + Buffer.concat(stderr).toString();
-  assert.ok(!logs.includes(password) && !logs.includes("smoke@example.test"));
+  assert.ok(!logs.includes(password) && !logs.includes("smoke@example.test") && !logs.includes(token));
   checkLogCredentials(output, databaseUrl);
   checkLogCredentials(Buffer.concat(stderr).toString(), databaseUrl);
   const lines = output.split("\n");

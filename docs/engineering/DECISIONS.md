@@ -4,6 +4,7 @@
 
 | Topic | Current basis | Engineering consequence |
 |---|---|---|
+| Email verification delivery · IMP-P3-002 | Product selected Resend and `DEYPAY <deypay@kenuleafrica.xyz>`. DEYPAY owns identity and verification. | Use the documented HTTPS send operation and a stable outbox UUID as the message idempotency key. The default challenge lifetime is 15 minutes and caps at one hour. PostgreSQL controls consumption and retry state. The application origin comes from deployment configuration. [Resend send API](https://resend.com/docs/api-reference/emails/send-email) · [Idempotency](https://resend.com/docs/dashboard/emails/idempotency-keys) · [Errors](https://resend.com/docs/api-reference/errors) |
 | Implementation authority | Product owner directed implementation using document 08 on 2026-11-18 | Use the existing tasks and phase exit criteria. Formal baseline and production sign-offs have separate owners. |
 | Scope and NGN model | FRS §§6, 13–17 and architecture §3 | Customer wallets are USDC and USDT. NGN supports funding, conversion and settlement. Pay Anyone is required and can use simulated execution. |
 | Custody review | Architecture §§13, 46.1 and security §16 | Third-party custody is the design assumption. The legal custodian, key control, safeguarding and recovery evidence remain outstanding under DEC-004. |

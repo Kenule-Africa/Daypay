@@ -39,6 +39,7 @@ async fn executable_accepts_sandbox_requests_and_refuses_production(
     for script in [
         include_str!("../../../../infrastructure/postgres/phase-two-grants.psql"),
         include_str!("../../../../infrastructure/postgres/registration-grants.psql"),
+        include_str!("../../../../infrastructure/postgres/email-verification-api-grants.psql"),
         SANDBOX,
     ] {
         sqlx::raw_sql(script).execute(&pool).await?;
