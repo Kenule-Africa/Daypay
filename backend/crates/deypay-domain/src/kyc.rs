@@ -26,6 +26,36 @@
 //! reviewer approves, rejects or requests information (database design §10.1,
 //! API §32.2). Approval is reachable only through a reviewer decision. No
 //! command represents email or contact verification.
+//!
+//! Sending every provider result to manual review is a **provisional,
+//! conservative policy**. No approved specification requires it, or defines
+//! how provider outcomes map to case decisions (DEC-006 is open). Compliance and
+//! Product must approve or replace it.
+//!
+//! # Application-layer requirements
+//!
+//! [`KycActor`] and [`KycCaseState`] are claims made by the caller. They are not
+//! proof of authentication, permission or stored state. Before persisting a
+//! [`KycCaseTransition`], the application must:
+//!
+//! 1. Build `Customer` only from the authenticated session's customer ID, and
+//!    load the case scoped to that customer.
+//! 2. Build `Reviewer` only for an authenticated administrative identity that
+//!    holds the KYC review permission (FRS §39, SEC-AZ-003, SEC-ADM-001/002).
+//!    Take `reviewer_id` from that identity, never from request input.
+//! 3. Build `System` only in internal orchestration. A provider result must
+//!    come from a verified, deduplicated webhook or poll (BR-017).
+//! 4. Take `owner_id` and the current status from the stored case, and the
+//!    expected status from the reviewer's request (API §32.2).
+//! 5. Update the case only where its status still equals
+//!    [`KycCaseTransition::from`]. If no row changes, treat the request as
+//!    stale. Commit the reviewer, reason, previous and new status, and an
+//!    append-only audit event in the same database transaction (database
+//!    design §10.1, test strategy §16.4).
+//! 6. Return HTTP 409 for stale or terminal-case decisions (API §32.2).
+//! 7. Never grant financial access from
+//!    [`KycCaseStatus::satisfies_kyc_approval`] alone. Use the central
+//!    eligibility check (architecture §25.1).
 use crate::entities::KycCase;
 use std::str::FromStr;
 use uuid::Uuid;
@@ -145,8 +175,8 @@ impl KycCaseCommand {
 /// The party requesting a transition.
 ///
 /// The domain checks only the actor kind and its relationship to the case
-/// owner. Callers construct `Reviewer` only after the application has verified
-/// the KYC reviewer permission, and `System` only from internal orchestration.
+/// owner. Any code can build any variant, so a value of this type is not proof
+/// of identity or permission. See the module's application-layer requirements.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KycActor {
     Customer { customer_id: Uuid },
@@ -172,15 +202,62 @@ impl TryFrom<&KycCase> for KycCaseState {
     }
 }
 
-/// A validated status change.
+/// A status change validated by [`KycCaseState::transition`].
 ///
-/// Persist it with a conditional update on `from` so that a concurrent change
-/// cannot be overwritten.
+/// The fields are private, so the only way to get a value is from
+/// `transition`. Persist it with a conditional update on [`Self::from`] so that
+/// a concurrent change cannot be overwritten.
+///
+/// ```
+/// use deypay_domain::kyc::{KycActor, KycCaseCommand, KycCaseState, KycCaseStatus};
+/// use uuid::Uuid;
+///
+/// let case = KycCaseState {
+///     owner_id: Uuid::from_u128(1),
+///     status: KycCaseStatus::ManualReview,
+/// };
+/// let reviewer = KycActor::Reviewer { reviewer_id: Uuid::from_u128(2) };
+/// let transition = case
+///     .transition(KycCaseStatus::ManualReview, KycCaseCommand::Approve, reviewer)
+///     .unwrap();
+/// assert_eq!(transition.from(), KycCaseStatus::ManualReview);
+/// assert_eq!(transition.to(), KycCaseStatus::Approved);
+/// assert_eq!(transition.command(), KycCaseCommand::Approve);
+/// ```
+///
+/// Code outside this module cannot forge a transition:
+///
+/// ```compile_fail,E0451
+/// use deypay_domain::kyc::{KycCaseCommand, KycCaseStatus, KycCaseTransition};
+///
+/// let forged = KycCaseTransition {
+///     from: KycCaseStatus::PendingProvider,
+///     to: KycCaseStatus::Approved,
+///     command: KycCaseCommand::RecordProviderResult,
+/// };
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct KycCaseTransition {
-    pub from: KycCaseStatus,
-    pub to: KycCaseStatus,
-    pub command: KycCaseCommand,
+    from: KycCaseStatus,
+    to: KycCaseStatus,
+    command: KycCaseCommand,
+}
+
+impl KycCaseTransition {
+    /// The status the case must still have when the change is persisted.
+    pub const fn from(self) -> KycCaseStatus {
+        self.from
+    }
+
+    /// The status the case moves to.
+    pub const fn to(self) -> KycCaseStatus {
+        self.to
+    }
+
+    /// The command that produced this change.
+    pub const fn command(self) -> KycCaseCommand {
+        self.command
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -550,6 +627,31 @@ mod tests {
         assert!(!requested.to.is_terminal());
         let resubmitted = apply(InformationRequested, Submit, CUSTOMER).unwrap();
         assert_eq!(resubmitted.to, Submitted);
+        // Test strategy §16.4: resubmission alone cannot enable access.
+        assert!(!resubmitted.to.satisfies_kyc_approval());
+        let reachable = reachable_from(InformationRequested, &[CUSTOMER, SYSTEM]);
+        assert!(!reachable.iter().any(|s| s.satisfies_kyc_approval()));
+    }
+
+    #[test]
+    fn late_or_duplicate_provider_results_cannot_change_a_case() {
+        // Test strategy §16.3: a repeated or delayed callback must not move a
+        // case that has already been routed or decided.
+        for status in [ManualReview, InformationRequested, Submitted, Draft] {
+            assert_eq!(
+                apply(status, RecordProviderResult, SYSTEM),
+                Err(KycTransitionError::InvalidTransition {
+                    from: status,
+                    command: RecordProviderResult
+                })
+            );
+        }
+        for status in [Approved, Rejected, Expired] {
+            assert_eq!(
+                apply(status, RecordProviderResult, SYSTEM),
+                Err(KycTransitionError::TerminalCase { status })
+            );
+        }
     }
 
     #[test]
@@ -601,6 +703,16 @@ mod tests {
         for command in [Approve, Reject, RequestInformation] {
             assert_eq!(
                 apply(ManualReview, command, SELF_REVIEWER),
+                Err(KycTransitionError::Unauthorized { command })
+            );
+        }
+    }
+
+    #[test]
+    fn customers_cannot_decide_their_own_case() {
+        for command in [Approve, Reject, RequestInformation] {
+            assert_eq!(
+                apply(ManualReview, command, CUSTOMER),
                 Err(KycTransitionError::Unauthorized { command })
             );
         }
