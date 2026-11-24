@@ -34,13 +34,13 @@
 
 ## Next action
 
-The next eligible roadmap task is `IMP-P3-004`, password hashing. Start from the existing registration Argon2id implementation and its tests. `IMP-P3-003` is Deferred — Post-MVP. Staging email delivery and production registration approvals remain open. See the [verification evidence](PROGRESS.md) and [release gates](BLOCKERS.md).
+The latest accepted engineering work is `IMP-P4-001`, merged as PR [#5](https://github.com/Kenule-Africa/Daypay/pull/5) at `26d5023a02f0ed55fe3c95f1fb2b61394dd99c3f`, with passing backend and frontend CI in run [45467027795](https://github.com/Kenule-Africa/Daypay/actions/runs/45467027795). This is technical acceptance only.
 
-## Parallel development setup
+## Next planned assignments
 
-Codex and Claude assignments are planned, not started:
+- Claude: `IMP-P4-002` — KYC Application Service, branch `feat/claude-imp-p4-002-kyc-application-service` (planned, not started). Read the unresolved policies in [DECISIONS.md](DECISIONS.md) and [BLOCKERS.md](BLOCKERS.md) before choosing behavior.
+- Codex: `IMP-P3-004` — Password Hashing, branch `feat/codex-imp-p3-004-password-hashing` (still pending).
 
-- Codex owns `IMP-P3-004` on `feat/codex-imp-p3-004-password-hashing`.
-- Claude owns `IMP-P4-001` on `feat/claude-imp-p4-001-kyc-state-machine`.
+The [assignment register](TASKS.md#planned-parallel-assignments) records proposed ownership and dependencies. Keep KYC provider mapping, reviewer authorization, expiry, re-verification, provider failure handling and decision-reason policy unresolved until the accountable owners decide. Legal, Security and Compliance production gates remain open.
 
-The [assignment register](TASKS.md#planned-parallel-assignments) records proposed file/module ownership and dependencies. Implementation agents must use separate worktrees and branches, edit only assigned modules, preserve migrations/API/security boundaries, and open PRs to `main`. Copilot will coordinate only; the repository owner reviews and merges.
+Codex and Claude continue to use separate worktrees and assigned branches. Implementation agents must edit only their recorded modules, preserve migrations/API/security boundaries, and open PRs to `main`. Copilot coordinates; the repository owner reviews and merges.

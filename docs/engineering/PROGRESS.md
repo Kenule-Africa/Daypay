@@ -1,5 +1,17 @@
 # Engineering progress
 
+## 2026-11-24 · IMP-P4-001 engineering acceptance
+
+PR [#5](https://github.com/Kenule-Africa/Daypay/pull/5), **feat(kyc): add typed KYC case state machine**, was merged by the repository owner into `main` at merge commit [`26d5023a02f0ed55fe3c95f1fb2b61394dd99c3f`](https://github.com/Kenule-Africa/Daypay/commit/26d5023a02f0ed55fe3c95f1fb2b61394dd99c3f). The PR's final head was `405605ed983d377bc6c787a3b36dfeef701a6840`.
+
+**Verdict: IMP-P4-001 completed and engineering-accepted.** The PR adds the domain state machine in `backend/crates/deypay-domain/src/kyc.rs` and exports the module. It mirrors the eight existing database statuses, validates command/actor/owner/expected-status transitions, rejects forged transitions, and leaves persistence, provider calls, reviewer authorization and financial eligibility to other layers.
+
+The final PR-head CI run [45467027795](https://github.com/Kenule-Africa/Daypay/actions/runs/45467027795) passed both jobs: [backend `138704546115`](https://github.com/Kenule-Africa/Daypay/actions/runs/45467027795/job/138704546115) and [frontend `138704545508`](https://github.com/Kenule-Africa/Daypay/actions/runs/45467027795/job/138704545508). The backend job passed workspace checks and tests, including the KYC state-machine and compile-fail doctests; the frontend job passed. The PR check list also includes successful backend/frontend jobs for the preceding PR revision. The CI evidence and owner merge support engineering acceptance only; they do not represent Legal, Security, Compliance or production approval.
+
+Implementation deliberately leaves the following decisions open for IMP-P4-002 and later review: what provider results require human review and how outcomes map to internal status; which authenticated administrative role/permission authorizes a reviewer; expiry trigger, meaning and effect; re-verification after prior outcomes; provider timeout, outage, retry and escalation behavior; and required decision reasons/codes and their visibility. The accepted state machine routes provider results to `MANUAL_REVIEW` as a provisional conservative rule and has no transition into `EXPIRED`; neither is an approved operating policy.
+
+Claude's next assignment is planned, not started: `IMP-P4-002` — KYC Application Service on `feat/claude-imp-p4-002-kyc-application-service`. Codex's `IMP-P3-004` password-hashing assignment remains pending. See [TASKS.md](TASKS.md#planned-parallel-assignments). Production legal, security and compliance gates remain open.
+
 ## 2026-11-20 · MVP contact-verification acceptance
 
 Baseline commit `d29fbfdea482c8ad7d3b4426a2440e0b6c95ccc3` is the exact head of run [44744811033](https://github.com/Kenule-Africa/Daypay/actions/runs/44744811033). The run concluded successfully. Backend job `136317283655` passed setup, tracking and PostgreSQL provisioning, Rust formatting/workspace checks/build/tests, live HTTP/worker/outage checks and persistence checks. Frontend job `136317283809` passed `npm ci`, lint, build, typecheck and Node tests. The job metadata and runner logs confirm the exact checked SHA.

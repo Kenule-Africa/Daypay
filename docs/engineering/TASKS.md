@@ -26,7 +26,7 @@ These assignments are planned and have not started. They do not change existing 
 | Agent | Task | Branch | Owned modules/files | Dependencies | Status | PR / acceptance evidence |
 |---|---|---|---|---|---|---|
 | Codex | IMP-P3-004 Password Hashing | `feat/codex-imp-p3-004-password-hashing` | `deypay-application/src/passwords.rs`; `deypay-infrastructure/src/password_hashing.rs`; focused password/registration tests; existing password enrollment and configuration interfaces only | Phase 2 password credential schema; IMP-P3-001 registration; IMP-P3-009 where registration collision behavior is shared | Planned / Backlog | Not started |
-| Claude | IMP-P4-001 KYC State Machine | `feat/claude-imp-p4-001-kyc-state-machine` | Existing `compliance.kyc_cases` domain boundaries; KYC application/domain modules and focused tests assigned for this task; no migration or provider behavior until the task acceptance is confirmed | Phase 2 KYC schema; phase sequencing; KYC specifications and DECISIONS/BLOCKERS | Planned / Backlog | Not started |
+| Claude | IMP-P4-002 KYC Application Service | `feat/claude-imp-p4-002-kyc-application-service` | Proposed `deypay-application/src/kyc.rs`, module export and focused application tests; use the accepted domain state machine. No migration, API contract or provider adapter changes in this assignment | IMP-P4-001 accepted; Phase 2 KYC schema; resolve or explicitly isolate the open KYC policies in [DECISIONS.md](DECISIONS.md) and [BLOCKERS.md](BLOCKERS.md) | Planned / Backlog | Not started |
 
 Shared coordination boundaries:
 
@@ -109,9 +109,11 @@ Backend engineering owns these P0 foundations. Task 001 supplies ordered migrati
 
 ## Phase 4 · KYC AND COMPLIANCE FOUNDATIONS (§17)
 
+`IMP-P4-001` is Completed and engineering-accepted. PR [#5](https://github.com/Kenule-Africa/Daypay/pull/5) merged to `main` at `26d5023a02f0ed55fe3c95f1fb2b61394dd99c3f`; backend and frontend CI passed in run [45467027795](https://github.com/Kenule-Africa/Daypay/actions/runs/45467027795). This is not production approval. See [PROGRESS.md](PROGRESS.md#2026-11-24--imp-p4-001-engineering-acceptance) and the open policy items in [DECISIONS.md](DECISIONS.md).
+
 | Task ID | Roadmap task | Status |
 |---|---|---|
-| IMP-P4-001 | KYC state machine. | Backlog |
+| IMP-P4-001 | KYC state machine. | Completed |
 | IMP-P4-002 | KYC application service. | Backlog |
 | IMP-P4-003 | KYC provider interface. | Backlog |
 | IMP-P4-004 | Mock KYC adapter. | Backlog |
