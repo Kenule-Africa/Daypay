@@ -21,11 +21,16 @@ For each phase, apply its exit criteria in Document 08 before starting the next 
 
 ## Parallel assignments
 
-Only current unstarted implementation assignments are listed here. Completed assignments and their acceptance evidence are recorded in [PROGRESS.md](PROGRESS.md). These assignments do not change task statuses or acceptance criteria.
+Current implementation assignments are listed here. Assignment status is separate from the canonical roadmap task status; completed assignments and their acceptance evidence are recorded in [PROGRESS.md](PROGRESS.md).
 
 | Agent | Task | Branch | Owned modules/files | Dependencies | Status | PR / acceptance evidence |
 |---|---|---|---|---|---|---|
 | Codex | IMP-P3-004 Password Hashing | `feat/codex-imp-p3-004-password-hashing` | `deypay-application/src/passwords.rs`; `deypay-infrastructure/src/password_hashing.rs`; focused password/registration tests; existing password enrollment and configuration interfaces only | Phase 2 password credential schema; IMP-P3-001 registration; IMP-P3-009 where registration collision behavior is shared | Planned / Backlog | Not started |
+| Claude | IMP-P4-005 KYC API Endpoints | `feat/claude-imp-p4-005-007-kyc-controls` | Workspace: `DeyPay-claude`. Customer KYC API endpoints using trusted session identity only. Includes the IMP-P4-002 PostgreSQL persistence follow-up as prerequisite work: write adapter, atomic first-case creation, conditional transitions and database-backed tests. Coordinate least-privilege grants and any migration/permission changes with the coordinator and database/security owners. No login/session implementation. | IMP-P3-004/005/006 trusted authentication/session (Codex); KYC PostgreSQL adapter, reviewed permissions and atomicity; Product/Compliance-approved identity/document requirements, status mapping and resubmission policy; IMP-P4-008 audit evidence | Assigned / Not Started | No implementation or PR yet |
+| Claude | IMP-P4-006 Customer Restriction Engine | `feat/claude-imp-p4-005-007-kyc-controls` | Workspace: `DeyPay-claude`. Fail-closed restriction foundations using approved rules only; preserve separate eligibility checks and do not activate financial operations | IMP-P4-001–002; approved KYC/account-status mapping and restriction rules from Product/Compliance; keep financial actions blocked unless eligibility is verified | Assigned / Not Started | No implementation or PR yet |
+| Claude | IMP-P4-007 Transaction Limit Foundation | `feat/claude-imp-p4-005-007-kyc-controls` | Workspace: `DeyPay-claude`. Fail-closed limit foundations only where approved requirements exist; no financial operation activation | Approved Product/Compliance limit and eligibility requirements; coordinate with IMP-P4-006 restriction foundations and existing authorization controls | Assigned / Not Started | No implementation or PR yet |
+
+The canonical roadmap status rows for IMP-P4-005, IMP-P4-006 and IMP-P4-007 remain Backlog until implementation starts; their task IDs and acceptance criteria are unchanged. The PostgreSQL persistence follow-up is a prerequisite within Claude's Phase 4 ownership and does not reopen the Completed — Engineering Accepted status of IMP-P4-002.
 
 Shared coordination boundaries:
 
