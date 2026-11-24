@@ -3,6 +3,10 @@ use sha2::{Digest, Sha256};
 use std::future::Future;
 use unicode_properties::{GeneralCategoryGroup, UnicodeGeneralCategory};
 
+/// The registration transport already limits the entire request to 64 KiB.
+/// Apply the same byte ceiling to direct credential work without truncation.
+pub const MAX_PASSWORD_BYTES: usize = 64 * 1024;
+
 #[derive(Clone, Copy)]
 pub struct PasswordPolicy {
     pub minimum_characters: usize,
@@ -21,7 +25,8 @@ impl PasswordPolicy {
     };
 
     pub fn accepts(&self, secret: &str) -> bool {
-        self.minimum_characters > 0
+        secret.len() <= MAX_PASSWORD_BYTES
+            && self.minimum_characters > 0
             && secret.chars().count() >= self.minimum_characters
             && (!self.require_uppercase || secret.bytes().any(|b| b.is_ascii_uppercase()))
             && (!self.require_digit || secret.bytes().any(|b| b.is_ascii_digit()))
@@ -45,6 +50,30 @@ pub trait PasswordHasher: Sync {
         &self,
         password: &str,
     ) -> impl Future<Output = Result<String, RegistrationError>> + Send;
+}
+
+/// A match proves only the password. The caller owns all further access checks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[must_use]
+pub struct VerifiedPassword {
+    pub needs_rehash: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CredentialError {
+    Rejected,
+    Busy,
+    Unavailable,
+}
+
+pub trait CredentialVerifier: Sync {
+    /// Pass None when lookup found no credential. The outcome carries no secrets,
+    /// and verification never writes a replacement hash.
+    fn verify(
+        &self,
+        password: &str,
+        stored_phc: Option<&str>,
+    ) -> impl Future<Output = Result<VerifiedPassword, CredentialError>> + Send;
 }
 
 pub struct ScreenedPasswords<S, H> {
