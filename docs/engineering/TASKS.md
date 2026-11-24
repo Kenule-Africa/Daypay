@@ -19,6 +19,23 @@ For each phase, apply its exit criteria in Document 08 before starting the next 
 | IMP-P1-007 / 008 / 009 | Backend engineering / P0 | Current workspace and PostgreSQL, roadmap §14 | Exercise configuration validation, inspect JSON logs for secret leakage, and verify API liveness and readiness with the database available and unavailable. |
 | IMP-P1-010 / 011 / 012 | Engineering / P0 | Backend, frontend and development database, roadmap §14 | Run the workflow on GitHub and record the lint, formatting, build, unit and integration results. |
 
+## Planned parallel assignments
+
+These assignments are planned and have not started. They do not change existing task statuses or acceptance criteria.
+
+| Agent | Task | Branch | Owned modules/files | Dependencies | Status | PR / acceptance evidence |
+|---|---|---|---|---|---|---|
+| Codex | IMP-P3-004 Password Hashing | `feat/codex-imp-p3-004-password-hashing` | `deypay-application/src/passwords.rs`; `deypay-infrastructure/src/password_hashing.rs`; focused password/registration tests; existing password enrollment and configuration interfaces only | Phase 2 password credential schema; IMP-P3-001 registration; IMP-P3-009 where registration collision behavior is shared | Planned / Backlog | Not started |
+| Claude | IMP-P4-001 KYC State Machine | `feat/claude-imp-p4-001-kyc-state-machine` | Existing `compliance.kyc_cases` domain boundaries; KYC application/domain modules and focused tests assigned for this task; no migration or provider behavior until the task acceptance is confirmed | Phase 2 KYC schema; phase sequencing; KYC specifications and DECISIONS/BLOCKERS | Planned / Backlog | Not started |
+
+Shared coordination boundaries:
+
+- Neither agent may change migrations, shared API contracts, registration or KYC legal/security requirements, financial invariants, or the other agent's owned module.
+- Codex must coordinate before touching registration, password credential persistence or shared test fixtures.
+- Claude must coordinate before touching identity status, account restrictions, review/audit boundaries or shared test fixtures.
+- `AGENTS.md`, this task register, [HANDOFF.md](HANDOFF.md), progress evidence and decision/blocker records are Copilot-coordinator-owned. Implementation agents do not update tracker records unless specifically requested and approved.
+- Parallel SQLx/PostgreSQL tests must use existing disposable test patterns. Each worktree should use its own environment file and isolated test database selection; do not start or modify permanent database services.
+
 ## Phase 0 · REQUIREMENTS AND ARCHITECTURE BASELINE (§13)
 
 | Task ID | Roadmap task | Status |
