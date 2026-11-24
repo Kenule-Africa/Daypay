@@ -1,5 +1,19 @@
 # Engineering progress
 
+## 2026-11-24 · IMP-P4-003 and IMP-P4-004 engineering acceptance
+
+Claude implemented both tasks on `feat/claude-imp-p4-003-004-kyc-providers`. PR [#7](https://github.com/Kenule-Africa/Daypay/pull/7) was merged by the repository owner into `main` at merge commit [`b1b9e2b4879f9b8603df29437ee67eb5ca44df23`](https://github.com/Kenule-Africa/Daypay/commit/b1b9e2b4879f9b8603df29437ee67eb5ca44df23). It includes implementation commits [`b60340e2c5b44c79cb00ba3240ba2ae04b0258c1`](https://github.com/Kenule-Africa/Daypay/commit/b60340e2c5b44c79cb00ba3240ba2ae04b0258c1) (IMP-P4-003) and [`2f61d79b3206edb397fa6ad0d00d4b0076d43c97`](https://github.com/Kenule-Africa/Daypay/commit/2f61d79b3206edb397fa6ad0d00d4b0076d43c97) (IMP-P4-004). The final PR head was `2f61d79b3206edb397fa6ad0d00d4b0076d43c97`.
+
+**Verdict: IMP-P4-003 and IMP-P4-004 completed and engineering-accepted.** The PR adds `backend/crates/deypay-application/src/kyc_provider.rs` and exports `kyc_provider` from the application crate; it adds `backend/crates/deypay-infrastructure/src/kyc_provider_mock.rs` and exports `kyc_provider_mock` from the infrastructure crate.
+
+IMP-P4-003 defines `IdentityVerificationProvider` with submission and status-lookup operations, DEYPAY submission-reference correlation, typed provider observations/errors, and validation of opaque external references. Provider pass/fail results remain observations, not customer approvals or rejections. Timeout and malformed responses are uncertain outcomes requiring lookup/reconciliation before retry. The interface does not define identity fields, real provider payloads, authentication, webhooks or persistence.
+
+IMP-P4-004 adds a deterministic in-memory mock limited to local/test environments. It scripts pending, pass, fail, rejection, outage, timeout-before/after-acceptance and malformed-after-acceptance cases; supports reference replay/conflict handling and status lookup (including unsupported lookup); and isolates state per instance. It uses no network, credentials, identity information, database, case or financial state. The mock models test scenarios and is not evidence of real provider capabilities.
+
+Final PR-head Actions run [45499292388](https://github.com/Kenule-Africa/Daypay/actions/runs/45499292388) checked the exact final commit. Backend job [138817964885](https://github.com/Kenule-Africa/Daypay/actions/runs/45499292388/job/138817964885) and frontend job [138817964565](https://github.com/Kenule-Africa/Daypay/actions/runs/45499292388/job/138817964565) both succeeded. Backend checks included the Rust workspace, disposable PostgreSQL, live service and persistence checks, and lockfile guard; frontend checks included install, lint, build, typecheck and Node tests.
+
+Engineering acceptance is not provider approval, Compliance/Legal/Security approval, or production readiness. DEC-006 remains open. Actual provider capabilities, approved KYC data, real-adapter security, result persistence/audit, failure policy, and Phase 8 provider-framework coordination remain unresolved in [DECISIONS.md](DECISIONS.md) and [BLOCKERS.md](BLOCKERS.md).
+
 ## 2026-11-24 · IMP-P4-002 engineering acceptance
 
 PR [#6](https://github.com/Kenule-Africa/Daypay/pull/6) was merged by the repository owner into `main` at merge commit [`d22181cc5bad7f46a87330ac25d8389ac1631d18`](https://github.com/Kenule-Africa/Daypay/commit/d22181cc5bad7f46a87330ac25d8389ac1631d18). Claude implemented the assigned task on `feat/claude-imp-p4-002-kyc-application-service`; the final implementation commit was `96aa8e5deb1c95b3ff3500e406a81cdd54157576`.

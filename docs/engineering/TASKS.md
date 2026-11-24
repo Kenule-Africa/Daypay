@@ -21,12 +21,11 @@ For each phase, apply its exit criteria in Document 08 before starting the next 
 
 ## Parallel assignments
 
-Claude's combined assignment is assigned but not started. Codex remains planned / backlog. Assignment tracking does not change task statuses or acceptance criteria.
+Only current unstarted implementation assignments are listed here. Completed assignments and their acceptance evidence are recorded in [PROGRESS.md](PROGRESS.md). These assignments do not change task statuses or acceptance criteria.
 
 | Agent | Task | Branch | Owned modules/files | Dependencies | Status | PR / acceptance evidence |
 |---|---|---|---|---|---|---|
 | Codex | IMP-P3-004 Password Hashing | `feat/codex-imp-p3-004-password-hashing` | `deypay-application/src/passwords.rs`; `deypay-infrastructure/src/password_hashing.rs`; focused password/registration tests; existing password enrollment and configuration interfaces only | Phase 2 password credential schema; IMP-P3-001 registration; IMP-P3-009 where registration collision behavior is shared | Planned / Backlog | Not started |
-| Claude | IMP-P4-003 KYC Provider Interface; IMP-P4-004 Mock KYC Adapter | `feat/claude-imp-p4-003-004-kyc-providers` | Workspace: `DeyPay-claude`. KYC provider interface/types, mock adapter, and focused tests for both tasks; confirm exact files against approved architecture/specifications before implementation. No real provider integrations, migrations/permissions, HTTP endpoints, authentication/password changes, or compliance policy approvals | IMP-P4-002 engineering-accepted and approved architecture/specifications; IMP-P4-004 depends on the IMP-P4-003 interface. Preserve unresolved policy decisions in [DECISIONS.md](DECISIONS.md) and [BLOCKERS.md](BLOCKERS.md) | Assigned / Not Started | One draft PR to `main`; two logical commits where practical. No implementation evidence yet |
 
 Shared coordination boundaries:
 
@@ -109,14 +108,14 @@ Backend engineering owns these P0 foundations. Task 001 supplies ordered migrati
 
 ## Phase 4 · KYC AND COMPLIANCE FOUNDATIONS (§17)
 
-`IMP-P4-001` is Completed and engineering-accepted. PR [#5](https://github.com/Kenule-Africa/Daypay/pull/5) merged to `main` at `26d5023a02f0ed55fe3c95f1fb2b61394dd99c3f`; backend and frontend CI passed in run [45467027795](https://github.com/Kenule-Africa/Daypay/actions/runs/45467027795). `IMP-P4-002` is Completed — Engineering Accepted. Claude implemented it on the assigned branch; PR [#6](https://github.com/Kenule-Africa/Daypay/pull/6) merged at `d22181cc5bad7f46a87330ac25d8389ac1631d18` after backend and frontend checks passed on final implementation commit `96aa8e5deb1c95b3ff3500e406a81cdd54157576` in run [45487110380](https://github.com/Kenule-Africa/Daypay/actions/runs/45487110380). Neither acceptance is production approval. See [PROGRESS.md](PROGRESS.md#2026-11-24--imp-p4-002-engineering-acceptance) and the open dependencies in [DECISIONS.md](DECISIONS.md) and [BLOCKERS.md](BLOCKERS.md).
+`IMP-P4-001` is Completed and engineering-accepted. PR [#5](https://github.com/Kenule-Africa/Daypay/pull/5) merged to `main` at `26d5023a02f0ed55fe3c95f1fb2b61394dd99c3f`; backend and frontend CI passed in run [45467027795](https://github.com/Kenule-Africa/Daypay/actions/runs/45467027795). `IMP-P4-002` is Completed — Engineering Accepted. Claude implemented it on the assigned branch; PR [#6](https://github.com/Kenule-Africa/Daypay/pull/6) merged at `d22181cc5bad7f46a87330ac25d8389ac1631d18` after backend and frontend checks passed on final implementation commit `96aa8e5deb1c95b3ff3500e406a81cdd54157576` in run [45487110380](https://github.com/Kenule-Africa/Daypay/actions/runs/45487110380). `IMP-P4-003` and `IMP-P4-004` are Completed — Engineering Accepted; Claude's PR [#7](https://github.com/Kenule-Africa/Daypay/pull/7) merged at `b1b9e2b4879f9b8603df29437ee67eb5ca44df23`, with backend/frontend CI passing on final commit `2f61d79b3206edb397fa6ad0d00d4b0076d43c97` in run [45499292388](https://github.com/Kenule-Africa/Daypay/actions/runs/45499292388). These are engineering acceptances, not production approvals; Phase 4 is not complete. See [PROGRESS.md](PROGRESS.md#2026-11-24--imp-p4-003-and-p4-004-engineering-acceptance), and the open dependencies in [DECISIONS.md](DECISIONS.md) and [BLOCKERS.md](BLOCKERS.md).
 
 | Task ID | Roadmap task | Status |
 |---|---|---|
 | IMP-P4-001 | KYC state machine. | Completed |
 | IMP-P4-002 | KYC application service. | Completed |
-| IMP-P4-003 | KYC provider interface. | Backlog |
-| IMP-P4-004 | Mock KYC adapter. | Backlog |
+| IMP-P4-003 | KYC provider interface. | Completed |
+| IMP-P4-004 | Mock KYC adapter. | Completed |
 | IMP-P4-005 | KYC API endpoints. | Backlog |
 | IMP-P4-006 | Customer restriction engine. | Backlog |
 | IMP-P4-007 | Transaction limit foundation. | Backlog |

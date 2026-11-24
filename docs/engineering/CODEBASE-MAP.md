@@ -30,7 +30,8 @@ Rust workspace: [`backend/Cargo.toml`](../../backend/Cargo.toml)
 - PostgreSQL pool and readiness query: `backend/crates/deypay-infrastructure/src/database.rs`
 - Database migrations: `backend/migrations/`, embedded by `deypay-infrastructure`. SQLx integration cases are in `backend/crates/deypay-infrastructure/tests/`.
 - Customer registration uses `backend/crates/deypay-api/src/registration.rs` for HTTP and `backend/crates/deypay-application/src/registration.rs` for enrollment. The legal registry is in `backend/migrations/202611190001_registration_legal.sql`. The current atomic registration write and email-only contact progression are in `backend/migrations/202611200001_mvp_contact_verification.sql`. `deypay-api/src/legal.rs` serves the customer documents. The sandbox is opt-in and production registration remains closed.
-- Provider integrations/adapters: **Planned**
+- KYC provider port: `backend/crates/deypay-application/src/kyc_provider.rs` (`IdentityVerificationProvider`, IMP-P4-003), exported from the application crate. The deterministic mock adapter is `backend/crates/deypay-infrastructure/src/kyc_provider_mock.rs` (`MockKycProvider`, IMP-P4-004), exported from the infrastructure crate and available only for local/test. Neither supplies real provider capabilities, webhook verification, persistence or KYC approval; see [PROGRESS.md](PROGRESS.md#2026-11-24--imp-p4-003-and-p4-004-engineering-acceptance) and [BLOCKERS.md](BLOCKERS.md).
+- Other provider integrations/adapters: **Planned**
 - Backend tests include Rust unit tests beside source, registration HTTP tests in `backend/crates/deypay-api/tests/registration_http.rs`, SQLx persistence tests in `backend/crates/deypay-infrastructure/tests/`, and live service checks in `scripts/backend-health.test.mjs`.
 - Frontend: `frontend/app/`; frontend checks: `frontend/tests/`
 - Local PostgreSQL bootstrap and verification: `infrastructure/postgres/`

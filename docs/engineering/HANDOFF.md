@@ -2,14 +2,15 @@
 
 ## Current state
 
-- **Exact accepted baseline:** `d22181cc5bad7f46a87330ac25d8389ac1631d18` (PR #6 merge commit).
-- **Successful verification:** [GitHub Actions run 44744811033](https://github.com/Kenule-Africa/Daypay/actions/runs/44744811033).
+- **Exact accepted baseline:** `b1b9e2b4879f9b8603df29437ee67eb5ca44df23` (PR #7 merge commit).
+- **Latest successful verification:** [GitHub Actions run 45499292388](https://github.com/Kenule-Africa/Daypay/actions/runs/45499292388), on final implementation commit `2f61d79b3206edb397fa6ad0d00d4b0076d43c97`.
 - **Completed phases:** Phase 1 — Project Foundation and Infrastructure; Phase 2 — Database and Domain Foundations.
 - **IMP-P3-001:** Completed; the email-only MVP registration/contact-verification change is technically accepted.
 - **IMP-P3-002:** In testing; hosted Resend staging delivery and confirmation remain open.
 - **IMP-P3-003:** Deferred — Post-MVP.
 - **IMP-P4-001:** Completed and engineering-accepted; PR [#5](https://github.com/Kenule-Africa/Daypay/pull/5).
 - **IMP-P4-002:** Completed and engineering-accepted; Claude's PR [#6](https://github.com/Kenule-Africa/Daypay/pull/6) merged at `d22181cc5bad7f46a87330ac25d8389ac1631d18`. Final implementation commit `96aa8e5deb1c95b3ff3500e406a81cdd54157576` passed backend and frontend CI run [45487110380](https://github.com/Kenule-Africa/Daypay/actions/runs/45487110380).
+- **IMP-P4-003 / IMP-P4-004:** Completed and engineering-accepted together in Claude's PR [#7](https://github.com/Kenule-Africa/Daypay/pull/7), merged at `b1b9e2b4879f9b8603df29437ee67eb5ca44df23`. Both implementation commits are included; backend and frontend CI passed on final commit `2f61d79b3206edb397fa6ad0d00d4b0076d43c97` in run [45499292388](https://github.com/Kenule-Africa/Daypay/actions/runs/45499292388).
 - API §13 defines the eleven-field form and versioned legal links. Sandbox registration remains explicitly enabled only for local/test. Staging and production registration remain closed.
 - MVP registration requires and stores the E.164 phone and queues only email verification. Email confirmation moves the customer to `CONTACT_VERIFIED`, sets `email_verified_at`, and leaves `phone_verified_at` unchanged. DEYPAY retains authentication and KYC ownership with separate eligibility and financial gates.
 
@@ -25,6 +26,7 @@
 - Backend CI passed formatting, locked workspace Clippy, build, workspace tests, local environment/tracking checks, Compose PostgreSQL provisioning, API/worker health and outage tests, and the PostgreSQL persistence test suite.
 - Frontend CI passed `npm ci`, lint, build, typecheck and Node tests.
 - The lockfile consistency guard passed with the corrected `backend/Cargo.lock`.
+- PR #7 added the provider-independent KYC interface and a local/test-only mock. No real-provider capability or production readiness was verified; see [PROGRESS.md](PROGRESS.md#2026-11-24--imp-p4-003-and-p4-004-engineering-acceptance).
 - The prior Phase 2 native PostgreSQL and restricted-role evidence remains in [PROGRESS.md](PROGRESS.md).
 
 ## Remaining implementation follow-ups
@@ -37,13 +39,18 @@
 
 ## Next action
 
-The latest accepted engineering work is `IMP-P4-002`, merged as PR [#6](https://github.com/Kenule-Africa/Daypay/pull/6) at `d22181cc5bad7f46a87330ac25d8389ac1631d18`. Backend and frontend CI passed on final implementation commit `96aa8e5deb1c95b3ff3500e406a81cdd54157576` in run [45487110380](https://github.com/Kenule-Africa/Daypay/actions/runs/45487110380). This is technical acceptance only; Phase 4 is not complete and production gates remain open.
+The latest accepted engineering work is `IMP-P4-003` and `IMP-P4-004`, merged together in PR [#7](https://github.com/Kenule-Africa/Daypay/pull/7) at `b1b9e2b4879f9b8603df29437ee67eb5ca44df23`. Backend and frontend CI passed on final implementation commit `2f61d79b3206edb397fa6ad0d00d4b0076d43c97` in run [45499292388](https://github.com/Kenule-Africa/Daypay/actions/runs/45499292388). This is technical acceptance only; Phase 4 is not complete and production gates remain open.
 
 ## Current assignments
 
-- Claude: `IMP-P4-003` — KYC Provider Interface and `IMP-P4-004` — Mock KYC Adapter, assigned / not started on branch `feat/claude-imp-p4-003-004-kyc-providers` in workspace `DeyPay-claude`. One branch and one draft PR targeting `main`; two logical commits where practical. Owns the interface/types, mock adapter and focused tests. No real provider integrations or invented capabilities; preserve open policy decisions and shared-file/security boundaries.
 - Codex: `IMP-P3-004` — Password Hashing, branch `feat/codex-imp-p3-004-password-hashing` (still pending).
 
-The [assignment register](TASKS.md#parallel-assignments) records ownership and dependencies. IMP-P4-003 and IMP-P4-004 remain individually Backlog in the roadmap task register until implementation begins; neither is completed. Keep KYC provider mapping, reviewer authorization, expiry, re-verification, provider failure handling and decision-reason policy unresolved until the accountable owners decide. Legal, Security and Compliance production gates remain open.
+Claude's PR #7 assignment is complete. No new Claude task is assigned; any next assignment requires the repository owner's approval. The [assignment register](TASKS.md#parallel-assignments) retains Codex's pending assignment. Keep KYC provider mapping, reviewer authorization, expiry, re-verification, provider failure handling and decision-reason policy unresolved until the accountable owners decide. Legal, Security and Compliance production gates remain open.
+
+## Next Phase 4 task readiness
+
+`IMP-P4-005` — KYC API Endpoints remains Backlog and is not ready for customer-facing implementation. The API specification lists proposed KYC routes, but trusted login/session identity is not yet available (`IMP-P3-005` and `IMP-P3-006` remain Backlog); the KYC PostgreSQL write adapter and reviewed role permissions are absent; submission data/documents are not approved; and case/API/account status mapping remains unresolved. Implementing operational start/submit routes before these dependencies would either be unusable or require unsafe assumptions. Do not assign a route skeleton that accepts caller-supplied customer identity or implies successful persistence.
+
+Recommended dependency path, subject to owner approval: continue the existing Codex `IMP-P3-004` assignment, then complete the authentication/session prerequisites in `IMP-P3-005` and `IMP-P3-006`; separately scope and approve the outstanding KYC PostgreSQL persistence work and obtain Product/Compliance requirements and status mapping. Reassess `IMP-P4-005` after these gates. No new task or agent assignment is created here.
 
 Codex and Claude continue to use separate worktrees and assigned branches. Implementation agents must edit only their recorded modules, preserve migrations/API/security boundaries, and open PRs to `main`. Copilot coordinates; the repository owner reviews and merges.
