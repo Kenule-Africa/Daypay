@@ -39,11 +39,11 @@
 
 The latest accepted engineering work is `IMP-P4-002`, merged as PR [#6](https://github.com/Kenule-Africa/Daypay/pull/6) at `d22181cc5bad7f46a87330ac25d8389ac1631d18`. Backend and frontend CI passed on final implementation commit `96aa8e5deb1c95b3ff3500e406a81cdd54157576` in run [45487110380](https://github.com/Kenule-Africa/Daypay/actions/runs/45487110380). This is technical acceptance only; Phase 4 is not complete and production gates remain open.
 
-## Next planned assignments
+## Current assignments
 
-- Claude: `IMP-P4-003` — KYC Provider Interface, branch `feat/claude-imp-p4-003-kyc-provider-interface` (planned / backlog, not started). Define only the abstraction supported by approved architecture/specifications; do not claim provider capabilities or implement a real integration.
+- Claude: `IMP-P4-003` — KYC Provider Interface and `IMP-P4-004` — Mock KYC Adapter, assigned / not started on branch `feat/claude-imp-p4-003-004-kyc-providers` in workspace `DeyPay-claude`. One branch and one draft PR targeting `main`; two logical commits where practical. Owns the interface/types, mock adapter and focused tests. No real provider integrations or invented capabilities; preserve open policy decisions and shared-file/security boundaries.
 - Codex: `IMP-P3-004` — Password Hashing, branch `feat/codex-imp-p3-004-password-hashing` (still pending).
 
-The [assignment register](TASKS.md#planned-parallel-assignments) records proposed ownership and dependencies. Keep KYC provider mapping, reviewer authorization, expiry, re-verification, provider failure handling and decision-reason policy unresolved until the accountable owners decide. Legal, Security and Compliance production gates remain open.
+The [assignment register](TASKS.md#parallel-assignments) records ownership and dependencies. IMP-P4-003 and IMP-P4-004 remain individually Backlog in the roadmap task register until implementation begins; neither is completed. Keep KYC provider mapping, reviewer authorization, expiry, re-verification, provider failure handling and decision-reason policy unresolved until the accountable owners decide. Legal, Security and Compliance production gates remain open.
 
 Codex and Claude continue to use separate worktrees and assigned branches. Implementation agents must edit only their recorded modules, preserve migrations/API/security boundaries, and open PRs to `main`. Copilot coordinates; the repository owner reviews and merges.

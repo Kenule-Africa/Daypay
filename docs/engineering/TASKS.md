@@ -19,14 +19,14 @@ For each phase, apply its exit criteria in Document 08 before starting the next 
 | IMP-P1-007 / 008 / 009 | Backend engineering / P0 | Current workspace and PostgreSQL, roadmap §14 | Exercise configuration validation, inspect JSON logs for secret leakage, and verify API liveness and readiness with the database available and unavailable. |
 | IMP-P1-010 / 011 / 012 | Engineering / P0 | Backend, frontend and development database, roadmap §14 | Run the workflow on GitHub and record the lint, formatting, build, unit and integration results. |
 
-## Planned parallel assignments
+## Parallel assignments
 
-These assignments are planned and have not started. They do not change existing task statuses or acceptance criteria.
+Claude's combined assignment is assigned but not started. Codex remains planned / backlog. Assignment tracking does not change task statuses or acceptance criteria.
 
 | Agent | Task | Branch | Owned modules/files | Dependencies | Status | PR / acceptance evidence |
 |---|---|---|---|---|---|---|
 | Codex | IMP-P3-004 Password Hashing | `feat/codex-imp-p3-004-password-hashing` | `deypay-application/src/passwords.rs`; `deypay-infrastructure/src/password_hashing.rs`; focused password/registration tests; existing password enrollment and configuration interfaces only | Phase 2 password credential schema; IMP-P3-001 registration; IMP-P3-009 where registration collision behavior is shared | Planned / Backlog | Not started |
-| Claude | IMP-P4-003 KYC Provider Interface | `feat/claude-imp-p4-003-kyc-provider-interface` | KYC provider abstraction and focused tests; confirm exact files against approved architecture/specifications before starting. No real provider integration or invented provider capabilities | IMP-P4-002 engineering-accepted; approved architecture/specifications and open policy decisions in [DECISIONS.md](DECISIONS.md) and [BLOCKERS.md](BLOCKERS.md) | Planned / Backlog | Not started |
+| Claude | IMP-P4-003 KYC Provider Interface; IMP-P4-004 Mock KYC Adapter | `feat/claude-imp-p4-003-004-kyc-providers` | Workspace: `DeyPay-claude`. KYC provider interface/types, mock adapter, and focused tests for both tasks; confirm exact files against approved architecture/specifications before implementation. No real provider integrations, migrations/permissions, HTTP endpoints, authentication/password changes, or compliance policy approvals | IMP-P4-002 engineering-accepted and approved architecture/specifications; IMP-P4-004 depends on the IMP-P4-003 interface. Preserve unresolved policy decisions in [DECISIONS.md](DECISIONS.md) and [BLOCKERS.md](BLOCKERS.md) | Assigned / Not Started | One draft PR to `main`; two logical commits where practical. No implementation evidence yet |
 
 Shared coordination boundaries:
 
