@@ -2,12 +2,13 @@
 
 ## Current state
 
-- **Exact accepted baseline:** `b1b9e2b4879f9b8603df29437ee67eb5ca44df23` (PR #7 merge commit).
-- **Latest successful verification:** [GitHub Actions run 45499292388](https://github.com/Kenule-Africa/Daypay/actions/runs/45499292388), on final implementation commit `2f61d79b3206edb397fa6ad0d00d4b0076d43c97`.
+- **Exact accepted baseline:** `37391e381b9bbf63a345e029800c03be3ad071cd` (PR #8 merge commit).
+- **Latest successful verification:** [GitHub Actions run 45506566567](https://github.com/Kenule-Africa/Daypay/actions/runs/45506566567), on final implementation commit `678f4fbde0b99bde30192f3f3475b48f56571b45`; backend and frontend jobs both succeeded.
 - **Completed phases:** Phase 1 — Project Foundation and Infrastructure; Phase 2 — Database and Domain Foundations.
 - **IMP-P3-001:** Completed; the email-only MVP registration/contact-verification change is technically accepted.
 - **IMP-P3-002:** In testing; hosted Resend staging delivery and confirmation remain open.
 - **IMP-P3-003:** Deferred — Post-MVP.
+- **IMP-P3-004:** Completed — Engineering Accepted. PR [#8](https://github.com/Kenule-Africa/Daypay/pull/8) merged at `37391e381b9bbf63a345e029800c03be3ad071cd`; CI run [45506566567](https://github.com/Kenule-Africa/Daypay/actions/runs/45506566567) passed on implementation commit `678f4fbde0b99bde30192f3f3475b48f56571b45`. The read-only verifier checks stored Argon2id credentials, safely rejects bad/missing/unusable records, shares bounded hashing capacity, and signals older supported profiles for future rehashing without writing. It adds no login, session or rehash operation. See [PROGRESS.md](PROGRESS.md#2026-11-24--imp-p3-004-engineering-acceptance).
 - **IMP-P4-001:** Completed and engineering-accepted; PR [#5](https://github.com/Kenule-Africa/Daypay/pull/5).
 - **IMP-P4-002:** Completed and engineering-accepted; Claude's PR [#6](https://github.com/Kenule-Africa/Daypay/pull/6) merged at `d22181cc5bad7f46a87330ac25d8389ac1631d18`. Final implementation commit `96aa8e5deb1c95b3ff3500e406a81cdd54157576` passed backend and frontend CI run [45487110380](https://github.com/Kenule-Africa/Daypay/actions/runs/45487110380).
 - **IMP-P4-003 / IMP-P4-004:** Completed and engineering-accepted together in Claude's PR [#7](https://github.com/Kenule-Africa/Daypay/pull/7), merged at `b1b9e2b4879f9b8603df29437ee67eb5ca44df23`. Both implementation commits are included; backend and frontend CI passed on final commit `2f61d79b3206edb397fa6ad0d00d4b0076d43c97` in run [45499292388](https://github.com/Kenule-Africa/Daypay/actions/runs/45499292388).
@@ -27,6 +28,7 @@
 - Frontend CI passed `npm ci`, lint, build, typecheck and Node tests.
 - The lockfile consistency guard passed with the corrected `backend/Cargo.lock`.
 - PR #7 added the provider-independent KYC interface and a local/test-only mock. No real-provider capability or production readiness was verified; see [PROGRESS.md](PROGRESS.md#2026-11-24--imp-p4-003-and-p4-004-engineering-acceptance).
+- PR #8 added password verification only. The six-character minimum, production Argon2id/concurrency profile, screening-source approval, and login/session security controls remain open. Dummy hashing is a timing mitigation, not proof of uniform timing; password rehashing is not implemented.
 - The prior Phase 2 native PostgreSQL and restricted-role evidence remains in [PROGRESS.md](PROGRESS.md).
 
 ## Remaining implementation follow-ups
@@ -39,19 +41,28 @@
 
 ## Next action
 
-The latest accepted engineering work is `IMP-P4-003` and `IMP-P4-004`, merged together in PR [#7](https://github.com/Kenule-Africa/Daypay/pull/7) at `b1b9e2b4879f9b8603df29437ee67eb5ca44df23`. Backend and frontend CI passed on final implementation commit `2f61d79b3206edb397fa6ad0d00d4b0076d43c97` in run [45499292388](https://github.com/Kenule-Africa/Daypay/actions/runs/45499292388). This is technical acceptance only; Phase 4 is not complete and production gates remain open.
+The latest accepted engineering work is `IMP-P3-004`, merged in PR [#8](https://github.com/Kenule-Africa/Daypay/pull/8) at `37391e381b9bbf63a345e029800c03be3ad071cd`. Backend and frontend CI passed on implementation commit `678f4fbde0b99bde30192f3f3475b48f56571b45` in run [45506566567](https://github.com/Kenule-Africa/Daypay/actions/runs/45506566567). This is technical acceptance only; it is not production authentication approval and does not complete Phase 3.
 
 ## Current assignments
 
-- Codex: `IMP-P3-004` — Password Hashing, branch `feat/codex-imp-p3-004-password-hashing` (still pending).
 - Claude: `IMP-P4-005` — KYC API Endpoints; `IMP-P4-006` — Customer Restriction Engine; and `IMP-P4-007` — Transaction Limit Foundation, assigned / not started on branch `feat/claude-imp-p4-005-007-kyc-controls` in workspace `DeyPay-claude`. Claude's prerequisite scope includes the IMP-P4-002 PostgreSQL KYC write adapter, atomic first-case creation, conditional transitions and database-backed tests. Database/security review is required for least-privilege permissions and shared migration/grant changes. IMP-P4-002 remains completed and engineering-accepted; this is follow-up prerequisite work, not a status reversal.
 
-Claude must use trusted identity from Codex's Phase 3 authentication work and must not implement a separate login or session system. The [assignment register](TASKS.md#parallel-assignments) records each assigned task separately. Keep KYC provider mapping, reviewer authorization, expiry, re-verification, provider failure handling and decision-reason policy unresolved until the accountable owners decide. Legal, Security and Compliance production gates remain open.
+Codex retains Phase 3 ownership. `IMP-P3-005` — Login and `IMP-P3-006` — Session Management are the proposed next combined Codex development cycle, but are **not assigned or started** and require repository-owner authorization. Claude must consume trusted identity from that Phase 3 work and must not implement a separate login or session system. The [assignment register](TASKS.md#parallel-assignments) records only active assignments. Keep KYC provider mapping, reviewer authorization, expiry, re-verification, provider failure handling and decision-reason policy unresolved until the accountable owners decide. Legal, Security and Compliance production gates remain open.
+
+## Proposed Phase 3 handoff — not assigned
+
+`IMP-P3-005` Login and `IMP-P3-006` Session Management are a natural combined next cycle after the accepted read-only credential verifier in `IMP-P3-004`. The current prerequisites include Phase 2 identity/password/session persistence, Phase 3 registration and the verifier; the existing database design defines `identity.password_credentials` and `identity.sessions`. Do not assume additional migration or API contract changes without review.
+
+Keep the implementation boundaries explicit: the API layer owns login/session HTTP handling; application services own credential lookup, login outcome and session lifecycle contracts; infrastructure owns password/session persistence and token-hash handling; tests cover API behavior and PostgreSQL persistence/concurrency. Reuse the accepted `CredentialVerifier`; do not fold rehash writes, password recovery, logout or separate KYC behavior into these tasks. Ensure the resulting authenticated customer identity is server-derived and is the identity source consumed by Claude's assigned `IMP-P4-005`.
+
+Follow API §14 and Security SEC-AUTH-004/006/008 and SEC-SES-001–006: rate-limit and detect abuse; use generic credential failures, avoid unnecessary account enumeration, record security events; create cryptographically unpredictable opaque server-side sessions, store only token hashes, enforce idle and absolute expiry, set Secure/HttpOnly/SameSite=Lax cookies, protect cookie-authenticated state changes against CSRF, rotate identifiers and invalidate prior sessions atomically, and support revocation. Coordinate logout and broader revocation tasks without pre-claiming them.
+
+Security/Product must still resolve production Argon2id cost and concurrency, password minimum and screening policy; login rate-limit/abuse thresholds and timing/enumeration acceptance; authentication audit requirements; and configured idle/absolute session lifetimes. Dummy hashing is not proof of uniform timing. The work is technically preparable but is not authorized to start; obtain repository-owner approval before recording an assignment or branch.
 
 ## Next Phase 4 task readiness
 
-`IMP-P4-005` — KYC API Endpoints is assigned but remains gated from customer-facing implementation. The API specification lists proposed KYC routes, but trusted login/session identity is not yet available (`IMP-P3-004`–`IMP-P3-006` remain in Codex's Phase 3 scope); the KYC PostgreSQL write adapter and reviewed role permissions are absent; submission data/documents are not approved; case/API/account status mapping and resubmission policy remain unresolved; and appropriate compliance audit evidence is pending under IMP-P4-008. Do not expose routes that accept caller-supplied customer identity or imply successful persistence before these dependencies are met.
+`IMP-P4-005` — KYC API Endpoints is assigned but remains gated from customer-facing implementation. The API specification lists proposed KYC routes, but trusted login/session identity is not yet available (`IMP-P3-004` is accepted; `IMP-P3-005` and `IMP-P3-006` are proposed and await owner authorization); the KYC PostgreSQL write adapter and reviewed role permissions are absent; submission data/documents are not approved; case/API/account status mapping and resubmission policy remain unresolved; and appropriate compliance audit evidence is pending under IMP-P4-008. Do not expose routes that accept caller-supplied customer identity or imply successful persistence before these dependencies are met.
 
-`IMP-P4-006` and `IMP-P4-007` may proceed with fail-closed foundational work where approved requirements are sufficient. They must not activate financial operations or treat provider outcomes as customer approval. Reassess P4-005 endpoint activation after the authentication/session, persistence, approved-requirements, status-mapping, resubmission and audit dependencies are satisfied. Claude must not implement authentication/session functionality; Codex owns the Phase 3 identity work beginning with the existing IMP-P3-004 assignment. No additional task or agent assignment is implied.
+`IMP-P4-006` and `IMP-P4-007` may proceed with fail-closed foundational work where approved requirements are sufficient. They must not activate financial operations or treat provider outcomes as customer approval. Reassess P4-005 endpoint activation after the authentication/session, persistence, approved-requirements, status-mapping, resubmission and audit dependencies are satisfied. Claude must not implement authentication/session functionality; Codex retains Phase 3 ownership, with P3-005/P3-006 still awaiting authorization. No additional task or agent assignment is implied.
 
 Codex and Claude continue to use separate worktrees and assigned branches. Implementation agents must edit only their recorded modules, preserve migrations/API/security boundaries, and open PRs to `main`. Copilot coordinates; the repository owner reviews and merges.

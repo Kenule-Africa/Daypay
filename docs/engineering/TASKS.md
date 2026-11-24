@@ -25,8 +25,7 @@ Current implementation assignments are listed here. Assignment status is separat
 
 | Agent | Task | Branch | Owned modules/files | Dependencies | Status | PR / acceptance evidence |
 |---|---|---|---|---|---|---|
-| Codex | IMP-P3-004 Password Hashing | `feat/codex-imp-p3-004-password-hashing` | `deypay-application/src/passwords.rs`; `deypay-infrastructure/src/password_hashing.rs`; focused password/registration tests; existing password enrollment and configuration interfaces only | Phase 2 password credential schema; IMP-P3-001 registration; IMP-P3-009 where registration collision behavior is shared | Planned / Backlog | Not started |
-| Claude | IMP-P4-005 KYC API Endpoints | `feat/claude-imp-p4-005-007-kyc-controls` | Workspace: `DeyPay-claude`. Customer KYC API endpoints using trusted session identity only. Includes the IMP-P4-002 PostgreSQL persistence follow-up as prerequisite work: write adapter, atomic first-case creation, conditional transitions and database-backed tests. Coordinate least-privilege grants and any migration/permission changes with the coordinator and database/security owners. No login/session implementation. | IMP-P3-004/005/006 trusted authentication/session (Codex); KYC PostgreSQL adapter, reviewed permissions and atomicity; Product/Compliance-approved identity/document requirements, status mapping and resubmission policy; IMP-P4-008 audit evidence | Assigned / Not Started | No implementation or PR yet |
+| Claude | IMP-P4-005 KYC API Endpoints | `feat/claude-imp-p4-005-007-kyc-controls` | Workspace: `DeyPay-claude`. Customer KYC API endpoints using trusted session identity only. Includes the IMP-P4-002 PostgreSQL persistence follow-up as prerequisite work: write adapter, atomic first-case creation, conditional transitions and database-backed tests. Coordinate least-privilege grants and any migration/permission changes with the coordinator and database/security owners. No login/session implementation. | IMP-P3-004 accepted verifier; trusted authentication/session from proposed IMP-P3-005/006 (Codex Phase 3; not yet authorized); KYC PostgreSQL adapter, reviewed permissions and atomicity; Product/Compliance-approved identity/document requirements, status mapping and resubmission policy; IMP-P4-008 audit evidence | Assigned / Not Started | No implementation or PR yet |
 | Claude | IMP-P4-006 Customer Restriction Engine | `feat/claude-imp-p4-005-007-kyc-controls` | Workspace: `DeyPay-claude`. Fail-closed restriction foundations using approved rules only; preserve separate eligibility checks and do not activate financial operations | IMP-P4-001–002; approved KYC/account-status mapping and restriction rules from Product/Compliance; keep financial actions blocked unless eligibility is verified | Assigned / Not Started | No implementation or PR yet |
 | Claude | IMP-P4-007 Transaction Limit Foundation | `feat/claude-imp-p4-005-007-kyc-controls` | Workspace: `DeyPay-claude`. Fail-closed limit foundations only where approved requirements exist; no financial operation activation | Approved Product/Compliance limit and eligibility requirements; coordinate with IMP-P4-006 restriction foundations and existing authorization controls | Assigned / Not Started | No implementation or PR yet |
 
@@ -95,12 +94,14 @@ Backend engineering owns these P0 foundations. Task 001 supplies ordered migrati
 
 ## Phase 3 · AUTHENTICATION AND CUSTOMER IDENTITY (§16)
 
+`IMP-P3-004` is Completed — Engineering Accepted. PR [#8](https://github.com/Kenule-Africa/Daypay/pull/8) merged into `main` at `37391e381b9bbf63a345e029800c03be3ad071cd`; backend and frontend CI passed in run [45506566567](https://github.com/Kenule-Africa/Daypay/actions/runs/45506566567) for implementation commit `678f4fbde0b99bde30192f3f3475b48f56571b45`. This acceptance does not approve production authentication. See [PROGRESS.md](PROGRESS.md#2026-11-24--imp-p3-004-engineering-acceptance).
+
 | Task ID | Roadmap task | Status |
 |---|---|---|
 | IMP-P3-001 | Registration. | Completed |
 | IMP-P3-002 | Email verification. | In testing |
 | IMP-P3-003 | Phone verification. | Deferred — Post-MVP |
-| IMP-P3-004 | Password hashing. | Backlog |
+| IMP-P3-004 | Password hashing. | Completed |
 | IMP-P3-005 | Login. | Backlog |
 | IMP-P3-006 | Session management. | Backlog |
 | IMP-P3-007 | Logout. | Backlog |
