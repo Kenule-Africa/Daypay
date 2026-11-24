@@ -17,12 +17,13 @@
 //!   exists yet, so [`NoApprovedRequirements`] refuses every submission.
 //!
 //! Not yet guaranteed, because no PostgreSQL adapter implements
-//! [`KycCaseStore`]:
+//! [`KycCaseStore`] and no database-backed test exercises it:
 //!
 //! - The runtime role can only read `compliance.kyc_cases`. Writes need a
 //!   reviewed grant change.
-//! - No database constraint limits a customer to one case. The adapter must
-//!   make [`KycCaseStore::insert_first_case`] atomic per customer.
+//! - No database constraint limits a customer to one case. The store contract
+//!   requires an atomic, per-customer serialized insert-or-nothing, but the
+//!   service can only validate what a store returns. It cannot undo a write.
 //! - Submission writes no audit event (IMP-P4-008).
 use crate::repositories::{KycRepository, RepositoryError};
 use deypay_domain::entities::KycCase;
@@ -73,15 +74,43 @@ impl From<RepositoryError> for KycServiceError {
     }
 }
 
+/// A request to insert a customer's first case.
+///
+/// Only this module can build one, so a store is only ever asked to insert a
+/// [`KycCaseStatus::INITIAL`] case owned by the requesting customer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NewKycCase {
+    owner_id: Uuid,
+}
+
+impl NewKycCase {
+    pub const fn owner_id(self) -> Uuid {
+        self.owner_id
+    }
+
+    /// Always [`KycCaseStatus::INITIAL`].
+    pub const fn status(self) -> KycCaseStatus {
+        KycCaseStatus::INITIAL
+    }
+}
+
 /// Write port for KYC cases. Every write is scoped to the case owner.
 pub trait KycCaseStore: KycRepository {
-    /// Inserts a case with status [`KycCaseStatus::INITIAL`] for a customer
-    /// who has no case, atomically with that check. Returns `None`, and writes
-    /// nothing, if the customer already has a case, including under concurrent
-    /// calls.
+    /// Persists exactly `case`, or nothing.
+    ///
+    /// In one database transaction, an implementation must:
+    ///
+    /// 1. serialize with every other first-case insert for the same owner;
+    /// 2. return `None`, writing nothing, if the owner already has any case;
+    /// 3. otherwise insert one row with a new non-nil ID, `case.owner_id()` and
+    ///    `case.status()`, and return that row as stored.
+    ///
+    /// On an error nothing may remain persisted. The service rejects a returned
+    /// row that does not match the request, but it cannot undo a write. These
+    /// guarantees therefore rest on the implementation and its database tests.
     fn insert_first_case(
         &self,
-        customer_id: Uuid,
+        case: NewKycCase,
     ) -> impl Future<Output = Result<Option<KycCase>, RepositoryError>> + Send;
 
     /// Sets the status to `transition.to()` only where the case has `case_id`,
@@ -150,12 +179,19 @@ pub async fn open_first_case(
     store: &impl KycCaseStore,
     customer_id: Uuid,
 ) -> Result<KycCaseView, KycServiceError> {
+    let request = NewKycCase {
+        owner_id: customer_id,
+    };
     let case = store
-        .insert_first_case(customer_id)
+        .insert_first_case(request)
         .await?
         .ok_or(KycServiceError::CaseAlreadyExists)?;
-    let (_, view) = owned_view(&case, customer_id, case.id)?;
-    if view.status != KycCaseStatus::INITIAL {
+    // A mismatch means the store broke its contract. Report it, never use it.
+    if case.id.is_nil() {
+        return Err(KycServiceError::InvalidRecord);
+    }
+    let (_, view) = owned_view(&case, request.owner_id(), case.id)?;
+    if view.status != request.status() {
         return Err(KycServiceError::InvalidRecord);
     }
     Ok(view)
@@ -270,10 +306,13 @@ mod tests {
         writes: Mutex<Vec<KycCaseTransition>>,
         read_error: Option<RepositoryError>,
         write_error: Option<RepositoryError>,
+        /// Every insert request the service made.
+        insert_requests: Mutex<Vec<NewKycCase>>,
         /// A faulty adapter that returns this row for every lookup.
         read_override: Option<KycCase>,
-        /// A faulty adapter that reports this status for an inserted case.
-        inserted_status: Option<&'static str>,
+        /// A store that breaks its contract: it persists and returns this row
+        /// instead of the requested one.
+        contract_breaking_row: Option<KycCase>,
         /// Another writer commits this status just before our write.
         concurrent_status: Option<&'static str>,
     }
@@ -331,20 +370,27 @@ mod tests {
     }
 
     impl KycCaseStore for FakeStore {
+        /// Honours the contract unless `contract_breaking_row` is set: the
+        /// check and insert happen under one lock, so concurrent calls for one
+        /// owner cannot both insert.
         fn insert_first_case(
             &self,
-            customer_id: Uuid,
+            request: NewKycCase,
         ) -> impl Future<Output = Result<Option<KycCase>, RepositoryError>> + Send {
+            self.insert_requests.lock().unwrap().push(request);
             let insert = || {
                 let mut cases = self.cases.lock().unwrap();
-                if cases.iter().any(|c| c.user_id == customer_id) {
+                if cases.iter().any(|c| c.user_id == request.owner_id()) {
                     return None;
                 }
-                let case = KycCase {
-                    id: Uuid::from_u128(0x100 + cases.len() as u128),
-                    user_id: customer_id,
-                    status: self.inserted_status.unwrap_or("DRAFT").to_owned(),
-                };
+                let case = self
+                    .contract_breaking_row
+                    .clone()
+                    .unwrap_or_else(|| KycCase {
+                        id: Uuid::from_u128(0x100 + cases.len() as u128),
+                        user_id: request.owner_id(),
+                        status: request.status().as_str().to_owned(),
+                    });
                 cases.push(case.clone());
                 Some(case)
             };
@@ -537,17 +583,66 @@ mod tests {
     }
 
     #[test]
-    fn an_inserted_case_that_is_not_a_draft_is_rejected() {
-        for status in ["APPROVED", "SUBMITTED", "KYC_APPROVED"] {
+    fn the_service_only_requests_an_owned_draft() {
+        let store = FakeStore::with("REJECTED");
+        let _ = run(open_first_case(&store, CUSTOMER));
+        let _ = run(open_first_case(&store, OTHER));
+        let requests = store.insert_requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        for (request, owner) in requests.iter().zip([CUSTOMER, OTHER]) {
+            assert_eq!((request.owner_id(), request.status()), (owner, Draft));
+        }
+    }
+
+    #[test]
+    fn returned_rows_that_break_the_store_contract_are_rejected() {
+        let row = |id: Uuid, user_id: Uuid, status: &str| KycCase {
+            id,
+            user_id,
+            status: status.to_owned(),
+        };
+        let new_id = Uuid::from_u128(0x200);
+        for bad in [
+            row(new_id, OTHER, "DRAFT"),
+            row(new_id, CUSTOMER, "APPROVED"),
+            row(new_id, CUSTOMER, "SUBMITTED"),
+            row(new_id, CUSTOMER, "KYC_APPROVED"),
+            row(Uuid::nil(), CUSTOMER, "DRAFT"),
+        ] {
             let store = FakeStore {
-                inserted_status: Some(status),
+                contract_breaking_row: Some(bad.clone()),
                 ..FakeStore::default()
             };
             assert_eq!(
                 run(open_first_case(&store, CUSTOMER)),
                 Err(E::InvalidRecord)
             );
+            // Detection only: the service cannot undo what a faulty store
+            // persisted. Insert-or-nothing is the store's guarantee, and no
+            // PostgreSQL implementation or database test provides it yet.
+            assert_eq!(*store.cases.lock().unwrap(), [bad]);
         }
+    }
+
+    #[test]
+    fn concurrent_first_case_requests_create_one_case() {
+        // Exercises the service against a store that honours the contract. It
+        // shows the service adds no check-then-insert race of its own. It does
+        // not verify any PostgreSQL implementation.
+        let store = FakeStore::default();
+        let results: Vec<_> = std::thread::scope(|scope| {
+            let workers: Vec<_> = (0..8)
+                .map(|_| scope.spawn(|| run(open_first_case(&store, CUSTOMER))))
+                .collect();
+            workers.into_iter().map(|w| w.join().unwrap()).collect()
+        });
+        assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 1);
+        assert!(
+            results
+                .iter()
+                .all(|r| r.is_ok() || *r == Err(E::CaseAlreadyExists))
+        );
+        assert_eq!(store.case_count(), 1);
     }
 
     #[test]
