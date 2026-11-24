@@ -25,3 +25,18 @@ Do not load all specifications or the whole repository by default. Use targeted 
 - Check dependencies and acceptance criteria first; run focused tests, then broader checks at integration boundaries.
 - Do not claim completion or passing tests without executing and recording the relevant checks. Distinguish type checking, compilation, runtime tests, simulations, provider approval, and live activation.
 - Before completion, inspect the diff, update only directly related documentation and tracking evidence, and leave an actionable handoff. Keep final reports concise.
+
+## Parallel coding-agent coordination
+
+- One coding agent owns one active roadmap task. Codex and Claude use separate worktrees and feature branches:
+  - Codex: `feat/codex-<task-id>-<description>`
+  - Claude: `feat/claude-<task-id>-<description>`
+- Each agent edits only inside its assigned worktree and remains within the files/modules recorded in [TASKS.md](docs/engineering/TASKS.md).
+- Before implementation, use the task acceptance criteria and applicable specifications. Do not refactor unrelated code or silently change a shared migration, API contract, authentication/KYC boundary, compliance rule or financial invariant.
+- Database migrations, shared API contracts and engineering tracker updates require explicit coordinator ownership. If an overlap is found, stop and report it; do not edit around it in parallel.
+- Preserve existing tests and add focused regression coverage. Run only the test database/worktree scope assigned to the task. Prefer the existing disposable PostgreSQL/SQLx pattern, and serialize or isolate local SQLx test runs if their generated database names or environment variables could overlap.
+- Commit and push only to the assigned feature branch. Never push directly to `main`, merge a pull request, force-push, change repository settings or bypass reviews.
+- End each implementation with a pull request targeting `main`. Include the task ID, summary, changed files, actual test outcomes, security/regression considerations and remaining blockers.
+- CI must pass before integration. The repository owner alone approves and merges PRs.
+- Before new work, branch from current `main` after the owner's prior merge acceptance. Incorporate the latest accepted `main` changes into a feature branch when dependencies require it; use a normal merge or rebase only on that agent's branch.
+- Copilot may coordinate, prepare review findings and record accepted evidence. It does not approve or merge implementation assumptions.

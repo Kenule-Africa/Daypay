@@ -35,3 +35,12 @@
 ## Next action
 
 The next eligible roadmap task is `IMP-P3-004`, password hashing. Start from the existing registration Argon2id implementation and its tests. `IMP-P3-003` is Deferred — Post-MVP. Staging email delivery and production registration approvals remain open. See the [verification evidence](PROGRESS.md) and [release gates](BLOCKERS.md).
+
+## Parallel development setup
+
+Codex and Claude assignments are planned, not started:
+
+- Codex owns `IMP-P3-004` on `feat/codex-imp-p3-004-password-hashing`.
+- Claude owns `IMP-P4-001` on `feat/claude-imp-p4-001-kyc-state-machine`.
+
+The [assignment register](TASKS.md#planned-parallel-assignments) records proposed file/module ownership and dependencies. Implementation agents must use separate worktrees and branches, edit only assigned modules, preserve migrations/API/security boundaries, and open PRs to `main`. Copilot will coordinate only; the repository owner reviews and merges.
