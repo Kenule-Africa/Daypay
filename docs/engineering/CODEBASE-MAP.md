@@ -25,7 +25,7 @@ Rust workspace: [`backend/Cargo.toml`](../../backend/Cargo.toml)
 - Domain projections and exact units: `backend/crates/deypay-domain/src/`; repository contracts: `backend/crates/deypay-application/src/repositories.rs`; SQLx implementations: `backend/crates/deypay-infrastructure/src/repositories.rs`.
 - Transaction-bound outbox and audit writes: `backend/crates/deypay-application/src/events.rs` and `backend/crates/deypay-infrastructure/src/events.rs`.
 - Application root: `backend/crates/deypay-application/src/lib.rs`
-- KYC application service: **Planned** under IMP-P4-002; see [TASKS.md](TASKS.md#planned-parallel-assignments)
+- KYC application service: `backend/crates/deypay-application/src/kyc.rs` (IMP-P4-002, engineering-accepted); exports through `src/lib.rs`. Co-located tests cover customer ownership, first-case requests, transition validation, stale/concurrent changes and fail-closed requirements. No PostgreSQL KYC write adapter, document processing, audit write, provider/reviewer flow or financial eligibility is implemented; see [PROGRESS.md](PROGRESS.md#2026-11-24--imp-p4-002-engineering-acceptance) and [BLOCKERS.md](BLOCKERS.md).
 - Shared configuration/runtime: `backend/crates/deypay-common/src/`
 - PostgreSQL pool and readiness query: `backend/crates/deypay-infrastructure/src/database.rs`
 - Database migrations: `backend/migrations/`, embedded by `deypay-infrastructure`. SQLx integration cases are in `backend/crates/deypay-infrastructure/tests/`.

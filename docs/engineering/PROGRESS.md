@@ -1,5 +1,15 @@
 # Engineering progress
 
+## 2026-11-24 · IMP-P4-002 engineering acceptance
+
+PR [#6](https://github.com/Kenule-Africa/Daypay/pull/6) was merged by the repository owner into `main` at merge commit [`d22181cc5bad7f46a87330ac25d8389ac1631d18`](https://github.com/Kenule-Africa/Daypay/commit/d22181cc5bad7f46a87330ac25d8389ac1631d18). Claude implemented the assigned task on `feat/claude-imp-p4-002-kyc-application-service`; the final implementation commit was `96aa8e5deb1c95b3ff3500e406a81cdd54157576`.
+
+**Verdict: IMP-P4-002 completed and engineering-accepted.** The accepted changes are limited to `backend/crates/deypay-application/src/kyc.rs` and its `backend/crates/deypay-application/src/lib.rs` module export. The service provides owner-scoped case retrieval, first-case creation requested as an owned `DRAFT`, and submission transitions validated by the accepted IMP-P4-001 state machine. Submission checks an application-owned requirements port and uses a conditional transition contract; typed errors cover missing/foreign cases, invalid records, stale/concurrent changes, missing requirements and storage failures. Regression tests cover ownership, malformed/foreign rows, first-case constraints, invalid transitions, compare-and-set behavior, fail-closed submission requirements and contract-breaking store responses.
+
+The final PR-head Actions run [45487110380](https://github.com/Kenule-Africa/Daypay/actions/runs/45487110380) checked the exact final implementation commit. Backend job [138775321705](https://github.com/Kenule-Africa/Daypay/actions/runs/45487110380/job/138775321705) passed tracking checks, disposable PostgreSQL provisioning, Rust workspace checks/tests, live service checks, persistence checks and the lockfile guard. Frontend job [138775321287](https://github.com/Kenule-Africa/Daypay/actions/runs/45487110380/job/138775321287) passed `npm ci`, lint, build, typecheck and Node tests.
+
+This is engineering acceptance only, not production readiness or approval. No PostgreSQL KYC write adapter or database-backed concurrency test was added; the runtime role remains read-only for `compliance.kyc_cases`. `NoApprovedRequirements` refuses every submission. There is no document processing, operational/production-ready submission, provider or reviewer workflow, audit write, account-status mapping, financial eligibility or restriction enforcement. Customer identity must come from a trusted authenticated session. See [DECISIONS.md](DECISIONS.md) and [BLOCKERS.md](BLOCKERS.md) for all remaining dependencies and policy gates.
+
 ## 2026-11-24 · IMP-P4-001 engineering acceptance
 
 PR [#5](https://github.com/Kenule-Africa/Daypay/pull/5), **feat(kyc): add typed KYC case state machine**, was merged by the repository owner into `main` at merge commit [`26d5023a02f0ed55fe3c95f1fb2b61394dd99c3f`](https://github.com/Kenule-Africa/Daypay/commit/26d5023a02f0ed55fe3c95f1fb2b61394dd99c3f). The PR's final head was `405605ed983d377bc6c787a3b36dfeef701a6840`.
