@@ -4,7 +4,10 @@ use axum::{
 };
 use deypay_api::registration::{RegistrationSettings, routes};
 use deypay_application::{
-    passwords::{CompromisedPasswords, PasswordPolicy, ScreenedPasswords},
+    passwords::{
+        CompromisedPasswords, CredentialError, CredentialVerifier, PasswordPolicy,
+        ScreenedPasswords, VerifiedPassword,
+    },
     registration::RegistrationError,
 };
 use deypay_common::config::Environment;
@@ -126,6 +129,15 @@ async fn public_signup_is_unverified_and_non_enumerating(pool: PgPool) -> sqlx::
         JOIN identity.password_credentials pw ON pw.user_id=u.id JOIN customers.profiles p ON p.user_id=u.id"
     ).fetch_one(&pool).await?;
     assert!(hash.starts_with("$argon2id$v=19$m=32,t=2,p=1$"));
+    let verifier = Argon2idHasher::new(64, 2, 1, 1).unwrap();
+    assert_eq!(
+        verifier.verify("A1!xxx", Some(&hash)).await,
+        Ok(VerifiedPassword { needs_rehash: true })
+    );
+    assert_eq!(
+        verifier.verify("A1!xxy", Some(&hash)).await,
+        Err(CredentialError::Rejected)
+    );
     assert_eq!(
         (
             status.as_str(),
