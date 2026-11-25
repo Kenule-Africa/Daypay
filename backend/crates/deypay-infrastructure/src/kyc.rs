@@ -11,10 +11,17 @@
 //! - Only customer submission is written, by `compliance.submit_kyc_case`, and
 //!   only while the case still has the expected owner, ID and status. Provider
 //!   and reviewer transitions are refused without writing; they need their own
-//!   reviewed write paths (IMP-P4-009, Phase 8).
+//!   reviewed write paths (IMP-P4-009, Phase 8). The first submission sets
+//!   `submitted_at`; a resubmission after an information request keeps it.
+//! - Each successful write appends its audit event (`KYC_CASE_OPENED`,
+//!   `KYC_CASE_SUBMITTED`) in the same transaction.
 //!
-//! Each call is one statement in its own transaction, so a database error
-//! leaves nothing persisted.
+//! Each call is one statement in its own transaction, so a database error,
+//! including a failed audit write, leaves nothing persisted.
+//!
+//! The database confines what may be written but cannot tell which customer
+//! the runtime serves: callers must pass the customer from the authenticated
+//! session (see `tests/persistence/kyc_security.rs`).
 use crate::repositories::storage_error;
 use deypay_application::kyc::{CustomerKycCases, KycCaseStatus, KycCaseStore, NewKycCase};
 use deypay_application::repositories::{KycRepository, Lookup, RepositoryError};

@@ -31,6 +31,31 @@ async fn status(pool: &PgPool, case_id: Uuid) -> sqlx::Result<String> {
         .await
 }
 
+/// Actors of the opening audit events for a case.
+async fn opening_audit(pool: &PgPool, case_id: Uuid) -> sqlx::Result<Vec<Uuid>> {
+    sqlx::query_scalar(
+        "SELECT actor_id FROM audit.audit_events WHERE action = 'KYC_CASE_OPENED'
+            AND resource_type = 'KYC_CASE' AND resource_id = $1 AND actor_type = 'CUSTOMER'",
+    )
+    .bind(case_id)
+    .fetch_all(pool)
+    .await
+}
+
+/// Customer submission audit events for a case, oldest first: (actor, from status).
+async fn submission_audit(pool: &PgPool, case_id: Uuid) -> sqlx::Result<Vec<(Uuid, String)>> {
+    sqlx::query_as(
+        "SELECT actor_id, metadata->>'from_status' FROM audit.audit_events
+        WHERE action = 'KYC_CASE_SUBMITTED' AND resource_type = 'KYC_CASE'
+            AND resource_id = $1 AND actor_type = 'CUSTOMER'
+            AND metadata->>'to_status' = 'SUBMITTED'
+        ORDER BY created_at, id",
+    )
+    .bind(case_id)
+    .fetch_all(pool)
+    .await
+}
+
 /// Test-only: puts a case into any status, as a reviewer or provider path would.
 async fn force_status(pool: &PgPool, case_id: Uuid, status: &str) -> sqlx::Result<()> {
     sqlx::query("UPDATE compliance.kyc_cases SET status = $2 WHERE id = $1")
@@ -108,6 +133,16 @@ async fn a_first_case_is_one_owned_draft(pool: PgPool) -> sqlx::Result<()> {
         Err(KycServiceError::InvalidRecord)
     );
     assert_eq!(case_count(&pool, unknown).await?, 0);
+
+    // Each opened case has exactly one opening event; refused requests add none.
+    assert_eq!(opening_audit(&pool, view.case_id).await?, [owner]);
+    assert_eq!(opening_audit(&pool, others.case_id).await?, [other]);
+    let openings: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM audit.audit_events WHERE action = 'KYC_CASE_OPENED'",
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(openings, 2);
     Ok(())
 }
 
@@ -226,6 +261,26 @@ async fn failed_writes_persist_nothing(pool: PgPool) -> sqlx::Result<()> {
         Err(RepositoryError::StorageUnavailable)
     );
     assert_eq!(status(&pool, view.case_id).await?, "DRAFT");
+
+    // If the audit event cannot be written, neither can the case change.
+    sqlx::raw_sql(
+        "DROP TRIGGER fail_kyc_update ON compliance.kyc_cases;
+        CREATE TRIGGER fail_audit_insert BEFORE INSERT ON audit.audit_events
+            FOR EACH ROW EXECUTE FUNCTION public.fail_kyc_write();",
+    )
+    .execute(&pool)
+    .await?;
+    assert_eq!(
+        store.apply_transition(owner, view.case_id, submit).await,
+        Err(RepositoryError::StorageUnavailable)
+    );
+    assert_eq!(status(&pool, view.case_id).await?, "DRAFT");
+    let late = customer(&pool, "kyc-audit-outage@example.test").await?;
+    assert_eq!(
+        service::open_first_case(&store, late).await,
+        Err(KycServiceError::Unavailable)
+    );
+    assert_eq!(case_count(&pool, late).await?, 0);
     Ok(())
 }
 
@@ -262,7 +317,33 @@ async fn customer_submission_is_conditional_and_owner_scoped(pool: PgPool) -> sq
         Ok(false)
     );
     assert_eq!(status(&pool, case_id).await?, "INFORMATION_REQUESTED");
+    assert!(submission_audit(&pool, case_id).await?.is_empty());
 
+    // The first submission records submitted_at and one audit event.
+    force_status(&pool, case_id, "DRAFT").await?;
+    assert_eq!(
+        store.apply_transition(owner, case_id, from_draft).await,
+        Ok(true)
+    );
+    assert_eq!(
+        store.apply_transition(owner, case_id, from_draft).await,
+        Ok(false)
+    );
+    let first: Option<String> =
+        sqlx::query_scalar("SELECT submitted_at::text FROM compliance.kyc_cases WHERE id = $1")
+            .bind(case_id)
+            .fetch_one(&pool)
+            .await?;
+    assert!(first.is_some());
+
+    // A reviewer asks for more information; resubmission keeps the first time.
+    sqlx::query(
+        "UPDATE compliance.kyc_cases SET status = 'INFORMATION_REQUESTED',
+            reviewed_at = clock_timestamp() WHERE id = $1",
+    )
+    .bind(case_id)
+    .execute(&pool)
+    .await?;
     let from_request = transition(
         owner,
         KycCaseStatus::InformationRequested,
@@ -273,28 +354,28 @@ async fn customer_submission_is_conditional_and_owner_scoped(pool: PgPool) -> sq
         store.apply_transition(owner, case_id, from_request).await,
         Ok(true)
     );
-    let (stored, submitted_at_unset, updated_in_order): (String, bool, bool) = sqlx::query_as(
-        "SELECT status, submitted_at IS NULL, updated_at >= created_at
+    assert_eq!(
+        store.apply_transition(owner, case_id, from_request).await,
+        Ok(false)
+    );
+    let (stored, kept, ordered): (String, Option<String>, bool) = sqlx::query_as(
+        "SELECT status, submitted_at::text,
+            reviewed_at >= submitted_at AND updated_at >= created_at
         FROM compliance.kyc_cases WHERE id = $1",
     )
     .bind(case_id)
     .fetch_one(&pool)
     .await?;
-    assert_eq!(
-        (stored.as_str(), submitted_at_unset, updated_in_order),
-        ("SUBMITTED", true, true)
-    );
-    assert_eq!(
-        store.apply_transition(owner, case_id, from_request).await,
-        Ok(false)
-    );
+    assert_eq!((stored.as_str(), kept, ordered), ("SUBMITTED", first, true));
 
-    force_status(&pool, case_id, "DRAFT").await?;
+    // One event per successful submission; refused calls wrote none.
     assert_eq!(
-        store.apply_transition(owner, case_id, from_draft).await,
-        Ok(true)
+        submission_audit(&pool, case_id).await?,
+        [
+            (owner, "DRAFT".to_owned()),
+            (owner, "INFORMATION_REQUESTED".to_owned())
+        ]
     );
-    assert_eq!(status(&pool, case_id).await?, "SUBMITTED");
     Ok(())
 }
 

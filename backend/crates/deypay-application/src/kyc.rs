@@ -17,9 +17,9 @@
 //!   exists yet, so [`NoApprovedRequirements`] refuses every submission.
 //!
 //! The PostgreSQL implementation is `deypay_infrastructure::kyc::PgKycCaseStore`.
-//! Its database tests, not this module, establish atomic first-case insertion
-//! and conditional writes. The service can only validate what a store returns;
-//! it cannot undo a write. Submission writes no audit event (IMP-P4-008).
+//! Its database tests, not this module, establish atomic first-case insertion,
+//! conditional writes and the audit event committed with each write. The
+//! service can only validate what a store returns; it cannot undo a write.
 use crate::repositories::{KycRepository, Lookup, RepositoryError};
 // Re-exported because the public contracts below use them.
 pub use deypay_domain::entities::KycCase;
