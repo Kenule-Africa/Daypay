@@ -3,4 +3,6 @@
 pub mod entities;
 pub mod kyc;
 pub mod money;
+pub mod operations;
+pub mod restrictions;
 pub mod units;

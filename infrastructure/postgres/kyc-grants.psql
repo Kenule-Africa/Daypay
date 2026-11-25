@@ -3,3 +3,6 @@
 -- INSERT or UPDATE on compliance.kyc_cases.
 GRANT EXECUTE ON FUNCTION compliance.open_first_kyc_case(uuid),
     compliance.submit_kyc_case(uuid,uuid,text) TO deypay_app;
+-- Restriction evidence (IMP-P4-006) is read-only and excludes reason codes, restriction
+-- types and actors.
+GRANT SELECT (user_id, active) ON compliance.account_restrictions TO deypay_app;

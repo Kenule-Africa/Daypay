@@ -7,3 +7,4 @@ pub mod kyc_provider;
 pub mod passwords;
 pub mod registration;
 pub mod repositories;
+pub mod restrictions;
