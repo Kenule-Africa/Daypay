@@ -1,0 +1,2 @@
+-- Superseded by migration 202611250502. The obsolete issuer and grants
+-- are removed by the migration. Use auth-grants.psql after migration.

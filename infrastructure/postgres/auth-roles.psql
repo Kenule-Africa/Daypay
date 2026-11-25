@@ -1,0 +1,16 @@
+-- Cluster administrator prerequisite. Safe for an empty cluster and for an
+-- existing deployment. Provision a verifier LOGIN/secret separately at rollout.
+DO $$
+BEGIN
+    IF NOT EXISTS(SELECT FROM pg_catalog.pg_roles WHERE rolname='deypay_auth') THEN
+        CREATE ROLE deypay_auth NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+    END IF;
+    IF NOT EXISTS(SELECT FROM pg_catalog.pg_roles WHERE rolname='deypay_auth_owner') THEN
+        CREATE ROLE deypay_auth_owner NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+    END IF;
+    IF EXISTS(SELECT FROM pg_catalog.pg_roles WHERE rolname IN ('deypay_auth','deypay_auth_owner')
+        AND (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls
+            OR (rolname='deypay_auth_owner' AND rolcanlogin))) THEN
+        RAISE EXCEPTION 'Unsafe pre-existing authentication role';
+    END IF;
+END $$;
