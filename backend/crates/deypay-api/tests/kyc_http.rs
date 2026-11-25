@@ -255,6 +255,10 @@ async fn unauthenticated_requests_are_refused_before_any_work() {
         for request in [
             request(method, path, None, None),
             request(method, path, Some("guessed"), None),
+            // The Phase 3 session check, not this route, decides expiry and
+            // revocation; any refusal it reports must end the request here.
+            request(method, path, Some("expired-session"), None),
+            request(method, path, Some("revoked-session"), None),
             forged,
         ] {
             let (status, body) = send(&router, request).await;
@@ -278,8 +282,9 @@ async fn unauthenticated_requests_are_refused_before_any_work() {
 async fn customers_start_and_see_only_their_own_case() {
     let store = Store::default();
     let app = signed_in(&store);
+    let not_started = serde_json::json!({"data": {"kyc_case_id": null, "status": "not_started", "financial_access_enabled": false}});
     let (status, body) = call(&app, "GET", "/api/v1/kyc/status", "alice-session").await;
-    assert_eq!((status, code(&body)), (StatusCode::NOT_FOUND, "NOT_FOUND"));
+    assert_eq!((status, &body), (StatusCode::OK, &not_started));
 
     let (status, started) = call(&app, "POST", "/api/v1/kyc/start", "alice-session").await;
     assert_eq!(status, StatusCode::CREATED);
@@ -298,7 +303,7 @@ async fn customers_start_and_see_only_their_own_case() {
 
     // Bob neither sees nor submits Alice's case.
     let (status, body) = call(&app, "GET", "/api/v1/kyc/status", "bob-session").await;
-    assert_eq!((status, code(&body)), (StatusCode::NOT_FOUND, "NOT_FOUND"));
+    assert_eq!((status, &body), (StatusCode::OK, &not_started));
     assert!(!body.to_string().contains(&case_id));
     let (status, body) = call(&app, "POST", "/api/v1/kyc/submit", "bob-session").await;
     assert_eq!((status, code(&body)), (StatusCode::NOT_FOUND, "NOT_FOUND"));
@@ -480,17 +485,16 @@ async fn storage_failures_fail_closed() {
 }
 
 #[tokio::test]
-async fn statuses_are_reported_without_invention_or_financial_access() {
+async fn statuses_follow_the_approved_mapping_without_financial_access() {
     for (stored, public) in [
-        ("DRAFT", Some("draft")),
-        ("SUBMITTED", Some("submitted")),
-        ("PENDING_PROVIDER", Some("pending_provider")),
-        ("MANUAL_REVIEW", Some("manual_review")),
-        ("APPROVED", Some("approved")),
-        ("REJECTED", Some("rejected")),
-        ("EXPIRED", Some("expired")),
-        // No API value is approved for this status, so none is invented.
-        ("INFORMATION_REQUESTED", None),
+        ("DRAFT", "draft"),
+        ("SUBMITTED", "submitted"),
+        ("PENDING_PROVIDER", "pending_provider"),
+        ("MANUAL_REVIEW", "manual_review"),
+        ("INFORMATION_REQUESTED", "information_requested"),
+        ("APPROVED", "approved"),
+        ("REJECTED", "rejected"),
+        ("EXPIRED", "expired"),
     ] {
         let (store, id) = Store::with(ALICE, stored);
         let (status, body) = call(
@@ -500,20 +504,26 @@ async fn statuses_are_reported_without_invention_or_financial_access() {
             "alice-session",
         )
         .await;
-        match public {
-            Some(public) => {
-                assert_eq!(status, StatusCode::OK);
-                assert_eq!(
-                    body,
-                    serde_json::json!({"data": {"kyc_case_id": id.to_string(), "status": public, "financial_access_enabled": false}})
-                );
-            }
-            None => assert_eq!(
-                (status, code(&body)),
-                (StatusCode::SERVICE_UNAVAILABLE, "SERVICE_UNAVAILABLE")
-            ),
-        }
+        assert_eq!(status, StatusCode::OK, "{stored}");
+        // An approved case still reports no financial access.
+        assert_eq!(
+            body,
+            serde_json::json!({"data": {"kyc_case_id": id.to_string(), "status": public, "financial_access_enabled": false}})
+        );
     }
+    // A stored status outside the state machine is never shown.
+    let (store, _) = Store::with(ALICE, "KYC_APPROVED");
+    let (status, body) = call(
+        &signed_in(&store),
+        "GET",
+        "/api/v1/kyc/status",
+        "alice-session",
+    )
+    .await;
+    assert_eq!(
+        (status, code(&body)),
+        (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR")
+    );
 }
 
 #[tokio::test]

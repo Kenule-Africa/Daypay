@@ -8,7 +8,8 @@
 //!
 //! With an authenticator:
 //!
-//! - `GET /api/v1/kyc/status` returns the customer's own case.
+//! - `GET /api/v1/kyc/status` returns the customer's own case status, or
+//!   `not_started` with a null case ID when they have none.
 //! - `POST /api/v1/kyc/start` opens the customer's first case in `DRAFT`.
 //! - `POST /api/v1/kyc/submit` submits it, but no submission requirements are
 //!   approved, so a submittable case is refused with 503
@@ -17,9 +18,9 @@
 //!   always answer 503 without reading the body: no identity fields, document
 //!   storage, upload authorization or retention policy is approved.
 //!
-//! Before an authenticator is wired in, these must also be in place: approved
-//! public status mapping, compliance audit events (IMP-P4-008) and the
-//! `kyc-grants.psql` runtime grants.
+//! Before an authenticator is wired in, the `kyc-grants.psql` runtime grants
+//! must be applied and the remaining IMP-P4-008 audit scope decided. Opening and
+//! submitting a case already commit their audit event with the case write.
 //!
 //! Responses never include reviewer notes, provider data or documents.
 //! `financial_access_enabled` is always `false`: no financial operation is
@@ -102,7 +103,17 @@ where
     };
     match current_case(&endpoint.store, customer).await {
         Ok(Some(view)) => case(StatusCode::OK, view),
-        Ok(None) => error(StatusCode::NOT_FOUND, "NOT_FOUND", "No KYC case"),
+        Ok(None) => respond(
+            StatusCode::OK,
+            serde_json::json!({
+                "data": {
+                    "kyc_case_id": null,
+                    "status": NOT_STARTED,
+                    "financial_access_enabled": false,
+                }
+            })
+            .to_string(),
+        ),
         Err(failure) => service_error(failure),
     }
 }
@@ -219,34 +230,30 @@ async fn empty_command(headers: &HeaderMap, body: Body) -> bool {
     )
 }
 
-/// API §17.7 values for the case statuses whose names match exactly.
-/// `INFORMATION_REQUESTED` has no API value, and when `not_started` applies is
-/// undecided, so neither is mapped until Product and Compliance approve it.
-const fn public_status(status: KycCaseStatus) -> Option<&'static str> {
+/// The public status of a customer without a KYC case (API §17.7).
+const NOT_STARTED: &str = "not_started";
+
+/// Public KYC status values (API §17.7), as approved by the repository owner.
+/// Seven match the case statuses by name; `information_requested` was added so
+/// that customers can see they must act (FRS §32.4).
+const fn public_status(status: KycCaseStatus) -> &'static str {
     match status {
-        KycCaseStatus::Draft => Some("draft"),
-        KycCaseStatus::Submitted => Some("submitted"),
-        KycCaseStatus::PendingProvider => Some("pending_provider"),
-        KycCaseStatus::ManualReview => Some("manual_review"),
-        KycCaseStatus::Approved => Some("approved"),
-        KycCaseStatus::Rejected => Some("rejected"),
-        KycCaseStatus::Expired => Some("expired"),
-        KycCaseStatus::InformationRequested => None,
+        KycCaseStatus::Draft => "draft",
+        KycCaseStatus::Submitted => "submitted",
+        KycCaseStatus::PendingProvider => "pending_provider",
+        KycCaseStatus::ManualReview => "manual_review",
+        KycCaseStatus::InformationRequested => "information_requested",
+        KycCaseStatus::Approved => "approved",
+        KycCaseStatus::Rejected => "rejected",
+        KycCaseStatus::Expired => "expired",
     }
 }
 
 fn case(status: StatusCode, view: KycCaseView) -> Response {
-    let Some(public) = public_status(view.status) else {
-        return error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "SERVICE_UNAVAILABLE",
-            "KYC status unavailable",
-        );
-    };
     let body = serde_json::json!({
         "data": {
             "kyc_case_id": view.case_id.to_string(),
-            "status": public,
+            "status": public_status(view.status),
             "financial_access_enabled": false,
         }
     });
