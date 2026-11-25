@@ -21,12 +21,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
     init_logging(&settings.log_level)?;
     let address = api_bind(std::env::var("API_BIND_ADDR").ok().as_deref())?;
     let pool = database::pool(&settings)?;
+    let auth = deypay_api::login::CustomerAuth::from_env(settings.environment, pool.clone())?;
+    if let Some(auth) = &auth
+        && !auth.ready().await
+    {
+        return Err("Authentication database is unready".into());
+    }
+    let readiness_auth = auth.clone();
     let app = Router::new()
         .route(
             "/health/live",
             get(|| async { health(StatusCode::OK, r#"{"status":"live"}"#) }),
         )
-        .route("/health/ready", get(readiness))
+        .route(
+            "/health/ready",
+            get(move |State(pool)| readiness(pool, readiness_auth)),
+        )
         .merge(deypay_api::email_verification::routes(
             deypay_api::email_verification::Policy::from_env(settings.environment)?,
         ))
@@ -34,7 +44,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             settings.environment,
             deypay_api::registration::RegistrationSettings::from_env(settings.environment)?,
         ))
-        .with_state(pool.clone());
+        .with_state(pool.clone())
+        .merge(deypay_api::login::routes(auth.as_ref()));
     let listener = TcpListener::bind(address).await?;
     let shutdown = shutdown_signal()?;
     tracing::info!(address = %listener.local_addr()?, "API listening");
@@ -57,8 +68,15 @@ fn health(status: StatusCode, body: &'static str) -> impl IntoResponse {
     )
 }
 
-async fn readiness(State(pool): State<DatabasePool>) -> impl IntoResponse {
-    if database::ready(&pool).await {
+async fn readiness(
+    pool: DatabasePool,
+    auth: Option<std::sync::Arc<deypay_api::login::CustomerAuth>>,
+) -> impl IntoResponse {
+    let ready = match auth {
+        Some(auth) => auth.ready().await,
+        None => database::ready(&pool).await,
+    };
+    if ready {
         health(StatusCode::OK, r#"{"status":"ready"}"#)
     } else {
         tracing::warn!("Database readiness probe failed");

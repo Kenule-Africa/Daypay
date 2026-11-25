@@ -7,7 +7,7 @@ use deypay_infrastructure::{
 use std::{
     env, fs,
     num::NonZeroU32,
-    sync::Arc,
+    sync::{Arc, OnceLock},
     time::{Duration, UNIX_EPOCH},
 };
 
@@ -34,13 +34,7 @@ impl RegistrationSettings {
         let screening = LocalCompromisedPasswords::load(&data, digest, expiry)
             .map_err(|_| "Invalid or expired sandbox screening dataset")?;
         // Local sandbox defaults only. Production has its own outstanding security gates.
-        let hasher = Argon2idHasher::new(
-            number("DEYPAY_ARGON2_MEMORY_KIB", 19456)?,
-            number("DEYPAY_ARGON2_ITERATIONS", 2)?,
-            number("DEYPAY_ARGON2_LANES", 1)?,
-            number("DEYPAY_HASH_CONCURRENCY", 2)? as usize,
-        )
-        .map_err(|_| "Invalid sandbox Argon2id profile")?;
+        let hasher = sandbox_hasher()?;
         let attempts_per_minute =
             NonZeroU32::new(number("DEYPAY_REGISTRATION_ATTEMPTS_PER_MINUTE", 30)?)
                 .ok_or("Invalid sandbox registration limit")?;
@@ -53,6 +47,22 @@ impl RegistrationSettings {
             attempts_per_minute,
         }))
     }
+}
+
+pub(crate) fn sandbox_hasher() -> Result<Argon2idHasher, &'static str> {
+    // Both endpoints must use one process-wide work budget.
+    static HASHER: OnceLock<Result<Argon2idHasher, &'static str>> = OnceLock::new();
+    HASHER
+        .get_or_init(|| {
+            Argon2idHasher::new(
+                number("DEYPAY_ARGON2_MEMORY_KIB", 19456)?,
+                number("DEYPAY_ARGON2_ITERATIONS", 2)?,
+                number("DEYPAY_ARGON2_LANES", 1)?,
+                number("DEYPAY_HASH_CONCURRENCY", 2)? as usize,
+            )
+            .map_err(|_| "Invalid sandbox Argon2id profile")
+        })
+        .clone()
 }
 
 fn number(key: &str, default: u32) -> Result<u32, &'static str> {

@@ -16,6 +16,9 @@ use sqlx::PgPool;
 use std::sync::Arc;
 use tower::ServiceExt;
 
+#[path = "cases/login_sessions.rs"]
+mod login_sessions;
+
 // Only the compromise verdict is a fixture. Hashing and persistence use the real adapters.
 struct FixtureScreen(Result<bool, RegistrationError>);
 impl CompromisedPasswords for FixtureScreen {
@@ -47,6 +50,7 @@ async fn executable_accepts_sandbox_requests_and_refuses_production(
     ] {
         sqlx::raw_sql(script).execute(&pool).await?;
     }
+    login_sessions::auth_fixture(&pool, 200, 100).await?;
     let name: String = sqlx::query_scalar("SELECT current_database()")
         .fetch_one(&pool)
         .await?;
@@ -57,6 +61,7 @@ async fn executable_accepts_sandbox_requests_and_refuses_production(
             .arg(script)
             .arg(env!("CARGO_BIN_EXE_deypay-api"))
             .arg(name)
+            .arg(env!("CARGO_BIN_EXE_deypay-auth"))
             .status()
     })
     .await
