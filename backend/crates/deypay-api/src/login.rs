@@ -158,6 +158,10 @@ impl Drop for LoginRequest {
 pub type CustomerAuth = SandboxAuth<PgSessions, Argon2idHasher>;
 
 impl CustomerAuth {
+    pub async fn ready(&self) -> bool {
+        self.store.ready().await
+    }
+
     pub fn from_env(
         environment: Environment,
         pool: DatabasePool,

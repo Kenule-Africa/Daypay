@@ -45,6 +45,29 @@ impl SessionToken {
 
 pub struct PgSessions(pub PgPool);
 
+impl PgSessions {
+    /// Probe the sandbox's effective privileges without reading a credential,
+    /// creating a session or writing an audit record.
+    pub async fn ready(&self) -> bool {
+        let check = sqlx::query_scalar::<_, bool>(
+            "SELECT current_user='deypay_app'
+                AND has_schema_privilege(current_user,'identity','USAGE')
+                AND has_column_privilege(current_user,'identity.users','id','SELECT')
+                AND has_column_privilege(current_user,'identity.users','status','SELECT')
+                AND NOT has_any_column_privilege(current_user,'identity.password_credentials','SELECT')
+                AND NOT has_column_privilege(current_user,'identity.sessions','token_hash','SELECT')
+                AND bool_and(coalesce(has_function_privilege(current_user,to_regprocedure(signature),'EXECUTE'),false))
+             FROM (VALUES ('identity.sandbox_login_credential(text)'), ('identity.record_login_rejection(uuid)'),
+                 ('identity.issue_sandbox_session(uuid,text,text,text,text,integer,integer)'),
+                 ('identity.validate_sandbox_session(text,text,integer)')) expected(signature)",
+        ).fetch_one(&self.0);
+        matches!(
+            tokio::time::timeout(std::time::Duration::from_secs(2), check).await,
+            Ok(Ok(true))
+        )
+    }
+}
+
 impl LoginStore for PgSessions {
     async fn credential(&self, email: &str) -> Result<Option<LoginCredential>, CredentialError> {
         let row: Option<(Uuid, String)> = sqlx::query_as(

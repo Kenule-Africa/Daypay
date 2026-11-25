@@ -389,6 +389,8 @@ async fn idle_absolute_and_revoked_sessions_cannot_be_used_or_refreshed(
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn audit_issuance_and_lookup_failures_never_issue_a_cookie(pool: PgPool) -> sqlx::Result<()> {
     let api = runtime(&pool).await?;
+    assert!(PgSessions(api.clone()).ready().await);
+    assert!(!PgSessions(pool.clone()).ready().await);
     let app = router(api.clone(), hasher(), 100);
     seed(&pool, "ada").await?;
     let prior = pair(&login(&app, "ada@example.test", PW, None).await);
@@ -416,6 +418,7 @@ async fn audit_issuance_and_lookup_failures_never_issue_a_cookie(pool: PgPool) -
     .execute(&pool)
     .await?;
     let unavailable = login(&app, "ada@example.test", PW, None).await;
+    assert!(!PgSessions(api.clone()).ready().await);
     assert_eq!(unavailable.status(), StatusCode::SERVICE_UNAVAILABLE);
     assert!(unavailable.headers().get(header::SET_COOKIE).is_none());
     let error = String::from_utf8(super::bytes(unavailable).await.to_vec()).unwrap();
