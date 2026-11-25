@@ -24,7 +24,8 @@ pub async fn check_password(
     candidate: Option<LoginCredential>,
     password: &str,
 ) -> Result<CheckedCredential, CredentialError> {
-    verifier
+    // Credential upgrades need a separate approved write policy.
+    let _verified_password = verifier
         .verify(
             password,
             candidate.as_ref().map(|c| c.password_hash.as_str()),

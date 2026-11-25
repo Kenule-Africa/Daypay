@@ -1,6 +1,7 @@
 //! For a customer handler, apply `auth.protect(customer_routes)` to its Axum
 //! router and extract `AuthenticatedCustomer`. Use `customer.id()` to scope all
 //! reads and writes. The extractor supplies no KYC decision or financial authority.
+//! Recheck any action-specific eligibility inside the protected write transaction.
 //!
 //! Configure this only in local/test after applying the SQLx migrations and
 //! `infrastructure/postgres/sandbox-auth-grants.psql` as the migration owner.
@@ -79,8 +80,8 @@ pub struct LoginLimits {
 
 struct LoginWindow {
     start: Instant,
-    count: u32,
-    identifiers: HashMap<u64, u32>,
+    count: u64,
+    identifiers: HashMap<u64, u64>,
 }
 
 impl LoginLimits {
@@ -120,7 +121,15 @@ impl LoginLimits {
         } else {
             (&mut window.count, self.total)
         };
-        if *count >= cap.get() {
+        let limit = u64::from(cap.get());
+        if *count >= limit {
+            if *count == limit {
+                *count += 1;
+                tracing::warn!(
+                    per_identifier = email.is_some(),
+                    "Sandbox login admission limit reached"
+                );
+            }
             return Err(CredentialError::Busy);
         }
         *count += 1;

@@ -225,6 +225,16 @@ async fn credential_and_eligibility_failures_are_indistinguishable(
     let app = router(runtime(&pool).await?, hasher(), 100);
     let id = seed(&pool, "ada").await?;
     let expected = rejected(login(&app, "unknown@example.test", PW, None).await).await;
+    // Contact proof does not turn an identity without sandbox consent into a sandbox customer.
+    sqlx::query(
+        "WITH outside AS (INSERT INTO identity.users(email,email_verified_at,status)
+        VALUES ('outside@example.test',now(),'CONTACT_VERIFIED') RETURNING id)
+        INSERT INTO identity.password_credentials(user_id,password_hash) SELECT id,$1 FROM outside",
+    )
+    .bind(hasher().hash(PW).await.unwrap())
+    .execute(&pool)
+    .await?;
+    assert!(expected == rejected(login(&app, "outside@example.test", PW, None).await).await);
     assert!(expected == rejected(login(&app, "ada@example.test", "Incorrect1!", None).await).await);
     for state in [
         "REGISTERED",
@@ -495,5 +505,30 @@ async fn stale_password_check_and_concurrent_revocation_fail_closed(
             .await?,
         1
     );
+    Ok(())
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn a_blocked_refresh_cannot_cross_the_idle_deadline(pool: PgPool) -> sqlx::Result<()> {
+    let app = router(runtime(&pool).await?, hasher(), 100);
+    seed(&pool, "ada").await?;
+    let cookie = pair(&login(&app, "ada@example.test", PW, None).await);
+    let mut tx = pool.begin().await?;
+    sqlx::query(
+        "UPDATE identity.sessions SET expires_at=clock_timestamp()+interval '150 milliseconds'",
+    )
+    .execute(&mut *tx)
+    .await?;
+    let mut attempt = std::pin::pin!(call(&app, post(REFRESH, String::new(), Some(&cookie))));
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(30), &mut attempt)
+            .await
+            .is_err()
+    );
+    // Wait against the same authoritative clock used by the SQL validation routine.
+    sqlx::query("SELECT pg_sleep(greatest(0,extract(epoch FROM expires_at-clock_timestamp()))::double precision + 0.01) FROM identity.sessions")
+        .execute(&mut *tx).await?;
+    tx.commit().await?;
+    rejected(attempt.await).await;
     Ok(())
 }
