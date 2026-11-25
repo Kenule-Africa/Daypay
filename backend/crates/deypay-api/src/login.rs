@@ -26,6 +26,8 @@ use serde::Deserialize;
 use std::sync::Arc;
 use uuid::Uuid;
 
+mod controls;
+
 /// Handlers may extract this type only after the session middleware validates
 /// the cookie against the store. It provides identity, without KYC or financial authorization.
 #[derive(Clone)]
@@ -179,10 +181,14 @@ where
             verifier,
         })
     }
-    pub fn routes(self: &Arc<Self>) -> Router {
+    pub fn routes(self: &Arc<Self>) -> Router
+    where
+        R: deypay_application::login::SessionControls,
+    {
         Router::new()
             .route("/api/v1/auth/login", post(Self::submit))
             .route("/api/v1/auth/refresh", post(Self::refresh))
+            .merge(Self::control_routes())
             .with_state(self.clone())
     }
 
@@ -303,6 +309,9 @@ fn reply(status: StatusCode) -> Response {
         }
         StatusCode::FORBIDDEN => {
             r#"{"error":{"code":"VALIDATION_ERROR","message":"Request denied","details":{}}}"#
+        }
+        StatusCode::NOT_FOUND => {
+            r#"{"error":{"code":"NOT_FOUND","message":"Session unavailable","details":{}}}"#
         }
         StatusCode::TOO_MANY_REQUESTS => {
             r#"{"error":{"code":"RATE_LIMITED","message":"Try again later","details":{}}}"#
