@@ -131,10 +131,11 @@ pub trait SessionControls: Send + Sync {
         &self,
         digest: &str,
     ) -> impl Future<Output = Result<Vec<ActiveSession>, CredentialError>> + Send;
+    /// An absent target represents a malformed path. Authenticate and account for the attempt.
     fn revoke_session(
         &self,
         digest: &str,
-        target: Uuid,
+        target: Option<Uuid>,
     ) -> impl Future<Output = Result<RevokedSession, CredentialError>> + Send;
 }
 

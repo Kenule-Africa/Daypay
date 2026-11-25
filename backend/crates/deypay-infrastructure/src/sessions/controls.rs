@@ -16,7 +16,7 @@ impl SessionControls for PgSessions {
             .execute(&self.pool)
             .await
             .map(|_| ())
-            .map_err(|_| CredentialError::Unavailable)
+            .map_err(super::session_error)
     }
 
     async fn list_sessions(&self, digest: &str) -> Result<Vec<ActiveSession>, CredentialError> {
@@ -33,7 +33,7 @@ impl SessionControls for PgSessions {
         .bind(tag)
         .fetch_all(&self.pool)
         .await
-        .map_err(|_| CredentialError::Unavailable)?;
+        .map_err(super::session_error)?;
         if !rows.iter().any(|(_, current, _, _)| *current) {
             return Err(CredentialError::Rejected);
         }
@@ -53,9 +53,12 @@ impl SessionControls for PgSessions {
     async fn revoke_session(
         &self,
         digest: &str,
-        target: Uuid,
+        target: Option<Uuid>,
     ) -> Result<RevokedSession, CredentialError> {
-        let (issued, tag) = self.proof("revoke_session", &[digest, &target.to_string()]);
+        let (issued, tag) = self.proof(
+            "revoke_session",
+            &[digest, &target.map(|id| id.to_string()).unwrap_or_default()],
+        );
         let outcome: Option<String> =
             sqlx::query_scalar("SELECT identity.auth_revoke_session($1,$2,$3,$4,$5)")
                 .bind(self.release)
@@ -65,7 +68,7 @@ impl SessionControls for PgSessions {
                 .bind(tag)
                 .fetch_one(&self.pool)
                 .await
-                .map_err(|_| CredentialError::Unavailable)?;
+                .map_err(super::session_error)?;
         match outcome.as_deref() {
             Some("CURRENT") => Ok(RevokedSession::Current),
             Some("OTHER") => Ok(RevokedSession::Other),

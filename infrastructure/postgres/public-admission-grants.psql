@@ -1,0 +1,3 @@
+-- Apply after migrations as the migration owner when provisioning the API.
+GRANT USAGE ON SCHEMA identity TO deypay_app;
+GRANT EXECUTE ON FUNCTION identity.admit_public_request(text,text) TO deypay_app;

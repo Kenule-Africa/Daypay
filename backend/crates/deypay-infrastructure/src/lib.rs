@@ -10,6 +10,7 @@ pub mod password_hashing;
 pub mod password_screening;
 pub mod profile_images;
 pub mod profiles;
+pub mod rate_limit;
 pub mod registration;
 pub mod repositories;
 pub mod sessions;

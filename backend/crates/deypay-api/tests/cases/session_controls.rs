@@ -444,3 +444,114 @@ async fn withdrawal_of_authority_while_waiting_and_after_rotation_is_enforced(
     );
     Ok(())
 }
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn control_budgets_isolate_security_actions_and_rollback_denials(
+    pool: PgPool,
+) -> sqlx::Result<()> {
+    let first = router(runtime(&pool).await?, hasher());
+    let replica = router(auth_pool(&pool).await?, hasher());
+    seed(&pool, "ada").await?;
+    let caller = active_cookie(&first, "ada").await;
+    let victim = active_cookie(&first, "ada").await;
+    let survivor = active_cookie(&first, "ada").await;
+    let victim_id = session_id(&pool, &victim).await?;
+    let survivor_id = session_id(&pool, &survivor).await?;
+    sqlx::query("UPDATE identity.admission_policy SET total_limit=1")
+        .execute(&pool)
+        .await?;
+
+    super::super::pin_admission_windows(&pool).await?;
+    // Malformed and unknown targets share the unsuccessful-attempt lane.
+    let malformed = format!("{SESSIONS}/bad-id");
+    assert_eq!(
+        control(
+            &first,
+            Method::DELETE,
+            &malformed,
+            Some(&caller),
+            Some(ORIGIN)
+        )
+        .await
+        .status(),
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        delete(&replica, &caller, Uuid::from_u128(42))
+            .await
+            .status(),
+        StatusCode::TOO_MANY_REQUESTS
+    );
+    acknowledged(delete(&first, &caller, victim_id).await, false).await;
+    let denied = delete(&replica, &caller, survivor_id).await;
+    assert_eq!(denied.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(denied.headers()[header::CACHE_CONTROL], "no-store");
+    assert!(denied.headers().get(header::SET_COOKIE).is_none());
+    assert_eq!(
+        principal(&replica, Some(&survivor)).await.status(),
+        StatusCode::OK
+    );
+    let audits: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM audit.audit_events WHERE resource_id=$1 AND action='SESSION_REVOKED'",
+    )
+    .bind(survivor_id)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(audits, 0);
+    let _ = list(&first, &caller).await;
+    assert_eq!(
+        control(&replica, Method::GET, SESSIONS, Some(&caller), None)
+            .await
+            .status(),
+        StatusCode::TOO_MANY_REQUESTS
+    );
+    // A spent refresh budget must not rotate the denied caller's token.
+    assert_eq!(
+        call(&first, post(REFRESH, String::new(), Some(&survivor)))
+            .await
+            .status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        call(&replica, post(REFRESH, String::new(), Some(&caller)))
+            .await
+            .status(),
+        StatusCode::TOO_MANY_REQUESTS
+    );
+    assert_eq!(
+        principal(&first, Some(&caller)).await.status(),
+        StatusCode::OK
+    );
+    acknowledged(logout(&first, Some(&victim)).await, true).await;
+    assert_eq!(
+        logout(&replica, Some(&victim)).await.status(),
+        StatusCode::TOO_MANY_REQUESTS
+    );
+    acknowledged(logout(&replica, Some(&caller)).await, true).await;
+    Ok(())
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn missing_control_policies_fail_closed_without_mutation(pool: PgPool) -> sqlx::Result<()> {
+    let app = router(runtime(&pool).await?, hasher());
+    seed(&pool, "ada").await?;
+    let caller = active_cookie(&app, "ada").await;
+    let id = session_id(&pool, &caller).await?;
+    sqlx::query("DELETE FROM identity.admission_policy")
+        .execute(&pool)
+        .await?;
+    for response in [
+        control(&app, Method::GET, SESSIONS, Some(&caller), None).await,
+        call(&app, post(REFRESH, String::new(), Some(&caller))).await,
+        logout(&app, Some(&caller)).await,
+        delete(&app, &caller, id).await,
+    ] {
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert!(response.headers().get(header::SET_COOKIE).is_none());
+    }
+    assert_eq!(
+        principal(&app, Some(&caller)).await.status(),
+        StatusCode::OK
+    );
+    Ok(())
+}

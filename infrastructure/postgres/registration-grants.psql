@@ -1,4 +1,5 @@
--- The runtime receives only this fixed registration operation.
+-- Execute-only sandbox admission and registration.
+GRANT EXECUTE ON FUNCTION identity.admit_registration_request(bigint) TO deypay_app;
 GRANT EXECUTE ON FUNCTION identity.register_customer(text,text,text,text,text,text,text,text,text,boolean,boolean) TO deypay_app;
 GRANT USAGE ON SCHEMA customers TO deypay_app;
 GRANT SELECT ON customers.registration_documents TO deypay_app;
