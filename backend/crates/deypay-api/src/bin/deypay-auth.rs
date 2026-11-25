@@ -1,4 +1,6 @@
-//! Dedicated login/refresh listener. Deploy under a separate OS or container identity.
+//! Dedicated credential and session-control listener with its own deployment identity.
+//! Route POST login, refresh and logout, GET sessions and DELETE sessions/{session_id}
+//! under /api/v1/auth directly here at the trusted HTTPS ingress.
 use axum::{Router, http::StatusCode, routing::get};
 use deypay_api::login::VerifierAuth;
 use deypay_common::{

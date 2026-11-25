@@ -2,6 +2,7 @@ use axum::http::{HeaderMap, HeaderValue, Method, Uri, header};
 use deypay_infrastructure::sessions::SessionToken;
 
 const COOKIE: &str = "__Host-deypay_session";
+const COOKIE_ATTRIBUTES: &str = "Path=/; Secure; HttpOnly; SameSite=Lax";
 
 /// Exact HTTPS origin supplied by trusted deployment configuration. Request
 /// Host, Forwarded and customer-supplied identity headers are never used.
@@ -52,10 +53,17 @@ pub fn request_token(headers: &HeaderMap) -> Result<Option<SessionToken>, &'stat
 
 pub fn session_cookie(token: &SessionToken) -> HeaderValue {
     let mut value = HeaderValue::from_str(&format!(
-        "{COOKIE}={}; Path=/; Secure; HttpOnly; SameSite=Lax",
+        "{COOKIE}={}; {COOKIE_ATTRIBUTES}",
         token.cookie_value().as_str()
     ))
     .expect("session token uses lowercase hex");
+    value.set_sensitive(true);
+    value
+}
+
+pub fn expired_session_cookie() -> HeaderValue {
+    let mut value = HeaderValue::from_str(&format!("{COOKIE}=; {COOKIE_ATTRIBUTES}; Max-Age=0"))
+        .expect("static cookie attributes");
     value.set_sensitive(true);
     value
 }

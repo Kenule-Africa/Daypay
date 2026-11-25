@@ -63,6 +63,13 @@ async function check(environment, verifier=false) {
     const post = data => fetch(origin+"/api/v1/auth/register",{method:"POST",headers:{"content-type":"application/json"},
       body:JSON.stringify(data),signal:AbortSignal.timeout(30000)});
     if (verifier) {
+      const logout = await fetch(origin+"/api/v1/auth/logout",{method:"POST",headers:{origin:browserOrigin}});
+      assert.equal(logout.status,200);
+      assert.deepEqual(await logout.json(),{data:{}});
+      assert.equal(logout.headers.get("set-cookie"),"__Host-deypay_session=; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=0");
+      assert.equal((await fetch(origin+"/api/v1/auth/sessions")).status,401);
+      assert.equal((await fetch(origin+"/api/v1/auth/sessions/00000000-0000-0000-0000-000000000001",
+        {method:"DELETE",headers:{origin:browserOrigin}})).status,401);
       assert.equal((await fetch(origin+"/health/ready")).status,200);
       assert.equal((await post(body)).status,404);
     } else if (environment === "production") {

@@ -27,6 +27,9 @@ const PW: &str = "Sandbox1!password";
 const LOGIN: &str = "/api/v1/auth/login";
 const REFRESH: &str = "/api/v1/auth/refresh";
 
+#[path = "session_controls.rs"]
+mod session_controls;
+
 fn hasher() -> Argon2idHasher {
     Argon2idHasher::new(32, 2, 1, 4).unwrap()
 }

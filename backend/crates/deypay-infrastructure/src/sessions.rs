@@ -10,6 +10,8 @@ use sqlx::PgPool;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
+mod controls;
+
 /// A 256-bit bearer secret. Its only wire representation is a browser cookie.
 /// Database operations take the digest. This type deliberately omits Debug and Serialize.
 pub struct SessionToken(Zeroizing<[u8; 32]>);
