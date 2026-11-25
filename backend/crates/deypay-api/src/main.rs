@@ -34,6 +34,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
             settings.environment,
             deypay_api::registration::RegistrationSettings::from_env(settings.environment)?,
         ))
+        // No trusted session authenticator exists until Phase 3 provides one,
+        // so every KYC route answers 503 without reading the request.
+        .merge(deypay_api::kyc::routes(
+            deypay_infrastructure::kyc::PgKycCaseStore::new(pool.clone()),
+            None,
+        ))
         .with_state(pool.clone());
     let listener = TcpListener::bind(address).await?;
     let shutdown = shutdown_signal()?;
