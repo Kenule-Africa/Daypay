@@ -2,13 +2,13 @@ use super::{BrowserAuth, failure, reply};
 use crate::sessions::{expired_session_cookie, request_token};
 use axum::{
     Router,
-    extract::{Path, Request, State},
+    extract::{Path, Request, State, rejection::PathRejection},
     http::{StatusCode, header},
     response::{IntoResponse, Response},
     routing::{delete, get, post},
 };
 use deypay_application::{
-    login::{RevokedSession, SessionControls},
+    login::{RevokedSession, SessionControls, SessionStore},
     passwords::CredentialVerifier,
 };
 use deypay_infrastructure::sessions::SessionToken;
@@ -16,7 +16,9 @@ use serde_json::json;
 use std::sync::Arc;
 use uuid::Uuid;
 
-impl<R: SessionControls + 'static, V: CredentialVerifier + Send + 'static> BrowserAuth<R, V> {
+impl<R: SessionControls + SessionStore + 'static, V: CredentialVerifier + Send + 'static>
+    BrowserAuth<R, V>
+{
     pub(super) fn control_routes() -> Router<Arc<Self>> {
         Router::new()
             .route("/api/v1/auth/logout", post(Self::logout))
@@ -50,8 +52,12 @@ impl<R: SessionControls + 'static, V: CredentialVerifier + Send + 'static> Brows
                 let records: Vec<_> = sessions
                     .into_iter()
                     .map(|s| {
-                        json!({"session_id":s.session_id.to_string(),
-                    "is_current":s.is_current,"created_at":s.created_at,"expires_at":s.expires_at})
+                        json!({
+                            "session_id": s.session_id.to_string(),
+                            "is_current": s.is_current,
+                            "created_at": s.created_at,
+                            "expires_at": s.expires_at
+                        })
                     })
                     .collect();
                 (
@@ -68,7 +74,7 @@ impl<R: SessionControls + 'static, V: CredentialVerifier + Send + 'static> Brows
     }
     async fn revoke(
         State(auth): State<Arc<Self>>,
-        Path(target): Path<String>,
+        target: Result<Path<String>, PathRejection>,
         req: Request,
     ) -> Response {
         let token = match auth.control_cookie(&req) {
@@ -76,10 +82,20 @@ impl<R: SessionControls + 'static, V: CredentialVerifier + Send + 'static> Brows
             Ok(None) => return reply(StatusCode::UNAUTHORIZED),
             Err(status) => return reply(status),
         };
-        let Ok(id) = Uuid::parse_str(&target) else {
-            return reply(StatusCode::BAD_REQUEST);
+        let digest = token.digest();
+        let Some(id) = target
+            .ok()
+            .and_then(|Path(value)| Uuid::parse_str(&value).ok())
+        else {
+            // Apply the authenticated endpoint contract even when the supplied ID
+            // is malformed. The normal path validates and mutates in one call.
+            return match auth.guard.store.validate(&digest, None).await {
+                Ok(Some(_)) => reply(StatusCode::BAD_REQUEST),
+                Ok(None) => reply(StatusCode::UNAUTHORIZED),
+                Err(error) => failure(error),
+            };
         };
-        match auth.guard.store.revoke_session(&token.digest(), id).await {
+        match auth.guard.store.revoke_session(&digest, id).await {
             Ok(RevokedSession::Current) => cleared(),
             Ok(RevokedSession::Other) => reply(StatusCode::OK),
             Ok(RevokedSession::Absent) => reply(StatusCode::NOT_FOUND),

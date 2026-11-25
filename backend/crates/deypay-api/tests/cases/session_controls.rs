@@ -147,6 +147,30 @@ async fn lists_only_owned_active_metadata_and_revokes_current_or_other(
         )
         .await;
     }
+    let malformed = format!("{SESSIONS}/invalid-id");
+    rejected(
+        control(
+            &replica,
+            Method::DELETE,
+            &malformed,
+            Some(&expired),
+            Some(ORIGIN),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(
+        control(
+            &replica,
+            Method::DELETE,
+            &malformed,
+            Some(&caller),
+            Some(ORIGIN)
+        )
+        .await
+        .status(),
+        StatusCode::BAD_REQUEST
+    );
     let records = list(&replica, &caller).await;
     assert_eq!(records.len(), 2);
     for (id, current) in [(caller_id, true), (other_id, false)] {
@@ -374,6 +398,49 @@ async fn session_controls_require_verifier_grants_and_purpose_bound_proofs(
     assert_eq!(
         logout(&app, Some(&cookie)).await.status(),
         StatusCode::SERVICE_UNAVAILABLE
+    );
+    Ok(())
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn withdrawal_of_authority_while_waiting_and_after_rotation_is_enforced(
+    pool: PgPool,
+) -> sqlx::Result<()> {
+    let app = router(runtime(&pool).await?, hasher());
+    seed(&pool, "ada").await?;
+    let old = active_cookie(&app, "ada").await;
+    let current = pair(&call(&app, post(REFRESH, String::new(), Some(&old))).await);
+    let target = session_id(&pool, &current).await?;
+    sqlx::query("UPDATE identity.sessions SET logout_rotated_at=clock_timestamp()-interval '1 hour' WHERE id=$1")
+        .bind(target).execute(&pool).await?;
+    acknowledged(logout(&app, Some(&old)).await, true).await;
+    assert_eq!(
+        principal(&app, Some(&current)).await.status(),
+        StatusCode::OK
+    );
+
+    let caller = active_cookie(&app, "ada").await;
+    let caller_id = session_id(&pool, &caller).await?;
+    let mut tx = pool.begin().await?;
+    sqlx::query("SELECT id FROM identity.sessions WHERE id=$1 FOR UPDATE")
+        .bind(target)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("UPDATE identity.sessions SET expires_at=clock_timestamp()+interval '180 milliseconds' WHERE id=$1")
+        .bind(caller_id).execute(&pool).await?;
+    let mut pending = std::pin::pin!(delete(&app, &caller, target));
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(30), &mut pending)
+            .await
+            .is_err()
+    );
+    sqlx::query("SELECT pg_sleep(greatest(0,extract(epoch FROM expires_at-clock_timestamp()))::double precision+0.01)
+        FROM identity.sessions WHERE id=$1").bind(caller_id).execute(&mut *tx).await?;
+    tx.commit().await?;
+    rejected(pending.await).await;
+    assert_eq!(
+        principal(&app, Some(&current)).await.status(),
+        StatusCode::OK
     );
     Ok(())
 }
