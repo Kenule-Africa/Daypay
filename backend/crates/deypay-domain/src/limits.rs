@@ -14,7 +14,8 @@
 //! - A windowed rule (daily, monthly and so on) can be enforced only by
 //!   consuming capacity atomically in the transaction that accepts the
 //!   operation (database design §10.6). A read-only check cannot do that, so
-//!   it denies.
+//!   it denies. [`crate::limit_usage`] holds the decisions that transaction
+//!   will make under its lock.
 //! - A per-transaction rule in the amount's own asset is decided exactly. An
 //!   amount equal to the limit is within it.
 //!
