@@ -1,4 +1,2 @@
--- Apply as migration owner in the explicitly enabled sandbox only.
-GRANT EXECUTE ON FUNCTION identity.sandbox_login_credential(text), identity.record_login_rejection(uuid),
-    identity.issue_sandbox_session(uuid,text,text,text,text,integer,integer),
-    identity.validate_sandbox_session(text,text,integer) TO deypay_app;
+-- Superseded by migration 202611250502. The obsolete issuer and grants
+-- are removed by the migration. Use auth-grants.psql after migration.

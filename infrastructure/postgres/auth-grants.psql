@@ -1,0 +1,9 @@
+-- Run once per migrated database as the auth schema owner. Provision deypay_auth
+-- as an independent, unprivileged login using the deployment secret manager.
+GRANT USAGE ON SCHEMA identity TO deypay_auth, deypay_app;
+GRANT EXECUTE ON FUNCTION identity.auth_ready(uuid), identity.auth_configuration(uuid,text,text),
+    identity.auth_admit(uuid,text), identity.auth_credential(uuid,text,bigint,bytea),
+    identity.auth_reject(uuid,uuid,bigint,bytea), identity.auth_issue(uuid,uuid,text,text,text,text,bigint,bytea),
+    identity.auth_validate(uuid,text,text,bigint,bytea) TO deypay_auth;
+GRANT EXECUTE ON FUNCTION identity.auth_reader_ready(uuid,text,text),
+    identity.auth_principal(uuid,text,text,text) TO deypay_app;
