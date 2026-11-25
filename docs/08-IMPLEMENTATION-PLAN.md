@@ -1591,7 +1591,7 @@ Authorized operators can investigate financial exceptions without directly editi
 
 Deliver the responsive DEYPAY PWA.
 
-Frontend development should begin earlier and proceed alongside backend implementation.
+The original schedule expected frontend development to proceed alongside backend implementation. The repository owner has approved the account-first scheduling exception below; it supersedes that order for current delivery without redefining any phase or task.
 
 This phase represents final feature integration and user experience completion.
 
@@ -1657,6 +1657,25 @@ This phase represents final feature integration and user experience completion.
 - Clear financial confirmation.
 - No privileged provider secrets.
 - No authoritative balance calculation.
+
+### Owner-approved account-first scheduling exception and frontend milestone · 2026-11-25
+
+This is a named milestone within existing Phase 17, not a new task ID, phase or roadmap. It uses existing IMP-P1-004 and the relevant §30.1–2 and §30.8–9 requirements. It moves the first account frontend increment ahead of financial implementation and defers further KYC verification implementation; the original phase definitions and all existing task IDs remain unchanged.
+
+**Milestone: First integrated customer-account frontend.** Begin after the customer-account backend APIs and their dependencies are ready. Reuse the existing Next.js application and integrate registration/email verification, login/password recovery, a non-financial dashboard shell, customer profile-management interfaces, session handling and errors against the real DEYPAY APIs. Include profile-image management only after its API/storage scope and acceptance criteria are approved as a scoped extension to IMP-P3-010; current FRS §9.1 and API §15 do not define it. The customer account and ordinary non-financial account management do not depend on KYC approval.
+
+**Milestone acceptance:** the existing frontend exercises approved real APIs; authenticated requests use the server-side session contract; loading/error states and account workflows are tested; no disconnected mock product endpoints or synthetic balances/completed transactions are presented. This early slice has no new task ID or assignee and does not complete Phase 17. It excludes KYC verification implementation while that work is deferred and does not imply production deployment or financial activation.
+
+**Owner-approved execution schedule and dependency map (2026-11-25):**
+
+1. **Customer-account backend — Phase 3, IMP-P3-001–013.** Complete the existing registration, email verification, login, session, logout, recovery, username, profile, revocation and applicable authentication-security work. Preserve each current status and dependency: IMP-P3-003 phone verification remains Deferred — Post-MVP; IMP-P3-005/006 remain in progress in open PR #9; IMP-P3-009 remains In testing; no unassigned task is assigned by this schedule.
+2. **Early account frontend slice — IMP-P1-004 and Phase 17 §30.1, §30.2, relevant §30.8 and §30.9.** After the account APIs are ready, integrate authentication screens, customer onboarding, the dashboard shell and profile-management interfaces using the existing Next.js app and real APIs. This is an early increment, not completion of Phase 17; it adds no task ID. Apply the relevant authentication, session, authorization, privacy and input-handling security checks during implementation. Do not use mock product endpoints or display invented financial state.
+3. **Financial backend — Phase 5–16 existing tasks, in dependency order.** Follow the existing technical sequence and task IDs: Phase 5 ledger `IMP-P5-001–017` → Phase 6 wallet/assets `IMP-P6-001–010` → Phase 7 internal transfers `IMP-P7-001–010` → Phase 8 provider framework `IMP-P8-001–014` → Phase 9 deposits `IMP-P9-001–010` and Phase 10 withdrawals `IMP-P10-001–012` → Phase 11 conversion `IMP-P11-001–010` → Phase 12 on-ramp `IMP-P12-001–009` and Phase 13 off-ramp `IMP-P13-001–010` → Phase 14 Pay Anyone `IMP-P14-001–014` → Phase 15 history/notifications `IMP-P15-001–010` → Phase 16 administration/reconciliation `IMP-P16-001–012`. Observe each task's actual data, provider and ledger dependencies; `IMP-P16-004` KYC review interface follows the KYC review workflow `IMP-P4-009`. Apply relevant security, authorization, privacy, provider, concurrency and financial-integrity verification throughout these phases, using the existing Phase 18 criteria rather than waiting until Phase 18 to begin.
+4. **Internal transaction validation — existing integration and test tasks.** Validate the real transaction implementation, including applicable `IMP-P14-014`, `IMP-P18-002–008`, `IMP-P18-012` and `IMP-P18-013` criteria, under isolated development/test conditions and authorized provider test environments. Exercise the same implementation intended for deployment. No mock product endpoints, substitute transaction implementations or throwaway infrastructure are permitted.
+5. **Resume Phase 4 KYC verification — existing IMP-P4-005–010.** Resume only after internal transaction validation and owner authorization, and complete the applicable KYC, audit, review and provider requirements before live financial activation. IMP-P4-001–004 retain their accepted status; PR #10's IMP-P4-005–007 code remains open/unmerged and on hold; IMP-P4-008–010 remain unassigned. Phase 4 is not complete. While implementation is deferred, live financial activity must fail closed on missing KYC, eligibility or restriction evidence.
+6. **External release requirements — existing Phase 18/19 tasks and approvals.** Complete cumulative Phase 18 security/quality exit criteria and Phase 19 `IMP-P19-001–012`, plus applicable legal, regulatory, compliance, provider, partner, operational and reconciliation approvals before any live customer financial service.
+
+This exception overrides the original strict sequencing that placed all Phase 4 work before Phase 5 and Phase 17 after Phase 16. It does not cancel KYC requirements or authorize a financial operation to bypass KYC, account restrictions, approved limits or any other eligibility/compliance control. Transaction implementation and internal testing before KYC resumption must remain fail-closed where approval or policy is absent. Live customer financial execution is prohibited until all applicable gates are cleared. Security verification accompanies each relevant milestone; Phase 18 remains the final integrated assurance gate, not the first point at which security is tested.
 
 ## Exit Criteria
 
@@ -1758,63 +1777,65 @@ Technical, financial, security, operational and legal release gates are satisfie
 
 # 33. IMPLEMENTATION DEPENDENCY GRAPH
 
-The critical implementation sequence is:
+The owner-approved execution schedule in §30 determines current delivery order. The graph below maps that order to the existing technical phases and task IDs; it does not create tasks or change their acceptance criteria.
 
 ```text
-REQUIREMENTS BASELINE
-          |
-          v
-PROJECT FOUNDATION
-          |
-          v
-DATABASE AND DOMAIN MODELS
-          |
-          +----------------------+
-          |                      |
-          v                      v
-AUTHENTICATION              FINANCIAL LEDGER
-          |                      |
-          v                      v
-KYC / COMPLIANCE           WALLET MANAGEMENT
-          |                      |
-          +-----------+----------+
-                      |
-                      v
-               INTERNAL TRANSFERS
-                      |
-                      v
-              PROVIDER FRAMEWORK
-                      |
-          +-----------+-----------+
-          |                       |
-          v                       v
-       DEPOSITS               WITHDRAWALS
-          |                       |
-          +-----------+-----------+
-                      |
-                      v
-                CONVERSION
-                      |
-          +-----------+-----------+
-          |                       |
-          v                       v
-       NGN ON-RAMP          NGN OFF-RAMP
-                                  |
-                                  v
-                              PAY ANYONE
-                                  |
-                                  v
-                        END-TO-END VALIDATION
-                                  |
-                                  v
-                           CONTROLLED LAUNCH
+REQUIREMENTS / FOUNDATION / DATABASE AND DOMAIN MODELS
+                         |
+                         v
+       PHASE 3 CUSTOMER-ACCOUNT BACKEND
+                         |
+                         v
+      EARLY PHASE 17 ACCOUNT FRONTEND SLICE
+                         |
+                         v
+ PHASE 5 LEDGER -> PHASE 6 WALLET -> PHASE 7 INTERNAL TRANSFERS
+                         |
+                         v
+             PHASE 8 PROVIDER FRAMEWORK
+                         |
+             +-----------+-----------+
+             |                       |
+             v                       v
+       PHASE 9 DEPOSITS       PHASE 10 WITHDRAWALS
+             +-----------+-----------+
+                         |
+                         v
+               PHASE 11 CONVERSION
+                         |
+             +-----------+-----------+
+             |                       |
+             v                       v
+       PHASE 12 ON-RAMP       PHASE 13 OFF-RAMP
+                                     |
+                                     v
+                            PHASE 14 PAY ANYONE
+                                     |
+                                     v
+       PHASE 15 HISTORY / PHASE 16 OPERATIONS
+         (except IMP-P16-004 KYC review)
+                                     |
+                                     v
+                    INTERNAL TRANSACTION VALIDATION
+                                     |
+                                     v
+                 RESUME DEFERRED PHASE 4 KYC WORK
+                                     |
+                                     v
+          IMP-P16-004 KYC REVIEW INTERFACE
+          (after IMP-P4-009 review workflow)
+                                     |
+                                     v
+       EXTERNAL RELEASE GATES -> LIVE SERVICE ONLY WHEN CLEARED
 ```
 
-This diagram represents logical dependencies, not a requirement that all work occur sequentially.
+IMP-P4-001–004 remain accepted foundations. Further KYC verification implementation under IMP-P4-005–010 resumes after internal transaction validation and before live financial activation, subject to owner authorization. The Phase 16 task IMP-P16-004 (KYC review interface) follows the KYC review workflow IMP-P4-009. While Phase 4 verification is deferred, every live financial path remains fail-closed on missing KYC, eligibility or restriction evidence.
 
-At M3, demonstrate a simulated transfer from recipient resolution and authorization through posting, participant history, receipt and notification before expanding external integrations. Provider and settlement-route validation can proceed in parallel.
+Security verification accompanies each relevant milestone, including the applicable IMP-P18-001–008 and IMP-P18-012–013 checks as authentication, frontend, ledger, provider, transaction and reconciliation capabilities are implemented. Phase 18 remains the cumulative system-wide security and quality gate; it is not the first time those controls are tested.
 
-Frontend development, provider research, security engineering and testing must proceed in parallel where practical.
+At internal transfer validation, exercise recipient resolution, authorization, posting, participant history, receipts and notifications through the real production-intended services and ledger under isolated conditions. Test fixtures may represent external provider responses only; they must not introduce mock product endpoints or replace transaction implementation. Provider and settlement-route research may proceed in parallel only where it does not bypass implementation dependencies or approval gates.
+
+Work may proceed in parallel within a scheduled milestone when its technical dependencies are satisfied. The early account frontend does not begin before its backend APIs are ready.
 
 ---
 
@@ -1858,6 +1879,8 @@ Critical financial features require additional engineering and accounting review
 The following is a planning estimate, not a delivery commitment.
 
 It assumes a focused engineering team, timely decisions and reasonable access to required infrastructure.
+
+This indicative timeline does not supersede the owner-approved execution order in §§30 and 33. The account frontend slice is brought forward before Phase 5; the remaining Phase 17 integrations stay subject to their existing dependencies and acceptance criteria.
 
 | Milestone | Indicative Window | Deliverable |
 |---|---|---|

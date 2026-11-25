@@ -8,7 +8,7 @@ The product owner authorized eligible Phase 2 foundation work in parallel on 202
 
 ## Active work record
 
-For each phase, apply its exit criteria in Document 08 before starting the next phase. Record dated evidence for runtime behavior, unit and integration tests, applicable security controls and failure recovery. For financial work also verify ledger invariants, idempotency, concurrency and recovery. Identify the tested revision and environment, along with any gaps. Compilation alone cannot close a phase.
+For each phase, apply its exit criteria in Document 08, except for the repository owner's explicit scheduling exception recorded in §30. Record dated evidence for runtime behavior, unit and integration tests, applicable security controls and failure recovery. For financial work also verify ledger invariants, idempotency, concurrency and recovery. Identify the tested revision and environment, along with any gaps. Compilation alone cannot close a phase.
 
 | Task | Owner / priority | Dependencies and requirement | Acceptance and verification |
 |---|---|---|---|
@@ -19,19 +19,32 @@ For each phase, apply its exit criteria in Document 08 before starting the next 
 | IMP-P1-007 / 008 / 009 | Backend engineering / P0 | Current workspace and PostgreSQL, roadmap §14 | Exercise configuration validation, inspect JSON logs for secret leakage, and verify API liveness and readiness with the database available and unavailable. |
 | IMP-P1-010 / 011 / 012 | Engineering / P0 | Backend, frontend and development database, roadmap §14 | Run the workflow on GitHub and record the lint, formatting, build, unit and integration results. |
 
+## Owner-approved execution schedule · 2026-11-25
+
+This schedule cross-references existing phases, sections and task IDs only. It changes neither task status nor assignment, creates no task IDs, and does not start a phase. Security verification is required during each applicable milestone, not deferred to Phase 18.
+
+| Order | Existing roadmap scope | Dependency and milestone boundary | Security / release verification |
+|---|---|---|---|
+| 1 | Phase 3 customer-account backend: IMP-P3-001–013 | Complete account backend functionality using existing dependencies. IMP-P3-001/004 remain accepted; P3-002 and P3-009 remain In testing; P3-003 remains Deferred — Post-MVP; P3-005/006 remain in progress. P3-007/008/010/011/012/013 remain unassigned pending owner authorization. | Apply API §14, SEC-AUTH/SEC-SES and relevant IMP-P18-001/002 checks as authentication and sessions are implemented. |
+| 2 | Early Phase 17 slice: IMP-P1-004; §30.1, §30.2, relevant §30.8 and §30.9 | After account APIs are ready: authentication screens, customer onboarding, dashboard shell and profile-management interfaces using the existing Next.js app and real APIs. This is not completion of Phase 17 and adds no task ID. | Verify session/cookie/CSRF behavior, authorization, privacy, input handling, loading/error states and real API integration during the slice. No mock product endpoints or invented financial data. |
+| 3 | Phase 5–16 backend dependency chain: IMP-P5-001–017 → P6-001–010 → P7-001–010 → P8-001–014 → P9-001–010 and P10-001–012 → P11-001–010 → P12-001–009 and P13-001–010 → P14-001–014 → P15-001–010 → P16-001–012 | Follow the phase and task dependencies in Document 08; deposits and withdrawals follow the provider framework. IMP-P16-004 KYC review interface follows IMP-P4-009. | Apply relevant authorization, security, provider, concurrency, ledger and reconciliation checks from IMP-P18-001–008 and IMP-P18-012/013 as each capability is developed. |
+| 4 | Internal transaction validation: IMP-P14-014 and applicable IMP-P18-002–008, IMP-P18-012/013 criteria | After the real transaction implementation is in place, test that same implementation under isolated conditions and authorized provider test environments. No substitute transaction engine or throwaway infrastructure. | Verify ledger invariants, idempotency, customer isolation, failure/recovery, reconciliation and fail-closed authorization before resuming deferred KYC implementation. |
+| 5 | Resume Phase 4: IMP-P4-005–010; then dependent IMP-P16-004 | After internal transaction validation and additional owner authorization, complete applicable KYC verification, audit, review and provider work before live financial activation. IMP-P4-001–004 remain accepted; PR #10 code and existing task statuses remain unchanged until separately reviewed. | Keep live financial activity fail-closed on missing KYC, eligibility, restriction or policy evidence. Apply KYC and access-control security checks during implementation. |
+| 6 | External release: remaining IMP-P18-001–013 and IMP-P19-001–012, plus applicable Phase 0 approvals | Close the cumulative security/quality exit criteria and production preparation only after implementation, internal validation and required KYC work. | Obtain applicable legal, regulatory, Compliance, provider, partner, operational and reconciliation approvals before live customer financial services. |
+
 ## Parallel assignments
 
 Current implementation assignments are listed here. Assignment status is separate from the canonical roadmap task status; completed assignments and their acceptance evidence are recorded in [PROGRESS.md](PROGRESS.md).
 
 | Agent | Task | Branch | Owned modules/files | Dependencies | Status | PR / acceptance evidence |
 |---|---|---|---|---|---|---|
-| Codex | IMP-P3-005 Login | `feat/codex-imp-p3-005-006-login-sessions` | Workspace: `DeyPay-codex`, based on latest accepted `origin/main`. Customer login API and application flow; reuse the accepted P3-004 `CredentialVerifier`; enforce approved authentication eligibility/status rules and safe generic failures. Coordinate shared session interfaces, API contracts, migrations and grants. No KYC code or unrelated authentication features. | IMP-P2-003 authentication tables; IMP-P3-001 customer registration/credentials; IMP-P3-004 accepted credential verifier; API §14.1 and approved authentication/security requirements; shared session creation/validation within this combined cycle | Assigned / Not Started | No implementation or PR yet |
-| Codex | IMP-P3-006 Session Management | `feat/codex-imp-p3-005-006-login-sessions` | Workspace: `DeyPay-codex`, based on latest accepted `origin/main`. Server-side session creation and validation, authenticated customer binding, expiration and trusted identity context. Preserve existing schema and security boundaries. No logout endpoint, separate revocation task, password recovery, MFA, KYC or unrelated authentication features. Coordinate any shared migration, API contract or grant changes. | IMP-P2-003 authentication/session tables; IMP-P3-004 accepted credential verifier; API §§6 and 14; Security SEC-SES-001–006; coordinated integration with P3-005 login | Assigned / Not Started | No implementation or PR yet |
-| Claude | IMP-P4-005 KYC API Endpoints | `feat/claude-imp-p4-005-007-kyc-controls` | Workspace: `DeyPay-claude`. Customer KYC API endpoints using trusted session identity only. Includes the IMP-P4-002 PostgreSQL persistence follow-up as prerequisite work: write adapter, atomic first-case creation, conditional transitions and database-backed tests. Coordinate least-privilege grants and any migration/permission changes with the coordinator and database/security owners. No login/session implementation. | IMP-P3-004 accepted verifier; trusted authenticated customer identity from assigned IMP-P3-005/006 after implementation and verification; KYC PostgreSQL adapter, reviewed permissions and atomicity; Product/Compliance-approved identity/document requirements, status mapping and resubmission policy; IMP-P4-008 audit evidence | Assigned / Not Started | No implementation or PR yet |
-| Claude | IMP-P4-006 Customer Restriction Engine | `feat/claude-imp-p4-005-007-kyc-controls` | Workspace: `DeyPay-claude`. Fail-closed restriction foundations using approved rules only; preserve separate eligibility checks and do not activate financial operations | IMP-P4-001–002; approved KYC/account-status mapping and restriction rules from Product/Compliance; keep financial actions blocked unless eligibility is verified | Assigned / Not Started | No implementation or PR yet |
-| Claude | IMP-P4-007 Transaction Limit Foundation | `feat/claude-imp-p4-005-007-kyc-controls` | Workspace: `DeyPay-claude`. Fail-closed limit foundations only where approved requirements exist; no financial operation activation | Approved Product/Compliance limit and eligibility requirements; coordinate with IMP-P4-006 restriction foundations and existing authorization controls | Assigned / Not Started | No implementation or PR yet |
+| Codex | IMP-P3-005 Login | `feat/codex-imp-p3-005-006-login-sessions` | Workspace: `DeyPay-codex`, based on accepted main `f4f034b343722131fc5137b4041620ca8de9b717`. Reuse P3-004 `CredentialVerifier`; enforce approved eligibility/status rules, generic failures and secure-login protections. Latest PR head has login implementation and tests; production-capable security work remains in progress. Coordinate shared session interfaces, API contracts, migrations and grants. No KYC code or unrelated authentication features. | IMP-P2-003 authentication tables; IMP-P3-001 registration/credentials; IMP-P3-004 accepted verifier; API §14.1 and approved authentication/security requirements; P3-006 session integration | In Progress | Open, unmerged PR [#9](https://github.com/Kenule-Africa/Daypay/pull/9), head `071d649d54ea6f7fd2b24a583481d8567572a7dd`; latest backend/frontend CI passed in runs 45553717101 and 45553709274. No engineering acceptance. |
+| Codex | IMP-P3-006 Session Management | `feat/codex-imp-p3-005-006-login-sessions` | Workspace: `DeyPay-codex`, based on accepted main `f4f034b343722131fc5137b4041620ca8de9b717`. Server-side session creation/validation, authenticated customer binding, expiry and trusted identity context. Preserve existing schema/security boundaries and coordinate shared migrations, contracts and grants. Excludes logout, separate revocation, recovery, MFA, KYC and unrelated features. | IMP-P2-003 authentication/session tables; IMP-P3-004 accepted verifier; API §§6 and 14; Security SEC-SES-001–006; P3-005 login integration | In Progress | Same open, unmerged PR [#9](https://github.com/Kenule-Africa/Daypay/pull/9), head `071d649d54ea6f7fd2b24a583481d8567572a7dd`; latest backend/frontend CI passed. No engineering acceptance. |
+| Claude | IMP-P4-005 KYC API Endpoints | `feat/claude-imp-p4-005-007-kyc-controls` | Workspace: `DeyPay-claude`. PR implementation uses a `CustomerAuthenticator` port and server-derived identity; the current API binary has no trusted authenticator and KYC routes fail closed. It includes the IMP-P4-002 PostgreSQL follow-up. Further KYC verification implementation is held by owner decision. Preserve PR gaps; do not assume approved submission/document requirements. No login/session implementation. | Trusted P3-005/006 identity for any future operational API; PR10 KYC persistence and reviewed permissions; approved submission requirements and applicable compliance policy before resumption | On Hold — Owner-Directed | Draft, open and unmerged PR [#10](https://github.com/Kenule-Africa/Daypay/pull/10), head `a5ff8c3e1474f7bde4c4c06089cf10682f98c7cb`; backend/frontend CI passed in runs 45559944177 and 45559952380. Not accepted. |
+| Claude | IMP-P4-006 Customer Restriction Engine | `feat/claude-imp-p4-005-007-kyc-controls` | Workspace: `DeyPay-claude`. PR contains fail-closed restriction and central authorization foundations. No financial operation is wired or activated. Preserve code and defer further work under the owner-directed hold. | IMP-P4-001–002; approved eligibility/restriction rules before any operational use; financial work must remain blocked unless eligibility is verified | On Hold — Owner-Directed | Same draft, open and unmerged PR [#10](https://github.com/Kenule-Africa/Daypay/pull/10), head `a5ff8c3e1474f7bde4c4c06089cf10682f98c7cb`; CI passed. Not accepted. |
+| Claude | IMP-P4-007 Transaction Limit Foundation | `feat/claude-imp-p4-005-007-kyc-controls` | Workspace: `DeyPay-claude`. PR contains exact-money and limit-usage decision foundations; no thresholds are configured, usage is not persisted/consumed, and no financial operation calls them. Preserve code and defer further work under the owner-directed hold. | Approved limit thresholds, scopes/windows and eligibility requirements; coordinated implementation with IMP-P4-006 and transaction acceptance flows | On Hold — Owner-Directed | Same draft, open and unmerged PR [#10](https://github.com/Kenule-Africa/Daypay/pull/10), head `a5ff8c3e1474f7bde4c4c06089cf10682f98c7cb`; CI passed. Not accepted. |
 
-The canonical roadmap status rows for IMP-P4-005, IMP-P4-006 and IMP-P4-007 remain Backlog until implementation starts; their task IDs and acceptance criteria are unchanged. The PostgreSQL persistence follow-up is a prerequisite within Claude's Phase 4 ownership and does not reopen the Completed — Engineering Accepted status of IMP-P4-002.
+The canonical roadmap statuses are separate from assignment status. IMP-P3-005/006 are In progress; IMP-P4-005/006/007 are Blocked by the owner-directed hold while their draft PR remains open and unmerged. This does not mark the PR work accepted. The PostgreSQL persistence follow-up in PR #10 does not reopen the Completed — Engineering Accepted status of IMP-P4-002.
 
 Shared coordination boundaries:
 
@@ -104,8 +117,8 @@ Backend engineering owns these P0 foundations. Task 001 supplies ordered migrati
 | IMP-P3-002 | Email verification. | In testing |
 | IMP-P3-003 | Phone verification. | Deferred — Post-MVP |
 | IMP-P3-004 | Password hashing. | Completed |
-| IMP-P3-005 | Login. | Backlog |
-| IMP-P3-006 | Session management. | Backlog |
+| IMP-P3-005 | Login. | In progress |
+| IMP-P3-006 | Session management. | In progress |
 | IMP-P3-007 | Logout. | Backlog |
 | IMP-P3-008 | Password recovery. | Backlog |
 | IMP-P3-009 | Username uniqueness. | In testing |
@@ -114,7 +127,11 @@ Backend engineering owns these P0 foundations. Task 001 supplies ordered migrati
 | IMP-P3-012 | Authentication rate limiting. | Backlog |
 | IMP-P3-013 | MFA and step-up authentication foundations. | Backlog |
 
-IMP-P3-005 and IMP-P3-006 have separate task IDs and are assigned together as one Codex development cycle. Their canonical roadmap statuses remain Backlog while implementation is Not Started. Claude's assigned IMP-P4-005 customer-facing KYC APIs depend on trusted customer identity produced by both tasks.
+IMP-P3-005 and IMP-P3-006 have separate task IDs and are assigned together as one Codex development cycle; both are In progress in open PR #9 and remain unaccepted. Claude's PR #10 includes KYC code that depends on trusted customer identity from both tasks; PR #10 remains on hold.
+
+The next account tasks remain unassigned: IMP-P3-007 logout, IMP-P3-008 password recovery/reset, IMP-P3-010 customer profile (with the proposed profile-image extension pending approved scope), IMP-P3-011 session revocation, IMP-P3-012 general authentication rate limiting and IMP-P3-013 MFA/step-up foundations. IMP-P3-009 username uniqueness remains In testing. Do not assign these tasks without owner authorization.
+
+IMP-P3-010 has no profile-image requirement in current FRS §9.1 or API §15. Profile-image management is an owner-requested account priority; propose a narrowly scoped extension to IMP-P3-010 with an approved contract and acceptance criteria before implementation. This proposal does not add a task ID or assignment.
 
 ## Phase 4 · KYC AND COMPLIANCE FOUNDATIONS (§17)
 
@@ -126,12 +143,14 @@ IMP-P3-005 and IMP-P3-006 have separate task IDs and are assigned together as on
 | IMP-P4-002 | KYC application service. | Completed |
 | IMP-P4-003 | KYC provider interface. | Completed |
 | IMP-P4-004 | Mock KYC adapter. | Completed |
-| IMP-P4-005 | KYC API endpoints. | Backlog |
-| IMP-P4-006 | Customer restriction engine. | Backlog |
-| IMP-P4-007 | Transaction limit foundation. | Backlog |
+| IMP-P4-005 | KYC API endpoints. | Blocked |
+| IMP-P4-006 | Customer restriction engine. | Blocked |
+| IMP-P4-007 | Transaction limit foundation. | Blocked |
 | IMP-P4-008 | Compliance audit events. | Backlog |
 | IMP-P4-009 | KYC review workflow. | Backlog |
 | IMP-P4-010 | KYC provider integration after confirmation. | Backlog |
+
+IMP-P4-005–007 are Blocked by the repository owner's explicit hold on further KYC verification implementation. Their tested code remains only in open, unmerged draft PR #10. IMP-P4-008–010 remain Backlog and unassigned. IMP-P4-001–004 retain their accepted statuses; Phase 4 is not complete. The hold does not cancel KYC requirements or authorize financial operations.
 
 ## Phase 5 · FINANCIAL LEDGER IMPLEMENTATION (§18)
 
@@ -346,6 +365,8 @@ The roadmap assigns no task IDs here. Track its existing integration sections di
 | §30.7 | Transaction History | Backlog |
 | §30.8 | Security | Backlog |
 | §30.9 | Frontend Requirements | Backlog |
+
+The early account frontend slice is a named milestone in roadmap §30, using existing P1-004 and §30.1, §30.2, relevant §30.8 and §30.9. It includes a dashboard shell and profile-management interfaces, adds no task ID or assignee, and does not complete Phase 17. It follows account-backend readiness and precedes financial implementation; apply security checks during the slice.
 
 ## Phase 18 · SECURITY HARDENING AND QUALITY ASSURANCE (§31)
 
