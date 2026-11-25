@@ -109,6 +109,35 @@ pub struct SessionIdentity {
     pub account_status: String,
 }
 
+/// Public management metadata. The session ID is an identifier, never a credential.
+pub struct ActiveSession {
+    pub session_id: Uuid,
+    pub is_current: bool,
+    pub created_at: String,
+    pub expires_at: String,
+}
+
+pub enum RevokedSession {
+    Current,
+    Other,
+    Absent,
+}
+
+/// Verifier-only controls. Each operation resolves ownership from the presented
+/// cookie and commits any revocation and audit evidence in one database transaction.
+pub trait SessionControls: Send + Sync {
+    fn logout(&self, digest: &str) -> impl Future<Output = Result<(), CredentialError>> + Send;
+    fn list_sessions(
+        &self,
+        digest: &str,
+    ) -> impl Future<Output = Result<Vec<ActiveSession>, CredentialError>> + Send;
+    fn revoke_session(
+        &self,
+        digest: &str,
+        target: Uuid,
+    ) -> impl Future<Output = Result<RevokedSession, CredentialError>> + Send;
+}
+
 pub async fn login(
     store: &impl LoginStore,
     verifier: &impl CredentialVerifier,
