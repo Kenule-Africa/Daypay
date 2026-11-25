@@ -34,9 +34,7 @@ fn hasher() -> Argon2idHasher {
 pub(super) const RELEASE: &str = "ed000000-0000-4000-8000-000000000001";
 
 pub(super) async fn auth_fixture(pool: &PgPool, total: i32, per_id: i32) -> sqlx::Result<()> {
-    // Cluster-wide grant target for SQLx's disposable databases. Each fixture has isolated policy/data.
-    sqlx::raw_sql("DO $$ BEGIN CREATE ROLE deypay_auth NOLOGIN; EXCEPTION WHEN duplicate_object OR unique_violation THEN NULL; END $$;").execute(pool).await?;
-    sqlx::raw_sql("DO $ BEGIN CREATE ROLE deypay_auth_owner NOLOGIN; EXCEPTION WHEN duplicate_object OR unique_violation THEN NULL; END $;").execute(pool).await?;
+    // The cluster bootstrap supplies both roles. Each fixture has isolated policy and counters.
     sqlx::raw_sql(include_str!(
         "../../../../../infrastructure/postgres/auth-grants.psql"
     ))

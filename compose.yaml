@@ -13,6 +13,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./infrastructure/postgres/bootstrap.psql:/docker-entrypoint-initdb.d/10-app-role.sql:ro
+      - ./infrastructure/postgres/auth-roles.psql:/docker-entrypoint-initdb.d/11-auth-roles.sql:ro
       - ./infrastructure/postgres/verify.psql:/opt/deypay/verify.psql:ro
     healthcheck:
       test: ["CMD-SHELL", "PGPASSWORD=\"$$DEYPAY_DB_PASSWORD\" psql -X -h 127.0.0.1 -U deypay_app -d deypay -v ON_ERROR_STOP=1 -Atqc 'SELECT 1'"]
