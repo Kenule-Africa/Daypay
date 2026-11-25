@@ -6,14 +6,12 @@ use axum::{
     routing::get,
 };
 use deypay_api::{
-    login::{AuthenticatedCustomer, CustomerAuth, LoginLimits, SandboxAuth},
+    login::{AuthenticatedCustomer, BrowserAuth},
     sessions::BrowserOrigin,
 };
-use deypay_application::{
-    login::SessionLifetime,
-    passwords::{CredentialError, CredentialVerifier, PasswordHasher, VerifiedPassword},
+use deypay_application::passwords::{
+    CredentialError, CredentialVerifier, PasswordHasher, VerifiedPassword,
 };
-use deypay_common::config::Environment;
 use deypay_infrastructure::{
     MIGRATOR,
     password_hashing::Argon2idHasher,
@@ -33,44 +31,53 @@ fn hasher() -> Argon2idHasher {
     Argon2idHasher::new(32, 2, 1, 4).unwrap()
 }
 
+pub(super) const RELEASE: &str = "ed000000-0000-4000-8000-000000000001";
+
+pub(super) async fn auth_fixture(pool: &PgPool, total: i32, per_id: i32) -> sqlx::Result<()> {
+    // Cluster-wide grant target for SQLx's disposable databases. Each fixture has isolated policy/data.
+    sqlx::raw_sql("DO $$ BEGIN CREATE ROLE deypay_auth NOLOGIN; EXCEPTION WHEN duplicate_object OR unique_violation THEN NULL; END $$;").execute(pool).await?;
+    sqlx::raw_sql(include_str!(
+        "../../../../../infrastructure/postgres/auth-grants.psql"
+    ))
+    .execute(pool)
+    .await?;
+    sqlx::query("INSERT INTO identity.auth_policy(id,enabled,environment,origin,security_ref,product_ref,audit_ref,signing_key,allowed_states,
+        idle_seconds,absolute_seconds,total_limit,identifier_limit,memory_kib,passes,lanes,slots,assertion_seconds)
+        VALUES ($1,true,'test',$2,'fixture-security','fixture-product','fixture-audit',decode(repeat('37',32),'hex'),
+        ARRAY['CONTACT_VERIFIED','KYC_REQUIRED','KYC_PENDING','KYC_APPROVED'],120,600,$3,$4,32,2,1,1,30)")
+        .bind(RELEASE.parse::<Uuid>().unwrap()).bind(ORIGIN).bind(total).bind(per_id).execute(pool).await?;
+    Ok(())
+}
 async fn runtime(pool: &PgPool) -> sqlx::Result<PgPool> {
+    runtime_with_limits(pool, 200, 100).await
+}
+async fn runtime_with_limits(pool: &PgPool, total: i32, per_id: i32) -> sqlx::Result<PgPool> {
     sqlx::raw_sql(include_str!(
         "../../../../../infrastructure/postgres/phase-two-grants.psql"
     ))
     .execute(pool)
     .await?;
-    sqlx::raw_sql(include_str!(
-        "../../../../../infrastructure/postgres/sandbox-auth-grants.psql"
-    ))
-    .execute(pool)
-    .await?;
+    auth_fixture(pool, total, per_id).await?;
     sqlx::raw_sql(super::SANDBOX).execute(pool).await?;
+    auth_pool(pool).await
+}
+async fn auth_pool(pool: &PgPool) -> sqlx::Result<PgPool> {
     PgPoolOptions::new()
         .max_connections(5)
         .after_connect(|conn, _| {
             Box::pin(async move {
-                sqlx::query("SET ROLE deypay_app").execute(conn).await?;
+                sqlx::query("SET ROLE deypay_auth").execute(conn).await?;
                 Ok(())
             })
         })
         .connect_with((*pool.connect_options()).clone())
         .await
 }
-
-fn router<V: CredentialVerifier + Send + 'static>(
-    pool: PgPool,
-    verifier: V,
-    per_id: u32,
-) -> Router {
-    let auth = SandboxAuth::new(
-        Environment::Test,
-        PgSessions(pool),
-        verifier,
-        BrowserOrigin::parse(ORIGIN).unwrap(),
-        SessionLifetime::new(120, 600).unwrap(),
-        LoginLimits::new(200.try_into().unwrap(), per_id.try_into().unwrap()),
-    )
-    .unwrap();
+fn store(pool: PgPool) -> PgSessions {
+    PgSessions::new(pool, RELEASE.parse().unwrap(), [0x37; 32].into())
+}
+fn router<V: CredentialVerifier + Send + 'static>(pool: PgPool, verifier: V) -> Router {
+    let auth = BrowserAuth::new(store(pool), verifier, BrowserOrigin::parse(ORIGIN).unwrap());
     async fn who(customer: AuthenticatedCustomer) -> String {
         customer.id().to_string()
     }
@@ -171,7 +178,7 @@ async fn login_binds_only_the_verified_customer_and_rotates_an_existing_cookie(
             .await
             .is_err()
     );
-    let app = router(api, hasher(), 100);
+    let app = router(api, hasher());
     let ada = seed(&pool, "ada").await?;
     let ben = seed(&pool, "ben").await?;
     let first = login(&app, " Ada@EXAMPLE.TEST ", PW, None).await;
@@ -182,14 +189,6 @@ async fn login_binds_only_the_verified_customer_and_rotates_an_existing_cookie(
         ada.to_string().as_bytes()
     );
     let raw = a.split_once('=').unwrap().1;
-    let request = Request::get("/test/status")
-        .header(header::COOKIE, &a)
-        .header("x-account-status", "KYC_APPROVED")
-        .body(Body::empty())
-        .unwrap();
-    let response = call(&app, request).await;
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(super::bytes(response).await.as_ref(), b"CONTACT_VERIFIED");
     let stored: String =
         sqlx::query_scalar("SELECT token_hash FROM identity.sessions WHERE user_id=$1")
             .bind(ada)
@@ -239,10 +238,10 @@ async fn login_binds_only_the_verified_customer_and_rotates_an_existing_cookie(
 async fn credential_and_eligibility_failures_are_indistinguishable(
     pool: PgPool,
 ) -> sqlx::Result<()> {
-    let app = router(runtime(&pool).await?, hasher(), 100);
+    let app = router(runtime(&pool).await?, hasher());
     let id = seed(&pool, "ada").await?;
     let expected = rejected(login(&app, "unknown@example.test", PW, None).await).await;
-    // Contact proof does not turn an identity without sandbox consent into a sandbox customer.
+    // A customer may originate from a published enrollment or an import; consent scope is not login authority.
     sqlx::query(
         "WITH outside AS (INSERT INTO identity.users(email,email_verified_at,status)
         VALUES ('outside@example.test',now(),'CONTACT_VERIFIED') RETURNING id)
@@ -251,14 +250,14 @@ async fn credential_and_eligibility_failures_are_indistinguishable(
     .bind(hasher().hash(PW).await.unwrap())
     .execute(&pool)
     .await?;
-    assert!(expected == rejected(login(&app, "outside@example.test", PW, None).await).await);
+    assert_eq!(
+        login(&app, "outside@example.test", PW, None).await.status(),
+        StatusCode::OK
+    );
     assert!(expected == rejected(login(&app, "ada@example.test", "Incorrect1!", None).await).await);
     for state in [
         "REGISTERED",
         "CONTACT_UNVERIFIED",
-        "KYC_REQUIRED",
-        "KYC_PENDING",
-        "KYC_APPROVED",
         "KYC_REJECTED",
         "RESTRICTED",
         "SUSPENDED",
@@ -306,7 +305,7 @@ async fn credential_and_eligibility_failures_are_indistinguishable(
         .status(),
         StatusCode::BAD_REQUEST
     );
-    assert!(sqlx::query_scalar::<_,bool>("SELECT NOT EXISTS(SELECT FROM identity.sessions) AND EXISTS(SELECT FROM audit.audit_events WHERE action='LOGIN_REJECTED')").fetch_one(&pool).await?);
+    assert!(sqlx::query_scalar::<_,bool>("SELECT NOT EXISTS(SELECT FROM identity.sessions s JOIN identity.users u ON u.id=s.user_id WHERE u.email='ada@example.test') AND EXISTS(SELECT FROM audit.audit_events WHERE action='LOGIN_REJECTED')").fetch_one(&pool).await?);
     Ok(())
 }
 
@@ -314,7 +313,7 @@ async fn credential_and_eligibility_failures_are_indistinguishable(
 async fn concurrent_refresh_is_single_use_and_preserves_absolute_deadline(
     pool: PgPool,
 ) -> sqlx::Result<()> {
-    let app = router(runtime(&pool).await?, hasher(), 100);
+    let app = router(runtime(&pool).await?, hasher());
     let id = seed(&pool, "ada").await?;
     let cookie = pair(&login(&app, "ada@example.test", PW, None).await);
     let deadline: String =
@@ -366,7 +365,7 @@ async fn concurrent_refresh_is_single_use_and_preserves_absolute_deadline(
 async fn idle_absolute_and_revoked_sessions_cannot_be_used_or_refreshed(
     pool: PgPool,
 ) -> sqlx::Result<()> {
-    let app = router(runtime(&pool).await?, hasher(), 100);
+    let app = router(runtime(&pool).await?, hasher());
     let id = seed(&pool, "ada").await?;
     for (expired_idle, expired_absolute, revoked) in [
         (true, false, false),
@@ -374,8 +373,8 @@ async fn idle_absolute_and_revoked_sessions_cannot_be_used_or_refreshed(
         (false, false, true),
     ] {
         let token = SessionToken::generate().unwrap();
-        sqlx::query("INSERT INTO identity.sessions(user_id,token_hash,created_at,last_activity_at,expires_at,absolute_expires_at,revoked_at)
-            SELECT $1,$2,now()-interval '1 hour',now()-interval '1 hour',
+        sqlx::query("INSERT INTO identity.sessions(auth_release,user_id,token_hash,created_at,last_activity_at,expires_at,absolute_expires_at,revoked_at)
+            SELECT 'ed000000-0000-4000-8000-000000000001',$1,$2,now()-interval '1 hour',now()-interval '1 hour',
             now()+CASE WHEN $3 THEN interval '-1 second' ELSE interval '1 minute' END,
             now()+CASE WHEN $4 THEN interval '-1 second' ELSE interval '1 day' END,CASE WHEN $5 THEN now() END")
             .bind(id).bind(token.digest()).bind(expired_idle).bind(expired_absolute).bind(revoked).execute(&pool).await?;
@@ -389,9 +388,9 @@ async fn idle_absolute_and_revoked_sessions_cannot_be_used_or_refreshed(
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn audit_issuance_and_lookup_failures_never_issue_a_cookie(pool: PgPool) -> sqlx::Result<()> {
     let api = runtime(&pool).await?;
-    assert!(PgSessions(api.clone()).ready().await);
-    assert!(!PgSessions(pool.clone()).ready().await);
-    let app = router(api.clone(), hasher(), 100);
+    assert!(store(api.clone()).ready().await);
+    assert!(!store(pool.clone()).ready().await);
+    let app = router(api.clone(), hasher());
     seed(&pool, "ada").await?;
     let prior = pair(&login(&app, "ada@example.test", PW, None).await);
     sqlx::raw_sql("CREATE FUNCTION audit.fail_test_login() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'synthetic outage'; END $$;
@@ -413,12 +412,12 @@ async fn audit_issuance_and_lookup_failures_never_issue_a_cookie(pool: PgPool) -
         .await?
     );
     sqlx::query(
-        "REVOKE EXECUTE ON FUNCTION identity.sandbox_login_credential(text) FROM deypay_app",
+        "REVOKE EXECUTE ON FUNCTION identity.auth_credential(uuid,text,bigint,bytea) FROM deypay_auth",
     )
     .execute(&pool)
     .await?;
+    assert!(!store(api.clone()).ready().await);
     let unavailable = login(&app, "ada@example.test", PW, None).await;
-    assert!(!PgSessions(api.clone()).ready().await);
     assert_eq!(unavailable.status(), StatusCode::SERVICE_UNAVAILABLE);
     assert!(unavailable.headers().get(header::SET_COOKIE).is_none());
     let error = String::from_utf8(super::bytes(unavailable).await.to_vec()).unwrap();
@@ -445,7 +444,7 @@ impl CredentialVerifier for FailedVerifier {
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn login_admission_and_verifier_errors_fail_closed(pool: PgPool) -> sqlx::Result<()> {
-    let api = runtime(&pool).await?;
+    let api = runtime_with_limits(&pool, 200, 1).await?;
     for (error, expected) in [
         (CredentialError::Busy, StatusCode::TOO_MANY_REQUESTS),
         (
@@ -453,22 +452,25 @@ async fn login_admission_and_verifier_errors_fail_closed(pool: PgPool) -> sqlx::
             StatusCode::SERVICE_UNAVAILABLE,
         ),
     ] {
-        let app = router(api.clone(), FailedVerifier(error), 20);
-        let response = login(&app, "missing@example.test", PW, None).await;
+        let app = router(api.clone(), FailedVerifier(error));
+        let response = login(
+            &app,
+            &format!("case{}@example.test", expected.as_u16()),
+            PW,
+            None,
+        )
+        .await;
         assert_eq!(response.status(), expected);
         assert!(response.headers().get(header::SET_COOKIE).is_none());
     }
-    let app = router(api.clone(), hasher(), 1);
-    rejected(login(&app, "missing@example.test", PW, None).await).await;
+
+    let app = router(api.clone(), hasher());
+    rejected(login(&app, "new@example.test", PW, None).await).await;
     assert_eq!(
-        login(&app, " MISSING@example.test ", PW, None)
-            .await
-            .status(),
+        login(&app, " NEW@example.test ", PW, None).await.status(),
         StatusCode::TOO_MANY_REQUESTS
     );
-    for env in [Environment::Staging, Environment::Production] {
-        assert!(CustomerAuth::from_env(env, api.clone()).unwrap().is_none());
-    }
+
     assert_eq!(
         login(&deypay_api::login::routes(None), "a@example.test", PW, None)
             .await
@@ -483,10 +485,10 @@ async fn stale_password_check_and_concurrent_revocation_fail_closed(
 ) -> sqlx::Result<()> {
     use deypay_application::login::{LoginStore, check_password};
     let api = runtime(&pool).await?;
-    let app = router(api.clone(), hasher(), 100);
+    let app = router(api.clone(), hasher());
     let id = seed(&pool, "ada").await?;
     let prior = pair(&login(&app, "ada@example.test", PW, None).await);
-    let store = PgSessions(api);
+    let store = store(api);
     let record = store.credential("ada@example.test").await.unwrap();
     let checked = check_password(&hasher(), record, PW).await.unwrap();
     sqlx::query("UPDATE identity.password_credentials SET password_hash=$2 WHERE user_id=$1")
@@ -497,13 +499,7 @@ async fn stale_password_check_and_concurrent_revocation_fail_closed(
     let token = SessionToken::generate().unwrap();
     assert!(matches!(
         store
-            .issue(
-                checked,
-                "ada@example.test",
-                &token.digest(),
-                None,
-                SessionLifetime::new(120, 600).unwrap()
-            )
+            .issue(checked, "ada@example.test", &token.digest(), None)
             .await,
         Err(CredentialError::Rejected)
     ));
@@ -531,7 +527,7 @@ async fn stale_password_check_and_concurrent_revocation_fail_closed(
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn a_blocked_refresh_cannot_cross_the_idle_deadline(pool: PgPool) -> sqlx::Result<()> {
-    let app = router(runtime(&pool).await?, hasher(), 100);
+    let app = router(runtime(&pool).await?, hasher());
     seed(&pool, "ada").await?;
     let cookie = pair(&login(&app, "ada@example.test", PW, None).await);
     let mut tx = pool.begin().await?;
@@ -551,5 +547,348 @@ async fn a_blocked_refresh_cannot_cross_the_idle_deadline(pool: PgPool) -> sqlx:
         .execute(&mut *tx).await?;
     tx.commit().await?;
     rejected(attempt.await).await;
+    Ok(())
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn verified_lifecycle_states_expose_only_the_authenticated_identity_and_status(
+    pool: PgPool,
+) -> sqlx::Result<()> {
+    let app = router(runtime(&pool).await?, hasher());
+    let customer = seed(&pool, "ada").await?;
+    for status in [
+        "CONTACT_VERIFIED",
+        "KYC_REQUIRED",
+        "KYC_PENDING",
+        "KYC_APPROVED",
+    ] {
+        sqlx::query("UPDATE identity.users SET status=$2 WHERE id=$1")
+            .bind(customer)
+            .bind(status)
+            .execute(&pool)
+            .await?;
+        let cookie = pair(&login(&app, "ada@example.test", PW, None).await);
+        let request = Request::get("/test/status")
+            .header(header::COOKIE, &cookie)
+            .header("x-account-status", "CLOSED")
+            .body(Body::empty())
+            .unwrap();
+        let response = call(&app, request).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(super::bytes(response).await.as_ref(), status.as_bytes());
+    }
+    assert!(sqlx::query_scalar::<_,bool>("SELECT NOT EXISTS (SELECT FROM compliance.kyc_cases)
+        AND NOT EXISTS (SELECT FROM wallets.wallet_profiles) AND NOT EXISTS (SELECT FROM payments.transactions)")
+        .fetch_one(&pool).await?);
+    Ok(())
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn independent_replicas_share_admission_and_fail_closed_on_store_loss(
+    pool: PgPool,
+) -> sqlx::Result<()> {
+    use deypay_application::login::LoginStore;
+    let replica_a = runtime_with_limits(&pool, 3, 1).await?;
+    let replica_b = auth_pool(&pool).await?;
+    let a = store(replica_a);
+    let b = store(replica_b);
+    let (one, two) = tokio::join!(
+        a.admit(Some(" unknown@example.test ")),
+        b.admit(Some("UNKNOWN@example.test"))
+    );
+    assert!(matches!(
+        (one, two),
+        (Ok(()), Err(CredentialError::Busy)) | (Err(CredentialError::Busy), Ok(()))
+    ));
+    let attempts = tokio::join!(a.admit(None), b.admit(None), a.admit(None), b.admit(None));
+    let results = [attempts.0, attempts.1, attempts.2, attempts.3];
+    assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 3);
+    assert_eq!(
+        results
+            .iter()
+            .filter(|r| matches!(r, Err(CredentialError::Busy)))
+            .count(),
+        1
+    );
+    sqlx::query("REVOKE EXECUTE ON FUNCTION identity.auth_admit(uuid,text) FROM deypay_auth")
+        .execute(&pool)
+        .await?;
+    assert_eq!(a.admit(None).await, Err(CredentialError::Unavailable));
+    assert!(!b.ready().await);
+    Ok(())
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn startup_requires_matching_policy_environment_role_and_signer(
+    pool: PgPool,
+) -> sqlx::Result<()> {
+    use deypay_common::config::Environment::{Production, Test};
+    let auth = runtime(&pool).await?;
+    let release = RELEASE.parse().unwrap();
+    let good = store(auth.clone());
+    let policy = good.policy(Test).await.unwrap();
+    assert_eq!(policy.origin, ORIGIN);
+    assert_eq!(policy.lifetime.idle_seconds(), 120);
+    assert_eq!(policy.lifetime.absolute_seconds(), 600);
+    assert!(good.ready().await);
+    assert!(good.policy(Production).await.is_err());
+    assert!(store(pool.clone()).policy(Test).await.is_err());
+    assert!(
+        PgSessions::new(auth.clone(), release, [0x11; 32].into())
+            .policy(Test)
+            .await
+            .is_err()
+    );
+    assert!(
+        PgSessions::new(auth, Uuid::nil(), [0x37; 32].into())
+            .policy(Test)
+            .await
+            .is_err()
+    );
+    sqlx::query("UPDATE identity.auth_policy SET enabled=false WHERE id=$1")
+        .bind(release)
+        .execute(&pool)
+        .await?;
+    assert!(!good.ready().await);
+    assert!(good.policy(Test).await.is_err());
+    Ok(())
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn auth_roles_cannot_substitute_customer_records_for_verifier_authorization(
+    pool: PgPool,
+) -> sqlx::Result<()> {
+    let auth = runtime(&pool).await?;
+    let victim = seed(&pool, "ada").await?;
+    let app = router(auth.clone(), hasher());
+    let real = pair(&login(&app, "ada@example.test", PW, None).await);
+    let release = RELEASE.parse::<Uuid>().unwrap();
+    // An identifier and even the authentic stored fingerprint confer no issuance authority.
+    let fingerprint: String = sqlx::query_scalar(
+        "SELECT encode(sha256(convert_to(password_hash,'UTF8')),'hex')
+        FROM identity.password_credentials WHERE user_id=$1",
+    )
+    .bind(victim)
+    .fetch_one(&pool)
+    .await?;
+    let generated = SessionToken::generate().unwrap();
+    let issue = sqlx::query_scalar::<_, bool>(
+        "SELECT identity.auth_issue($1,$2,$3,$4,$5,NULL,
+        floor(extract(epoch FROM clock_timestamp()))::bigint,$6)",
+    )
+    .bind(release)
+    .bind(victim)
+    .bind("ada@example.test")
+    .bind(fingerprint)
+    .bind(generated.digest())
+    .bind(vec![0u8; 32])
+    .fetch_one(&auth)
+    .await;
+    assert!(!matches!(issue, Ok(true)));
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM identity.sessions")
+            .fetch_one(&pool)
+            .await?,
+        1
+    );
+    assert_eq!(principal(&app, Some(&real)).await.status(), StatusCode::OK);
+    for table in [
+        "identity.auth_policy",
+        "identity.password_credentials",
+        "identity.sessions",
+    ] {
+        let has_access: bool =
+            sqlx::query_scalar("SELECT has_any_column_privilege(current_user,$1,'SELECT')")
+                .bind(table)
+                .fetch_one(&auth)
+                .await?;
+        assert!(!has_access);
+    }
+    assert!(sqlx::query_scalar::<_,bool>("SELECT NOT has_function_privilege('deypay_app',
+        'identity.auth_issue(uuid,uuid,text,text,text,text,bigint,bytea)','EXECUTE') AND
+        to_regprocedure('identity.issue_sandbox_session(uuid,text,text,text,text,integer,integer)') IS NULL")
+        .fetch_one(&pool).await?);
+    let mut ordinary = pool.begin().await?;
+    sqlx::query("SET LOCAL ROLE deypay_app")
+        .execute(&mut *ordinary)
+        .await?;
+    assert!(sqlx::query("INSERT INTO audit.audit_events(actor_type,action,resource_type) VALUES ('SYSTEM','SESSION_ISSUED','SESSION')")
+        .execute(&mut *ordinary).await.is_err());
+    ordinary.rollback().await?;
+    Ok(())
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn issuance_proofs_expire_and_only_one_replica_can_consume_them(
+    pool: PgPool,
+) -> sqlx::Result<()> {
+    let a = runtime(&pool).await?;
+    let b = auth_pool(&pool).await?;
+    let id = seed(&pool, "ada").await?;
+    let release = RELEASE.parse::<Uuid>().unwrap();
+    let token = SessionToken::generate().unwrap().digest();
+    let fingerprint:String=sqlx::query_scalar("SELECT identity.auth_hex(password_hash) FROM identity.password_credentials WHERE user_id=$1")
+        .bind(id).fetch_one(&pool).await?;
+    let now: i64 =
+        sqlx::query_scalar("SELECT floor(extract(epoch FROM clock_timestamp()))::bigint")
+            .fetch_one(&pool)
+            .await?;
+    // The fixture owner signs test vectors. Neither runtime may retrieve this key.
+    let sign = |purpose: &'static str, at: i64| {
+        sqlx::query_scalar::<_,Vec<u8>>(
+        "SELECT auth_crypto.hmac(convert_to(array_to_string(ARRAY['deypay-auth-v1',$2,id::text,$3::bigint::text,
+         $4::uuid::text,identity.auth_hex('ada@example.test'),$5,$6,''],chr(10)),'UTF8'),signing_key,'sha256')
+         FROM identity.auth_policy WHERE id=$1")
+        .bind(release).bind(purpose).bind(at).bind(id).bind(fingerprint.clone()).bind(token.clone()).fetch_one(&pool)
+    };
+    let issue = |at: i64, tag: Vec<u8>, customer: Uuid| {
+        sqlx::query_scalar::<_, bool>(
+            "SELECT identity.auth_issue($1,$2,'ada@example.test',$3,$4,NULL,$5,$6)",
+        )
+        .bind(release)
+        .bind(customer)
+        .bind(fingerprint.clone())
+        .bind(token.clone())
+        .bind(at)
+        .bind(tag)
+    };
+    for (at, purpose, customer) in [
+        (now - 90, "issue", id),
+        (now, "lookup", id),
+        (now, "issue", Uuid::nil()),
+    ] {
+        assert!(
+            issue(at, sign(purpose, at).await?, customer)
+                .fetch_one(&a)
+                .await
+                .is_err()
+        );
+    }
+    let tag = sign("issue", now).await?;
+    let (x, y) = tokio::join!(
+        issue(now, tag.clone(), id).fetch_one(&a),
+        issue(now, tag.clone(), id).fetch_one(&b)
+    );
+    assert_ne!(x?, y?);
+    // Rotation changes the live token, but the original issuance nonce remains spent.
+    use deypay_application::login::SessionStore;
+    assert!(
+        store(a.clone())
+            .validate(&token, Some(&SessionToken::generate().unwrap().digest()))
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert!(!issue(now, tag, id).fetch_one(&b).await?);
+    assert!(sqlx::query_scalar::<_,bool>("SELECT (SELECT count(*) FROM identity.sessions)=1
+        AND (SELECT count(*) FROM identity.auth_receipt)=1 AND (SELECT count(*) FROM audit.audit_events WHERE action='SESSION_ISSUED')=1")
+        .fetch_one(&pool).await?);
+    Ok(())
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn general_api_only_validates_and_release_retirement_invalidates_all_replicas(
+    pool: PgPool,
+) -> sqlx::Result<()> {
+    use deypay_application::login::SessionStore;
+    use deypay_infrastructure::sessions::PgSessionReader;
+    let auth = runtime(&pool).await?;
+    let app = router(auth.clone(), hasher());
+    let id = seed(&pool, "ada").await?;
+    let cookie = pair(&login(&app, "ada@example.test", PW, None).await);
+    let token = SessionToken::from_cookie(cookie.split_once('=').unwrap().1)
+        .unwrap()
+        .digest();
+    let general = PgPoolOptions::new()
+        .after_connect(|c, _| {
+            Box::pin(async move {
+                sqlx::query("SET ROLE deypay_app").execute(c).await?;
+                Ok(())
+            })
+        })
+        .connect_with((*pool.connect_options()).clone())
+        .await?;
+    let reader = PgSessionReader {
+        pool: general.clone(),
+        release: RELEASE.parse().unwrap(),
+        environment: "test",
+        origin: ORIGIN.to_owned(),
+    };
+    assert!(reader.ready().await);
+    let principal = reader.validate(&token, None).await.unwrap().unwrap();
+    assert_eq!(
+        (principal.customer_id, principal.account_status.as_str()),
+        (id, "CONTACT_VERIFIED")
+    );
+    assert!(reader.validate(&token, Some(&token)).await.is_err());
+    assert!(
+        store(general.clone())
+            .credential("ada@example.test")
+            .await
+            .is_err()
+    );
+    use deypay_application::login::LoginStore;
+    assert!(
+        sqlx::query("SELECT token_hash FROM identity.sessions")
+            .execute(&general)
+            .await
+            .is_err()
+    );
+    sqlx::query("UPDATE identity.users SET status='KYC_PENDING' WHERE id=$1")
+        .bind(id)
+        .execute(&pool)
+        .await?;
+    assert!(reader.validate(&token, None).await.unwrap().is_none());
+    let rotated = pair(&call(&app, post(REFRESH, String::new(), Some(&cookie))).await);
+    let next = SessionToken::from_cookie(rotated.split_once('=').unwrap().1)
+        .unwrap()
+        .digest();
+    assert_eq!(
+        reader
+            .validate(&next, None)
+            .await
+            .unwrap()
+            .unwrap()
+            .account_status,
+        "KYC_PENDING"
+    );
+    sqlx::query("UPDATE identity.auth_policy SET enabled=false")
+        .execute(&pool)
+        .await?;
+    assert!(!reader.ready().await);
+    assert!(!store(auth).ready().await);
+    assert!(reader.validate(&next, None).await.is_err());
+    assert!(
+        sqlx::query("UPDATE identity.auth_policy SET enabled=true")
+            .execute(&pool)
+            .await
+            .is_err()
+    );
+    Ok(())
+}
+
+#[sqlx::test(migrations = false)]
+async fn forward_upgrade_retires_legacy_sessions_and_capabilities(
+    pool: PgPool,
+) -> sqlx::Result<()> {
+    let mut migrations = MIGRATOR
+        .iter()
+        .filter(|m| m.version <= 202611250502)
+        .peekable();
+    while let Some(m) = migrations.next() {
+        if migrations.peek().is_none() {
+            sqlx::raw_sql("GRANT EXECUTE ON FUNCTION identity.sandbox_login_credential(text) TO deypay_app;
+                WITH customer AS (INSERT INTO identity.users(email,status) VALUES('old@example.test','REGISTERED') RETURNING id)
+                INSERT INTO identity.sessions(user_id,token_hash,expires_at,absolute_expires_at)
+                SELECT id,repeat('c',64),now()+interval '1 hour',now()+interval '1 day' FROM customer").execute(&pool).await?;
+        }
+        let mut tx = pool.begin().await?;
+        sqlx::raw_sql(&m.sql).execute(&mut *tx).await?;
+        tx.commit().await?;
+    }
+    assert!(sqlx::query_scalar::<_,bool>("SELECT NOT EXISTS(SELECT FROM identity.sessions WHERE revoked_at IS NULL)
+        AND EXISTS(SELECT FROM audit.audit_events WHERE action='SESSION_REVOKED' AND reason='AUTHORITY_UPGRADE')
+        AND to_regprocedure('identity.sandbox_login_credential(text)') IS NULL
+        AND NOT EXISTS(SELECT FROM identity.auth_policy)").fetch_one(&pool).await?);
     Ok(())
 }

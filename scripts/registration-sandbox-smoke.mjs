@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 
-const [binary, database] = process.argv.slice(2);
+const [binary, database, verifierBinary] = process.argv.slice(2);
 const url = new URL(process.env.DATABASE_URL);
 url.pathname = "/" + database;
 url.searchParams.set("options", "-c role=deypay_app");
@@ -22,16 +22,24 @@ const body = { first_name: "Ada", last_name: "Okafor", country_code: "NG", usern
   email: "ada@example.test", phone: "+2348012345678", password: "Sandbox-Only1!",
   terms_version: "1.0", privacy_version: "1.0", accept_terms: true, acknowledge_privacy_notice: true };
 
-async function check(environment) {
+async function check(environment, verifier=false) {
   const dataset = sha(blocked) + "\n";
   const file = join(dir, "sandbox.sha256");
   await writeFile(file, dataset);
-  const proc = spawn(binary, [], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"], env: {
-    ...process.env, APP_ENV: environment, API_BIND_ADDR: "127.0.0.1:0", DATABASE_URL: url.href, LOG_LEVEL: "info",
+  const connection=new URL(url);
+  const authEnv={};
+  if(verifier){
+    connection.searchParams.set("options","-c role=deypay_auth");
+    const keyFile=join(dir,"fixture-signing-key");
+    await writeFile(keyFile,"37".repeat(32),{mode:0o600});
+    authEnv.DEYPAY_AUTH_SIGNING_KEY_FILE=keyFile;
+  }
+  const proc = spawn(verifier ? verifierBinary : binary, [], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"], env: {
+    ...process.env, APP_ENV: environment, API_BIND_ADDR: "127.0.0.1:0", DATABASE_URL: connection.href, LOG_LEVEL: "info",
     DEYPAY_REGISTRATION_MODE: "sandbox", DEYPAY_SCREENING_FILE: file, DEYPAY_SCREENING_SHA256: sha(dataset),
     DEYPAY_SCREENING_VALID_UNTIL_UNIX: String(Math.floor(Date.now()/1000)+3600), DEYPAY_ARGON2_MEMORY_KIB: "32",
     DEYPAY_ARGON2_ITERATIONS: "2", DEYPAY_ARGON2_LANES: "1", DEYPAY_HASH_CONCURRENCY: "1",
-    DEYPAY_LOGIN_MODE: "sandbox", DEYPAY_LOGIN_ORIGIN: browserOrigin,
+    ...authEnv, DEYPAY_AUTH_RELEASE: "ed000000-0000-4000-8000-000000000001", DEYPAY_LOGIN_MODE: verifier ? "enabled" : "sandbox", DEYPAY_LOGIN_ORIGIN: browserOrigin,
     DEYPAY_SESSION_IDLE_SECONDS: "120", DEYPAY_SESSION_ABSOLUTE_SECONDS: "600",
     DEYPAY_LOGIN_REQUESTS_PER_MINUTE: "10", DEYPAY_LOGIN_PER_IDENTIFIER_PER_MINUTE: "5",
     DEYPAY_REGISTRATION_ATTEMPTS_PER_MINUTE: "10", EMAIL_VERIFICATION_ENABLED: String(environment==="test")
@@ -47,14 +55,17 @@ async function check(environment) {
       closed.then(() => reject(Error("API exited during startup")), reject);
       lines.on("line", line => {
         output.push(line);
-        try { const {fields}=JSON.parse(line); if(fields?.message==="API listening")resolve(fields.address); }
+        try { const {fields}=JSON.parse(line); if(fields?.message===(verifier?"Verifier listening":"API listening"))resolve(fields.address); }
         catch { reject(Error("Invalid API log")); }
       });
     });
     const origin = "http://" + address;
     const post = data => fetch(origin+"/api/v1/auth/register",{method:"POST",headers:{"content-type":"application/json"},
       body:JSON.stringify(data),signal:AbortSignal.timeout(30000)});
-    if (environment === "production") {
+    if (verifier) {
+      assert.equal((await fetch(origin+"/health/ready")).status,200);
+      assert.equal((await post(body)).status,404);
+    } else if (environment === "production") {
       assert.equal((await post(body)).status,503);
     } else {
       const index = await fetch(origin+"/api/v1/legal/documents",{signal:AbortSignal.timeout(30000)});
@@ -91,7 +102,7 @@ async function check(environment) {
       const result = await fetch(origin + "/api/v1/auth/" + path, {method:"POST",
         headers:{"content-type":"application/json",origin:browserOrigin,cookie:sessionCookie},
         body:JSON.stringify(payload),signal:AbortSignal.timeout(30000)});
-      assert.equal(result.status,environment === "production" ? 503 : 401);
+      assert.equal(result.status,verifier ? 401 : 503);
       assert.equal(result.headers.get("set-cookie"),null);
       const response = await result.text();
       for (const value of [body.password,body.email,sessionCookie.split("=")[1]]) assert.ok(!response.includes(value));
@@ -105,5 +116,5 @@ async function check(environment) {
   for (const secret of [blocked,body.password,body.email,invalidVerificationToken,sessionCookie.split("=")[1],"$argon2id$"]) assert.ok(!output.join("\n").includes(secret),"Sensitive authentication log");
 }
 
-try { await check("test"); await check("production"); }
+try { await check("test"); await check("production"); await check("test",true); }
 finally { await rm(dir,{recursive:true,force:true}); }

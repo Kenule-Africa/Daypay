@@ -46,11 +46,11 @@ async fn executable_accepts_sandbox_requests_and_refuses_production(
         include_str!("../../../../infrastructure/postgres/phase-two-grants.psql"),
         include_str!("../../../../infrastructure/postgres/registration-grants.psql"),
         include_str!("../../../../infrastructure/postgres/email-verification-api-grants.psql"),
-        include_str!("../../../../infrastructure/postgres/sandbox-auth-grants.psql"),
         SANDBOX,
     ] {
         sqlx::raw_sql(script).execute(&pool).await?;
     }
+    login_sessions::auth_fixture(&pool, 200, 100).await?;
     let name: String = sqlx::query_scalar("SELECT current_database()")
         .fetch_one(&pool)
         .await?;
@@ -61,6 +61,7 @@ async fn executable_accepts_sandbox_requests_and_refuses_production(
             .arg(script)
             .arg(env!("CARGO_BIN_EXE_deypay-api"))
             .arg(name)
+            .arg(env!("CARGO_BIN_EXE_deypay-auth"))
             .status()
     })
     .await

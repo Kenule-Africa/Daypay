@@ -47,6 +47,12 @@ pub async fn check_password(
 /// and any prior cookie again inside the transaction that creates and audits the session.
 /// Only digests of session secrets may cross this interface.
 pub trait LoginStore: Send + Sync {
+    /// None reserves deployment-wide capacity before reading the HTTP body.
+    /// Some applies the shared budget for this normalized registration email.
+    fn admit(
+        &self,
+        identifier: Option<&str>,
+    ) -> impl Future<Output = Result<(), CredentialError>> + Send;
     fn credential(
         &self,
         email: &str,
@@ -61,7 +67,6 @@ pub trait LoginStore: Send + Sync {
         email: &str,
         digest: &str,
         previous: Option<&str>,
-        lifetime: SessionLifetime,
     ) -> impl Future<Output = Result<(), CredentialError>> + Send;
 }
 
@@ -86,14 +91,6 @@ impl SessionLifetime {
     }
 }
 
-/// Server-side snapshot at admission. Authorization for a later write must
-/// recheck its own requirements inside that write transaction.
-#[derive(Clone)]
-pub struct SessionIdentity {
-    pub customer_id: Uuid,
-    pub account_status: String,
-}
-
 /// One atomic server-side operation checks the token, current customer status,
 /// revocation and both deadlines. Refresh also replaces the old digest without
 /// extending the original absolute deadline.
@@ -102,8 +99,14 @@ pub trait SessionStore: Send + Sync {
         &self,
         current_digest: &str,
         replacement_digest: Option<&str>,
-        idle_seconds: i32,
     ) -> impl Future<Output = Result<Option<SessionIdentity>, CredentialError>> + Send;
+}
+
+/// Snapshot obtained during validation of an opaque session against the database.
+#[derive(Clone)]
+pub struct SessionIdentity {
+    pub customer_id: Uuid,
+    pub account_status: String,
 }
 
 pub async fn login(
@@ -113,7 +116,6 @@ pub async fn login(
     password: &str,
     digest: &str,
     previous_digest: Option<&str>,
-    lifetime: SessionLifetime,
 ) -> Result<(), CredentialError> {
     let candidate = store.credential(email).await?;
     let customer = candidate.as_ref().map(|candidate| candidate.customer_id);
@@ -124,7 +126,5 @@ pub async fn login(
         }
         result => result?,
     };
-    store
-        .issue(checked, email, digest, previous_digest, lifetime)
-        .await
+    store.issue(checked, email, digest, previous_digest).await
 }

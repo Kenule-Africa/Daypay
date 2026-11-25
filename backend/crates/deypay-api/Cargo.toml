@@ -1,5 +1,6 @@
 [package]
 name = "deypay-api"
+default-run = "deypay-api"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
