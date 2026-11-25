@@ -2,6 +2,7 @@
 
 pub mod entities;
 pub mod kyc;
+pub mod limits;
 pub mod money;
 pub mod operations;
 pub mod restrictions;
