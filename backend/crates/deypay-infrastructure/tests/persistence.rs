@@ -8,6 +8,8 @@ use sqlx::PgPool;
 
 #[path = "persistence/kyc_cases.rs"]
 mod kyc_cases;
+#[path = "persistence/kyc_security.rs"]
+mod kyc_security;
 #[path = "persistence/restrictions.rs"]
 mod restrictions;
 #[path = "persistence/support.rs"]
