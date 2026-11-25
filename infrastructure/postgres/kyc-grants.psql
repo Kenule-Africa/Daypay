@@ -1,0 +1,5 @@
+-- Run as the migration owner after migration 202611250001, using the Phase 1 runtime role.
+-- The runtime receives only the two fixed customer KYC case operations; it holds no
+-- INSERT or UPDATE on compliance.kyc_cases.
+GRANT EXECUTE ON FUNCTION compliance.open_first_kyc_case(uuid),
+    compliance.submit_kyc_case(uuid,uuid,text) TO deypay_app;

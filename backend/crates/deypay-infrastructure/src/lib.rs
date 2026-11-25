@@ -4,6 +4,7 @@ pub mod database;
 pub mod email_delivery;
 pub mod email_verification;
 pub mod events;
+pub mod kyc;
 pub mod kyc_provider_mock;
 pub mod legal;
 pub mod password_hashing;

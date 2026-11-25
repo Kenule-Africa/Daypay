@@ -16,20 +16,15 @@
 //! - Submission requires an approved set of submission requirements. None
 //!   exists yet, so [`NoApprovedRequirements`] refuses every submission.
 //!
-//! Not yet guaranteed, because no PostgreSQL adapter implements
-//! [`KycCaseStore`] and no database-backed test exercises it:
-//!
-//! - The runtime role can only read `compliance.kyc_cases`. Writes need a
-//!   reviewed grant change.
-//! - No database constraint limits a customer to one case. The store contract
-//!   requires an atomic, per-customer serialized insert-or-nothing, but the
-//!   service can only validate what a store returns. It cannot undo a write.
-//! - Submission writes no audit event (IMP-P4-008).
-use crate::repositories::{KycRepository, RepositoryError};
-use deypay_domain::entities::KycCase;
-use deypay_domain::kyc::{
-    KycActor, KycCaseCommand, KycCaseState, KycCaseStatus, KycCaseTransition, KycTransitionError,
-};
+//! The PostgreSQL implementation is `deypay_infrastructure::kyc::PgKycCaseStore`.
+//! Its database tests, not this module, establish atomic first-case insertion
+//! and conditional writes. The service can only validate what a store returns;
+//! it cannot undo a write. Submission writes no audit event (IMP-P4-008).
+use crate::repositories::{KycRepository, Lookup, RepositoryError};
+// Re-exported because the public contracts below use them.
+pub use deypay_domain::entities::KycCase;
+use deypay_domain::kyc::{KycActor, KycCaseCommand, KycCaseState};
+pub use deypay_domain::kyc::{KycCaseStatus, KycCaseTransition, KycTransitionError};
 use std::future::Future;
 use uuid::Uuid;
 
@@ -122,6 +117,16 @@ pub trait KycCaseStore: KycRepository {
         case_id: Uuid,
         transition: KycCaseTransition,
     ) -> impl Future<Output = Result<bool, RepositoryError>> + Send;
+}
+
+/// Finds a customer's case when the request names none (API §§17.1, 17.5).
+pub trait CustomerKycCases {
+    /// Returns the customer's case, or `None` if they have none.
+    ///
+    /// Only a first case can be opened, so a customer with more than one case
+    /// breaks that rule. Implementations report it as
+    /// [`RepositoryError::InvalidRecord`] rather than choose a case.
+    fn customer_kyc_case(&self, customer_id: Uuid) -> impl Future<Output = Lookup<KycCase>> + Send;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -233,6 +238,42 @@ pub async fn submit_case(
         case_id,
         status: transition.to(),
     })
+}
+
+/// Returns the customer's case, or `None` if they have not opened one.
+pub async fn current_case(
+    cases: &impl CustomerKycCases,
+    customer_id: Uuid,
+) -> Result<Option<KycCaseView>, KycServiceError> {
+    let Some(case) = cases.customer_kyc_case(customer_id).await? else {
+        return Ok(None);
+    };
+    if case.id.is_nil() {
+        return Err(KycServiceError::InvalidRecord);
+    }
+    let (_, view) = owned_view(&case, customer_id, case.id)?;
+    Ok(Some(view))
+}
+
+/// Submits the customer's case. API §17.5 names no case, and a customer holds
+/// at most one. The write stays conditional on the status read here, so a
+/// change committed in between is reported rather than overwritten.
+pub async fn submit_current_case(
+    store: &(impl KycCaseStore + CustomerKycCases),
+    requirements: &impl SubmissionRequirements,
+    customer_id: Uuid,
+) -> Result<KycCaseView, KycServiceError> {
+    let current = current_case(store, customer_id)
+        .await?
+        .ok_or(KycServiceError::NotFound)?;
+    submit_case(
+        store,
+        requirements,
+        customer_id,
+        current.case_id,
+        Some(current.status),
+    )
+    .await
 }
 
 async fn load_owned(
@@ -365,6 +406,28 @@ mod tests {
                 (Some(error), _) => Err(error),
                 (None, Some(row)) => Ok(Some(row.clone())),
                 (None, None) => Ok(found()),
+            })
+        }
+    }
+
+    impl CustomerKycCases for FakeStore {
+        fn customer_kyc_case(
+            &self,
+            customer_id: Uuid,
+        ) -> impl Future<Output = Lookup<KycCase>> + Send {
+            let owned = || {
+                let cases = self.cases.lock().unwrap();
+                let mut owned = cases.iter().filter(|c| c.user_id == customer_id);
+                match (owned.next(), owned.next()) {
+                    (first, None) => Ok(first.cloned()),
+                    (Some(_), Some(_)) => Err(RepositoryError::InvalidRecord),
+                    (None, Some(_)) => unreachable!(),
+                }
+            };
+            ready(match (self.read_error, &self.read_override) {
+                (Some(error), _) => Err(error),
+                (None, Some(row)) => Ok(Some(row.clone())),
+                (None, None) => owned(),
             })
         }
     }
@@ -790,6 +853,95 @@ mod tests {
             assert_eq!(store.status(CASE), status.as_str());
             assert!(store.writes().is_empty());
         }
+    }
+
+    #[test]
+    fn the_current_case_is_the_customers_own() {
+        let store = FakeStore::with("MANUAL_REVIEW");
+        assert_eq!(
+            run(current_case(&store, CUSTOMER)),
+            Ok(Some(KycCaseView {
+                case_id: CASE,
+                status: ManualReview
+            }))
+        );
+        assert_eq!(run(current_case(&store, OTHER)), Ok(None));
+        assert_eq!(run(current_case(&FakeStore::default(), CUSTOMER)), Ok(None));
+    }
+
+    #[test]
+    fn unusable_current_case_records_fail_closed() {
+        let row = |id, user_id, status: &str| KycCase {
+            id,
+            user_id,
+            status: status.to_owned(),
+        };
+        for bad in [
+            row(CASE, OTHER, "DRAFT"),
+            row(Uuid::nil(), CUSTOMER, "DRAFT"),
+            row(CASE, CUSTOMER, "NOT_STARTED"),
+        ] {
+            let store = FakeStore {
+                read_override: Some(bad),
+                ..FakeStore::with("DRAFT")
+            };
+            assert_eq!(run(current_case(&store, CUSTOMER)), Err(E::InvalidRecord));
+            assert_eq!(
+                run(submit_current_case(&store, &READY, CUSTOMER)),
+                Err(E::InvalidRecord)
+            );
+            assert!(store.writes().is_empty());
+        }
+        // A second case breaks the one-case rule, so neither case is chosen.
+        let store = FakeStore::with("DRAFT");
+        store
+            .cases
+            .lock()
+            .unwrap()
+            .push(row(MISSING, CUSTOMER, "DRAFT"));
+        assert_eq!(run(current_case(&store, CUSTOMER)), Err(E::InvalidRecord));
+        assert_eq!(
+            run(submit_current_case(&store, &READY, CUSTOMER)),
+            Err(E::InvalidRecord)
+        );
+        assert!(store.writes().is_empty());
+    }
+
+    #[test]
+    fn the_current_case_submits_like_a_named_case() {
+        assert_eq!(
+            run(submit_current_case(&FakeStore::default(), &READY, CUSTOMER)),
+            Err(E::NotFound)
+        );
+        let store = FakeStore::with("DRAFT");
+        assert_eq!(
+            run(submit_current_case(&store, &READY, OTHER)),
+            Err(E::NotFound)
+        );
+        assert_eq!(
+            run(submit_current_case(
+                &store,
+                &NoApprovedRequirements,
+                CUSTOMER
+            )),
+            Err(E::SubmissionRequirementsUndefined)
+        );
+        assert!(store.writes().is_empty());
+        assert_eq!(
+            run(submit_current_case(&store, &READY, CUSTOMER)),
+            Ok(KycCaseView {
+                case_id: CASE,
+                status: Submitted
+            })
+        );
+        assert_eq!(
+            run(submit_current_case(&store, &READY, CUSTOMER)),
+            Err(E::Rejected(KycTransitionError::InvalidTransition {
+                from: Submitted,
+                command: Submit
+            }))
+        );
+        assert_eq!(store.writes().len(), 1);
     }
 
     #[test]
