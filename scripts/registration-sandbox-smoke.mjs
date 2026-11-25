@@ -15,6 +15,8 @@ url.searchParams.set("options", "-c role=deypay_app");
 const dir = await mkdtemp(join(tmpdir(), "deypay-screening-"));
 const sha = data => createHash("sha256").update(data).digest("hex");
 const blocked = "Compromised-Test1!";
+const sessionCookie = "__Host-deypay_session=" + "bc".repeat(32);
+const browserOrigin = "https://sandbox.example.test";
 const invalidVerificationToken = "00000000-0000-0000-0000-000000000001." + "ab".repeat(32);
 const body = { first_name: "Ada", last_name: "Okafor", country_code: "NG", username: "ada",
   email: "ada@example.test", phone: "+2348012345678", password: "Sandbox-Only1!",
@@ -29,6 +31,9 @@ async function check(environment) {
     DEYPAY_REGISTRATION_MODE: "sandbox", DEYPAY_SCREENING_FILE: file, DEYPAY_SCREENING_SHA256: sha(dataset),
     DEYPAY_SCREENING_VALID_UNTIL_UNIX: String(Math.floor(Date.now()/1000)+3600), DEYPAY_ARGON2_MEMORY_KIB: "32",
     DEYPAY_ARGON2_ITERATIONS: "2", DEYPAY_ARGON2_LANES: "1", DEYPAY_HASH_CONCURRENCY: "1",
+    DEYPAY_LOGIN_MODE: "sandbox", DEYPAY_LOGIN_ORIGIN: browserOrigin,
+    DEYPAY_SESSION_IDLE_SECONDS: "120", DEYPAY_SESSION_ABSOLUTE_SECONDS: "600",
+    DEYPAY_LOGIN_REQUESTS_PER_MINUTE: "10", DEYPAY_LOGIN_PER_IDENTIFIER_PER_MINUTE: "5",
     DEYPAY_REGISTRATION_ATTEMPTS_PER_MINUTE: "10", EMAIL_VERIFICATION_ENABLED: String(environment==="test")
   }});
   const closed = once(proc, "close");
@@ -82,13 +87,22 @@ async function check(environment) {
         assert.ok(!response.includes(invalidVerificationToken) && !response.includes(body.email));
       }
     }
+    for (const [path, payload] of [["login", {identifier:body.email,password:body.password}], ["refresh", {}]]) {
+      const result = await fetch(origin + "/api/v1/auth/" + path, {method:"POST",
+        headers:{"content-type":"application/json",origin:browserOrigin,cookie:sessionCookie},
+        body:JSON.stringify(payload),signal:AbortSignal.timeout(30000)});
+      assert.equal(result.status,environment === "production" ? 503 : 401);
+      assert.equal(result.headers.get("set-cookie"),null);
+      const response = await result.text();
+      for (const value of [body.password,body.email,sessionCookie.split("=")[1]]) assert.ok(!response.includes(value));
+    }
   } finally {
     clearTimeout(timer);
     if(proc.exitCode===null && proc.signalCode===null)proc.kill();
     await closed;
     lines.close();
   }
-  for (const secret of [blocked,body.password,body.email,invalidVerificationToken]) assert.ok(!output.join("\n").includes(secret),"Sensitive authentication log");
+  for (const secret of [blocked,body.password,body.email,invalidVerificationToken,sessionCookie.split("=")[1],"$argon2id$"]) assert.ok(!output.join("\n").includes(secret),"Sensitive authentication log");
 }
 
 try { await check("test"); await check("production"); }
