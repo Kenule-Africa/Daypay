@@ -2,6 +2,7 @@
 
 pub mod email_verification;
 pub mod events;
+pub mod financial_authorization;
 pub mod kyc;
 pub mod kyc_provider;
 pub mod limits;

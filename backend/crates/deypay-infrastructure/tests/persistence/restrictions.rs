@@ -1,12 +1,18 @@
 //! PostgreSQL eligibility evidence (IMP-P4-006), read as the restricted
 //! runtime role with only the reviewed grants applied.
 use super::support::{customer, runtime, sql_state};
+use deypay_application::financial_authorization::{FinancialDenial, authorize_financial_operation};
+use deypay_application::limits::{ApplicableLimits, NoApprovedLimits, TransactionLimitSource};
+use deypay_application::repositories::RepositoryError;
 use deypay_application::restrictions::evaluate_financial_access;
+use deypay_domain::entities::Asset;
+use deypay_domain::limits::{LimitDenial, LimitPeriod, LimitRule, TransactionAmount};
 use deypay_domain::operations::FinancialOperation;
 use deypay_domain::restrictions::{
     Denial, EligibilityConfirmed, EligibilityEvidence, EligibilityPolicy,
     NoApprovedEligibilityPolicy,
 };
+use deypay_domain::units::MinorUnits;
 use deypay_infrastructure::MIGRATOR;
 use deypay_infrastructure::restrictions::PgEligibilityEvidence;
 use sqlx::PgPool;
@@ -197,6 +203,96 @@ async fn unreadable_evidence_denies(pool: PgPool) -> sqlx::Result<()> {
     assert_eq!(
         evaluate(&evidence, &PermitAll, owner).await,
         Err(Denial::EvidenceUnavailable)
+    );
+    Ok(())
+}
+
+/// A per-transaction withdrawal limit, standing in for approved configuration.
+struct OneRule(LimitRule);
+impl TransactionLimitSource for OneRule {
+    async fn applicable_limits(
+        &self,
+        _customer_id: Uuid,
+        _operation: FinancialOperation,
+    ) -> Result<ApplicableLimits, RepositoryError> {
+        Ok(ApplicableLimits::Rules(vec![self.0]))
+    }
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn the_central_boundary_uses_each_customers_own_evidence(pool: PgPool) -> sqlx::Result<()> {
+    let evidence = PgEligibilityEvidence::new(runtime(&pool).await?);
+    let alice = customer(&pool, "alice-funds@example.test", "KYC_APPROVED").await?;
+    let bob = customer(&pool, "bob-funds@example.test", "KYC_APPROVED").await?;
+    for owner in [alice, bob] {
+        kyc_case(&pool, owner, "APPROVED").await?;
+    }
+    restrict(&pool, alice, "UNREVIEWED_TYPE").await?;
+    let usdc = Asset {
+        id: Uuid::from_u128(0xA1),
+        symbol: "USDC".to_owned(),
+        accounting_precision: 6,
+        enabled: true,
+    };
+    let rule = LimitRule {
+        id: Uuid::from_u128(7),
+        operation: FinancialOperation::Withdrawal,
+        asset_id: Some(usdc.id),
+        period: LimitPeriod::PerTransaction,
+        limit: MinorUnits::new(1_000).unwrap(),
+    };
+    let limits = OneRule(rule);
+    let amount =
+        |units| TransactionAmount::from_units(MinorUnits::new(units).unwrap(), &usdc).unwrap();
+    let withdraw = FinancialOperation::Withdrawal;
+
+    // Alice's restriction denies her even though her limit check would pass.
+    assert_eq!(
+        authorize_financial_operation(&evidence, &PermitAll, &limits, alice, withdraw, amount(1))
+            .await,
+        Err(FinancialDenial::Eligibility(Denial::ActiveRestriction))
+    );
+    // Bob is judged on his own evidence: eligible, then limited exactly.
+    let granted =
+        authorize_financial_operation(&evidence, &PermitAll, &limits, bob, withdraw, amount(1_000))
+            .await
+            .unwrap();
+    assert_eq!(
+        (granted.customer_id(), granted.amount().units.value()),
+        (bob, 1_000)
+    );
+    assert_eq!(
+        authorize_financial_operation(&evidence, &PermitAll, &limits, bob, withdraw, amount(1_001))
+            .await,
+        Err(FinancialDenial::Limits(LimitDenial::Exceeded {
+            rule_id: rule.id
+        }))
+    );
+    // The shipped policy and limit source deny Bob too.
+    assert_eq!(
+        authorize_financial_operation(
+            &evidence,
+            &NoApprovedEligibilityPolicy,
+            &NoApprovedLimits,
+            bob,
+            withdraw,
+            amount(1)
+        )
+        .await,
+        Err(FinancialDenial::Eligibility(
+            Denial::EligibilityNotEstablished
+        ))
+    );
+    // Evidence that cannot be read denies.
+    sqlx::query(
+        "REVOKE SELECT (user_id, active) ON compliance.account_restrictions FROM deypay_app",
+    )
+    .execute(&pool)
+    .await?;
+    assert_eq!(
+        authorize_financial_operation(&evidence, &PermitAll, &limits, bob, withdraw, amount(1))
+            .await,
+        Err(FinancialDenial::Eligibility(Denial::EvidenceUnavailable))
     );
     Ok(())
 }
