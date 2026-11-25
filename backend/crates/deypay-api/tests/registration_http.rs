@@ -18,6 +18,8 @@ use tower::ServiceExt;
 
 #[path = "cases/login_sessions.rs"]
 mod login_sessions;
+#[path = "cases/profile_http.rs"]
+mod profile_http;
 
 // Only the compromise verdict is a fixture. Hashing and persistence use the real adapters.
 struct FixtureScreen(Result<bool, RegistrationError>);

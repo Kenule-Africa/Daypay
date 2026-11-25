@@ -310,6 +310,7 @@ dependencies = [
  "deypay-application",
  "deypay-common",
  "deypay-infrastructure",
+ "image",
  "percent-encoding",
  "serde",
  "serde_json",
