@@ -11,6 +11,9 @@ const FUNCTIONS: [&str; 2] = [
     "compliance.submit_kyc_case(uuid,uuid,text)",
 ];
 
+/// Signature, SECURITY DEFINER flag, settings, owner and EXECUTE grantees.
+type DefinerFunction = (String, bool, Vec<String>, String, Vec<String>);
+
 async fn open(runtime: &PgPool, owner: Uuid) -> sqlx::Result<Option<Uuid>> {
     sqlx::query_scalar("SELECT case_id FROM compliance.open_first_kyc_case($1)")
         .bind(owner)
@@ -38,7 +41,7 @@ async fn definer_functions_are_pinned_and_executable_only_by_the_runtime(
     pool: PgPool,
 ) -> sqlx::Result<()> {
     runtime(&pool).await?;
-    let rows: Vec<(String, bool, Vec<String>, String, Vec<String>)> = sqlx::query_as(
+    let rows: Vec<DefinerFunction> = sqlx::query_as(
         "SELECT p.oid::regprocedure::text, p.prosecdef, coalesce(p.proconfig, '{}'),
             pg_get_userbyid(p.proowner),
             ARRAY(SELECT CASE a.grantee WHEN 0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END
