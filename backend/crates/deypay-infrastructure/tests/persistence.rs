@@ -6,6 +6,15 @@ use deypay_infrastructure::events::PgEventWriter;
 use deypay_infrastructure::repositories::PgRepositories;
 use sqlx::PgPool;
 
+#[path = "persistence/kyc_cases.rs"]
+mod kyc_cases;
+#[path = "persistence/kyc_security.rs"]
+mod kyc_security;
+#[path = "persistence/restrictions.rs"]
+mod restrictions;
+#[path = "persistence/support.rs"]
+mod support;
+
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn audit_and_outbox_follow_caller_commit_or_rollback(pool: PgPool) -> sqlx::Result<()> {
     sqlx::raw_sql(include_str!(

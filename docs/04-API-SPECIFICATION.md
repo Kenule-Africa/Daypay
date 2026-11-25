@@ -918,9 +918,12 @@ Historical transactions must reference immutable user IDs.
 - submitted.
 - pending_provider.
 - manual_review.
+- information_requested.
 - approved.
 - rejected.
 - expired.
+
+`not_started` means the customer has no KYC case; `kyc_case_id` is then `null`. Every other value is the customer's case status in lowercase. `information_requested` means a reviewer asked for more information and the customer may resubmit. The repository owner approved this mapping on 2026-11-25.
 
 ## 17.8 KYC Enforcement
 
