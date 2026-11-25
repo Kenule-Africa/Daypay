@@ -40,6 +40,7 @@ use std::{
     time::{Duration, Instant},
 };
 use uuid::Uuid;
+use zeroize::Zeroize;
 
 /// Handlers may extract this type only after the session middleware validates
 /// the cookie against the store. It provides identity, without KYC or financial authorization.
@@ -146,6 +147,12 @@ impl LoginLimits {
 struct LoginRequest {
     identifier: String,
     password: String,
+}
+
+impl Drop for LoginRequest {
+    fn drop(&mut self) {
+        self.password.zeroize();
+    }
 }
 
 pub type CustomerAuth = SandboxAuth<PgSessions, Argon2idHasher>;
@@ -275,6 +282,7 @@ where
         let Ok(input) = serde_json::from_slice::<LoginRequest>(&body) else {
             return reply(StatusCode::BAD_REQUEST);
         };
+        drop(body);
         let email = input.identifier.trim();
         if !valid_email(email) || input.password.is_empty() {
             return reply(StatusCode::BAD_REQUEST);
@@ -363,7 +371,13 @@ fn success(token: &SessionToken) -> Response {
 fn failure(error: CredentialError) -> Response {
     reply(match error {
         CredentialError::Busy => StatusCode::TOO_MANY_REQUESTS,
-        CredentialError::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
+        CredentialError::Unavailable => {
+            tracing::warn!(
+                event = "auth_dependency_unavailable",
+                "Authentication unavailable"
+            );
+            StatusCode::SERVICE_UNAVAILABLE
+        }
         CredentialError::Rejected => StatusCode::UNAUTHORIZED,
     })
 }

@@ -48,9 +48,11 @@ pub struct PgSessions(pub PgPool);
 impl LoginStore for PgSessions {
     async fn credential(&self, email: &str) -> Result<Option<LoginCredential>, CredentialError> {
         let row: Option<(Uuid, String)> = sqlx::query_as(
-            "SELECT customer_id,password_hash FROM identity.sandbox_login_credential($1)",
+            "SELECT customer_id,password_hash FROM identity.sandbox_login_credential($1)
+             WHERE octet_length(password_hash) <= $2",
         )
         .bind(email)
+        .bind(crate::password_hashing::MAX_PHC_BYTES as i32)
         .fetch_optional(&self.0)
         .await
         .map_err(|_| CredentialError::Unavailable)?;

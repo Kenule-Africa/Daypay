@@ -2,11 +2,18 @@
 use crate::passwords::{CredentialError, CredentialVerifier};
 use std::future::Future;
 use uuid::Uuid;
+use zeroize::Zeroize;
 
 /// Snapshot read by the credential repository. Never serialize or log this value.
 pub struct LoginCredential {
     pub customer_id: Uuid,
     pub password_hash: String,
+}
+
+impl Drop for LoginCredential {
+    fn drop(&mut self) {
+        self.password_hash.zeroize();
+    }
 }
 
 /// Carries the exact credential checked so issuance can detect concurrent

@@ -274,6 +274,7 @@ async fn credential_and_eligibility_failures_are_indistinguishable(
         .await?;
     for hash in [
         "$argon2id$corrupt",
+        &format!("$argon2id${}", "x".repeat(65_536)),
         &hasher()
             .hash(PW)
             .await

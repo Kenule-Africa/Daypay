@@ -12,6 +12,9 @@ use std::sync::Arc;
 use tokio::sync::Semaphore;
 use zeroize::Zeroizing;
 
+/// Maximum encoded size accepted by the verifier and its credential reader.
+pub(crate) const MAX_PHC_BYTES: usize = 128;
+
 /// Costs and concurrency must be selected together for the deployment's memory budget.
 #[derive(Clone)]
 pub struct Argon2idHasher {
@@ -116,7 +119,7 @@ impl CredentialVerifier for Argon2idHasher {
         // A v19 record with 3 u32 costs, a 16-byte salt and a 32-byte digest
         // fits comfortably. Bound the copy before parsing untrusted stored text.
         let phc = stored_phc
-            .filter(|s| s.len() <= 128)
+            .filter(|s| s.len() <= MAX_PHC_BYTES)
             .map(|s| Zeroizing::new(s.to_owned()));
         self.with_slot(password, move |secret, target| {
             let supported = phc.as_ref().and_then(|s| supported_hash(s, &target));

@@ -291,6 +291,7 @@ dependencies = [
  "tower",
  "tracing",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]
@@ -303,6 +304,7 @@ dependencies = [
  "sha2",
  "unicode-properties",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]
