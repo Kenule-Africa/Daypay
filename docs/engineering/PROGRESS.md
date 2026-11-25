@@ -1,6 +1,26 @@
 # Engineering progress
 
+## 2026-11-25 · PR #9 engineering acceptance and next Phase 3 cycle
+
+**Verified `main`:** `502ac2dca4d99a684fbf158ca07349a81eaf5a27`. GitHub reports PR [#9](https://github.com/Kenule-Africa/Daypay/pull/9) closed and merged at this commit; its final implementation head was `bf64ca2170738837293a743b0f49b1bf25e53d47`.
+
+**Verdict: IMP-P3-005 Login and IMP-P3-006 Session Management are Completed — Engineering Accepted.** The merged implementation reuses the accepted bounded credential verifier; gives generic failures for unknown, invalid and ineligible credentials; requires current email proof and release-approved account status; creates opaque server-side sessions with only token digests persisted; rotates on login/refresh; enforces current status, revocation and idle/absolute expiry on validation; and derives the authenticated customer identity from the database. Cookie-authenticated writes require the configured exact HTTPS origin. Issuance, required audit evidence and session changes are transactionally protected. The verifier is isolated from the general API process and missing release configuration fails closed.
+
+The final merge-commit GitHub Actions run [45587411312](https://github.com/Kenule-Africa/Daypay/actions/runs/45587411312) passed backend and frontend checks. The workflow/PR verification reports 77 Rust workspace tests, 2 doctests, 43 disposable-PostgreSQL integration tests (including 16 login/session cases), four live-service smoke checks, and frontend lint/build/typecheck/Node tests. The final clean-cluster role-bootstrap correction is included in the merged implementation. This is engineering acceptance of P3-005/006; it is not production deployment, authentication-policy approval, or live-service authorization.
+
+**Separate deployment and policy gates remain open.** No active hosted release, production signing key or production authentication policy is installed by the migrations. Product/Security/Platform decisions remain outstanding for the approved account-state matrix, password/screening policy, measured Argon2id profile and capacity, deployment abuse budgets and monitoring, session lifetimes/clock skew, browser origin/cookie/CSRF deployment settings, audit retention/alerts, verifier-key custody/rotation, database role provisioning, private ingress/routing and operational release evidence. Authentication remains fail-closed until these are approved and provisioned. See [DECISIONS.md](DECISIONS.md) and [BLOCKERS.md](BLOCKERS.md).
+
+### Owner-authorized parallel Phase 3 cycle
+
+- **Codex:** IMP-P3-007 Logout and IMP-P3-011 Session Revocation on `feat/codex-imp-p3-007-011-session-controls`, workspace `DeyPay-codex`.
+- **Claude:** IMP-P3-009 Username Uniqueness acceptance and IMP-P3-010 Customer Profile, including the approved profile-image extension, on `feat/claude-imp-p3-009-010-customer-profile`, workspace `DeyPay-claude`.
+- Both branches/worktrees are to be created by the repository owner from the verified `main` baseline. Their creation and implementation are not claimed here. The exact scopes, shared-file primary editors, and sequential integration procedure are in [TASKS.md](TASKS.md).
+- Before implementing the image operations, Claude must document and obtain review of the public API and production-intended private-storage contract. No route details, size/format values or storage provider are assumed here.
+- IMP-P3-002 remains In testing; IMP-P3-003 remains Deferred — Post-MVP; IMP-P3-008, IMP-P3-012 and IMP-P3-013 remain unassigned. PR [#10](https://github.com/Kenule-Africa/Daypay/pull/10) remains open, draft, unmerged and on hold.
+
 ## 2026-11-25 · Open PR reconciliation and owner-directed delivery order
+
+This is the pre-merge status snapshot; its PR-head evidence remains historical. The current merged/accepted status and next-cycle assignments are recorded in the later entry above.
 
 **Accepted main baseline:** `f4f034b343722131fc5137b4041620ca8de9b717`, verified against the live GitHub `main` branch. The accepted work below remains distinct from implementation in open PRs.
 
