@@ -2,6 +2,9 @@
 INSERT INTO identity.admission_policy(operation,total_limit,subject_limit)
     VALUES ('forgot_password',3,1), ('reset_password',2,1), ('username_availability',2,2);
 
+INSERT INTO identity.email_verification_traffic(operation,minute,hits)
+    SELECT operation,clock_timestamp()+interval '1 day',0 FROM identity.admission_policy;
+
 DO $$
 BEGIN
     IF NOT identity.admit_public_request('forgot_password',NULL)

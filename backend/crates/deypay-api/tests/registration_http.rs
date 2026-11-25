@@ -278,9 +278,12 @@ async fn required_fields_and_acknowledgements_are_enforced(pool: PgPool) -> sqlx
     );
     Ok(())
 }
-async fn advance_registration_window(pool: &PgPool) -> sqlx::Result<()> {
-    sqlx::query("UPDATE identity.email_verification_traffic SET minute=clock_timestamp()-interval '2 minutes' WHERE operation='register'")
-        .execute(pool).await?;
+async fn pin_admission_windows(pool: &PgPool) -> sqlx::Result<()> {
+    sqlx::raw_sql(include_str!(
+        "../../deypay-infrastructure/tests/cases/pin_admission_windows.sql"
+    ))
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
@@ -300,7 +303,7 @@ async fn registration_activation_screening_and_abuse_gates(pool: PgPool) -> sqlx
             StatusCode::SERVICE_UNAVAILABLE,
         ),
     ] {
-        advance_registration_window(&pool).await?;
+        pin_admission_windows(&pool).await?;
         let enabled = app(&pool, 1, verdict).await;
         assert_eq!(
             enabled.clone().oneshot(request()).await.unwrap().status(),
@@ -325,7 +328,7 @@ async fn registration_activation_screening_and_abuse_gates(pool: PgPool) -> sqlx
         screening: FixtureScreen(Ok(false)),
         hasher: UnavailableHasher,
     });
-    advance_registration_window(&pool).await?;
+    pin_admission_windows(&pool).await?;
     let failed_hash = routes(Environment::Test, Some(config)).with_state(pool.clone());
     assert_eq!(
         failed_hash.oneshot(request()).await.unwrap().status(),

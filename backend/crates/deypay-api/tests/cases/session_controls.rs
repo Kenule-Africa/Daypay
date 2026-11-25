@@ -461,6 +461,7 @@ async fn control_budgets_isolate_security_actions_and_rollback_denials(
         .execute(&pool)
         .await?;
 
+    super::super::pin_admission_windows(&pool).await?;
     // Malformed and unknown targets share the unsuccessful-attempt lane.
     let malformed = format!("{SESSIONS}/bad-id");
     assert_eq!(

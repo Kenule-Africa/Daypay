@@ -46,6 +46,9 @@ async fn independent_api_pools_enforce_private_policy_and_fail_closed(
     )
     .execute(&pool)
     .await?;
+    sqlx::raw_sql(include_str!("../cases/pin_admission_windows.sql"))
+        .execute(&pool)
+        .await?;
     let (a, b) = tokio::join!(admit(&first, ForgotPassword), admit(&other, ForgotPassword));
     assert!(matches!(
         (a, b),

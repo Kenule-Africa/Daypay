@@ -8,6 +8,7 @@ use tower::ServiceExt;
 
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn independent_registration_instances_share_admission(pool: PgPool) -> sqlx::Result<()> {
+    super::pin_admission_windows(&pool).await?;
     let other = PgPool::connect_with((*pool.connect_options()).clone()).await?;
     let instance = |db| routes(Environment::Test, Some(settings(1, Ok(true)))).with_state(db);
     let request = || post(submission("test@example.test", "test_user"));
