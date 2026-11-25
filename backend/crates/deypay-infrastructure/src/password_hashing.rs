@@ -13,6 +13,7 @@ use tokio::sync::Semaphore;
 use zeroize::Zeroizing;
 
 /// Costs and concurrency must be selected together for the deployment's memory budget.
+#[derive(Clone)]
 pub struct Argon2idHasher {
     params: Params,
     slots: Arc<Semaphore>,

@@ -18,9 +18,9 @@ deypay-common = { path = "../deypay-common" }
 deypay-infrastructure = { path = "../deypay-infrastructure" }
 tokio.workspace = true
 tracing.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
-uuid.workspace = true
 tower = { version = "0.5", features = ["util"] }
 sqlx = { workspace = true, features = ["macros", "migrate"] }
 

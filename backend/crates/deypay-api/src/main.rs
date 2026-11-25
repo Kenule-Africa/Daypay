@@ -21,6 +21,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     init_logging(&settings.log_level)?;
     let address = api_bind(std::env::var("API_BIND_ADDR").ok().as_deref())?;
     let pool = database::pool(&settings)?;
+    let auth = deypay_api::login::CustomerAuth::from_env(settings.environment, pool.clone())?;
     let app = Router::new()
         .route(
             "/health/live",
@@ -34,7 +35,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             settings.environment,
             deypay_api::registration::RegistrationSettings::from_env(settings.environment)?,
         ))
-        .with_state(pool.clone());
+        .with_state(pool.clone())
+        .merge(deypay_api::login::routes(auth.as_ref()));
     let listener = TcpListener::bind(address).await?;
     let shutdown = shutdown_signal()?;
     tracing::info!(address = %listener.local_addr()?, "API listening");
