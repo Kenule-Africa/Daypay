@@ -36,6 +36,7 @@ pub(super) const RELEASE: &str = "ed000000-0000-4000-8000-000000000001";
 pub(super) async fn auth_fixture(pool: &PgPool, total: i32, per_id: i32) -> sqlx::Result<()> {
     // Cluster-wide grant target for SQLx's disposable databases. Each fixture has isolated policy/data.
     sqlx::raw_sql("DO $$ BEGIN CREATE ROLE deypay_auth NOLOGIN; EXCEPTION WHEN duplicate_object OR unique_violation THEN NULL; END $$;").execute(pool).await?;
+    sqlx::raw_sql("DO $ BEGIN CREATE ROLE deypay_auth_owner NOLOGIN; EXCEPTION WHEN duplicate_object OR unique_violation THEN NULL; END $;").execute(pool).await?;
     sqlx::raw_sql(include_str!(
         "../../../../../infrastructure/postgres/auth-grants.psql"
     ))
@@ -590,6 +591,7 @@ async fn independent_replicas_share_admission_and_fail_closed_on_store_loss(
     use deypay_application::login::LoginStore;
     let replica_a = runtime_with_limits(&pool, 3, 1).await?;
     let replica_b = auth_pool(&pool).await?;
+    sqlx::query("INSERT INTO identity.auth_window(release,minute) VALUES($1,date_trunc(\x27minute\x27,now())+interval \x271 minute\x27)").bind(RELEASE.parse::<Uuid>().unwrap()).execute(&pool).await?;
     let a = store(replica_a);
     let b = store(replica_b);
     let (one, two) = tokio::join!(
@@ -609,6 +611,29 @@ async fn independent_replicas_share_admission_and_fail_closed_on_store_loss(
             .filter(|r| matches!(r, Err(CredentialError::Busy)))
             .count(),
         1
+    );
+    assert!(a.admit(Some("second@example.test")).await.is_ok());
+    assert!(b.admit(Some("third@example.test")).await.is_ok());
+    assert_eq!(
+        a.admit(Some("fourth@example.test")).await,
+        Err(CredentialError::Busy)
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM identity.auth_identifier_window")
+            .fetch_one(&pool)
+            .await?,
+        3
+    );
+    sqlx::raw_sql("UPDATE identity.auth_window SET minute=now()-interval '2 minutes';
+        INSERT INTO identity.auth_receipt(release,nonce,valid_until) SELECT id,repeat('7',64),now()-interval '1 minute' FROM identity.auth_policy;").execute(&pool).await?;
+    assert!(b.admit(None).await.is_ok());
+    assert!(
+        sqlx::query_scalar::<_, bool>(
+            "SELECT NOT EXISTS(SELECT FROM identity.auth_identifier_window)
+        AND NOT EXISTS(SELECT FROM identity.auth_receipt)"
+        )
+        .fetch_one(&pool)
+        .await?
     );
     sqlx::query("REVOKE EXECUTE ON FUNCTION identity.auth_admit(uuid,text) FROM deypay_auth")
         .execute(&pool)
@@ -890,5 +915,53 @@ async fn forward_upgrade_retires_legacy_sessions_and_capabilities(
         AND EXISTS(SELECT FROM audit.audit_events WHERE action='SESSION_REVOKED' AND reason='AUTHORITY_UPGRADE')
         AND to_regprocedure('identity.sandbox_login_credential(text)') IS NULL
         AND NOT EXISTS(SELECT FROM identity.auth_policy)").fetch_one(&pool).await?);
+    Ok(())
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn hosted_configuration_requires_independent_database_authority_and_unique_release_key(
+    pool: PgPool,
+) -> sqlx::Result<()> {
+    use deypay_common::config::Environment::Staging;
+    let switched = runtime(&pool).await?;
+    sqlx::query("UPDATE identity.auth_policy SET enabled=false")
+        .execute(&pool)
+        .await?;
+    let next = Uuid::parse_str("ed000000-0000-4000-8000-000000000002").unwrap();
+    let install = |byte: &'static str| {
+        sqlx::query("INSERT INTO identity.auth_policy
+        SELECT $1,true,'staging',origin,security_ref,product_ref,audit_ref,decode(repeat($2,32),'hex'),allowed_states,
+          idle_seconds,absolute_seconds,total_limit,identifier_limit,memory_kib,passes,lanes,slots,assertion_seconds
+        FROM identity.auth_policy WHERE id=$3").bind(next).bind(byte).bind(RELEASE.parse::<Uuid>().unwrap())
+    };
+    assert!(install("37").execute(&pool).await.is_err());
+    install("48").execute(&pool).await?;
+    assert!(
+        PgSessions::new(switched, next, [0x48; 32].into())
+            .policy(Staging)
+            .await
+            .is_err()
+    );
+    // Simulate the actual authenticated PostgreSQL principal, rather than an
+    // administrator using SET ROLE. TLS/ingress certification is a deployment check.
+    let isolated = PgPoolOptions::new()
+        .after_connect(|c, _| {
+            Box::pin(async move {
+                sqlx::query("SET SESSION AUTHORIZATION deypay_auth")
+                    .execute(c)
+                    .await?;
+                Ok(())
+            })
+        })
+        .connect_with((*pool.connect_options()).clone())
+        .await?;
+    let verifier = PgSessions::new(isolated, next, [0x48; 32].into());
+    assert!(verifier.policy(Staging).await.is_ok());
+    assert!(verifier.ready().await);
+    assert!(
+        sqlx::query_scalar::<_, bool>("SELECT identity.auth_owner_ok() AND identity.auth_acl_ok()")
+            .fetch_one(&pool)
+            .await?
+    );
     Ok(())
 }

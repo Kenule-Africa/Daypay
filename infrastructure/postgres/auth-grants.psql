@@ -1,5 +1,28 @@
--- Run once per migrated database as the auth schema owner. Provision deypay_auth
--- as an independent, unprivileged login using the deployment secret manager.
+-- Provision deypay_auth (runtime login) and deypay_auth_owner (NOLOGIN) first.
+-- Apply as a DBA or a migration administrator allowed to assign ownership.
+BEGIN;
+GRANT USAGE ON SCHEMA identity,audit,auth_crypto TO deypay_auth_owner;
+GRANT EXECUTE ON FUNCTION auth_crypto.hmac(bytea,bytea,text) TO deypay_auth_owner;
+GRANT SELECT (id,email,status,email_verified_at), UPDATE (id) ON identity.users TO deypay_auth_owner;
+GRANT SELECT (user_id,password_hash), UPDATE (user_id) ON identity.password_credentials TO deypay_auth_owner;
+-- A row-locking SELECT requires an UPDATE column privilege. The definer never
+-- updates either identity column, and runtime logins cannot assume its role.
+GRANT SELECT, INSERT, UPDATE ON identity.sessions TO deypay_auth_owner;
+GRANT INSERT (actor_type,actor_id,action,resource_type,resource_id,reason) ON audit.audit_events TO deypay_auth_owner;
+GRANT CREATE ON SCHEMA identity TO deypay_auth_owner;
+ALTER TABLE identity.auth_policy OWNER TO deypay_auth_owner;
+ALTER TABLE identity.auth_window OWNER TO deypay_auth_owner;
+ALTER TABLE identity.auth_identifier_window OWNER TO deypay_auth_owner;
+ALTER TABLE identity.auth_receipt OWNER TO deypay_auth_owner;
+DO $$ DECLARE routine regprocedure;
+BEGIN
+    FOR routine IN SELECT p.oid::regprocedure FROM pg_proc p WHERE p.pronamespace='identity'::regnamespace
+        AND (left(p.proname,5)='auth_' OR p.proname='protect_auth_audit')
+    LOOP
+        EXECUTE format('ALTER FUNCTION %s OWNER TO deypay_auth_owner',routine);
+    END LOOP;
+END $$;
+REVOKE CREATE ON SCHEMA identity FROM deypay_auth_owner;
 GRANT USAGE ON SCHEMA identity TO deypay_auth, deypay_app;
 GRANT EXECUTE ON FUNCTION identity.auth_ready(uuid), identity.auth_configuration(uuid,text,text),
     identity.auth_admit(uuid,text), identity.auth_credential(uuid,text,bigint,bytea),
@@ -7,3 +30,9 @@ GRANT EXECUTE ON FUNCTION identity.auth_ready(uuid), identity.auth_configuration
     identity.auth_validate(uuid,text,text,bigint,bytea) TO deypay_auth;
 GRANT EXECUTE ON FUNCTION identity.auth_reader_ready(uuid,text,text),
     identity.auth_principal(uuid,text,text,text) TO deypay_app;
+DO $$ BEGIN
+    IF NOT (identity.auth_acl_ok() AND identity.auth_owner_ok()) THEN
+        RAISE EXCEPTION 'Unsafe authentication ownership or runtime grants';
+    END IF;
+END $$;
+COMMIT;
