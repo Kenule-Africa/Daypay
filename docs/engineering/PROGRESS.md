@@ -1,6 +1,28 @@
 # Engineering progress
 
+## 2026-11-25 · Cycle 1 engineering acceptance and Cycle 2 assignments
+
+**Verified latest `main`:** `142dd04b3434327219e9a1c86603987aee3f798a`. PR [#11](https://github.com/Kenule-Africa/Daypay/pull/11) and PR [#12](https://github.com/Kenule-Africa/Daypay/pull/12) are merged. The verified GitHub branch listing did not include either Cycle 2 branch; branch publication and implementation are not claimed.
+
+### Cycle 1 acceptance
+
+- **IMP-P3-007 Logout and IMP-P3-011 Session Revocation — Completed — Engineering Accepted.** PR #11 merged; final implementation head `04ef4e62386de8747a1bb792723e4c04ebc515c5` passed backend and frontend checks in Actions run [45598725222](https://github.com/Kenule-Africa/Daypay/actions/runs/45598725222). The verified evidence covers server-side logout/revocation, customer ownership, session reuse rejection, audit behavior, and concurrency/multi-instance cases. Hosted authentication and deployment/policy gates remain separate.
+- **IMP-P3-010 Customer Profile, including the approved profile-image extension — Completed — Engineering Accepted.** PR #12 merged at the current `main` baseline. Its final implementation head `0a61dcb48f3161cceb6b1560f0b7700116a5be2c` passed backend and frontend checks in Actions runs [45629571933](https://github.com/Kenule-Africa/Daypay/actions/runs/45629571933) and [45630944319](https://github.com/Kenule-Africa/Daypay/actions/runs/45630944319). The merged API and persistence coverage includes profile/preferences/status, authenticated ownership, immutable-field protection, private PostgreSQL image storage, upload/retrieval/replacement/removal, image validation/normalization, storage consistency, cleanup and failure cases.
+- **IMP-P3-009 Username Uniqueness — partial acceptance; canonical task remains In testing.** PR #12's normalization, case-insensitive database uniqueness, concurrent claim, reserved-name and validation controls are merged and tested. The specified username-availability endpoint is not implemented and remains assigned below. The production reserved-name catalog and username-change/quarantine policy remain unresolved; availability enumeration/rate-limit policy must be approved and tested.
+
+The profile-image implementation uses the merged API §15 contract and private PostgreSQL storage. Keep image retention/secure-erasure policy, load and animated-image coverage, upload-timeout evidence, and any future storage decision as explicit follow-ups; do not claim those unverified items passed. Their status does not undo the scoped P3-010 engineering acceptance.
+
+### Cycle 2 assignments
+
+- **Claude — `feat/claude-imp-p3-002-008-009-auth-completion`:** IMP-P3-008 Password Recovery (forgot password, reset password and recovery email); remaining IMP-P3-009 `GET /api/v1/usernames/availability` endpoint; and IMP-P3-002 email-verification acceptance testing, including authorized real staging delivery/confirmation.
+- **Codex — `feat/codex-imp-p3-012-auth-rate-limiting`:** IMP-P3-012 Authentication Rate Limiting and ownership of the shared rate-limiting implementation/interface. Claude's recovery and availability endpoints must consume that interface. Coordinate shared router/crate-root/manifest, migration and integration-fixture edits before development.
+- The rate-limit interface is the dependency for completing Claude's dependent endpoints; integrate the Codex interface before accepting the dependent Claude routes. P3-002 staging acceptance may proceed independently when its deployment prerequisites and safe recipient are available.
+- IMP-P3-002 remains In testing pending actual staging delivery and confirmation. IMP-P3-009 remains In testing pending the endpoint and its approved policy/security evidence. IMP-P3-013 is **Deferred — Owner Decision**; no MFA implementation is assigned. IMP-P3-003 remains **Deferred — Post-MVP**.
+- No frontend, KYC-verification or financial implementation is assigned in this cycle. PR [#10](https://github.com/Kenule-Africa/Daypay/pull/10) remains open, draft, unmerged and on hold. Financial authorization remains fail-closed.
+
 ## 2026-11-25 · PR #9 engineering acceptance and next Phase 3 cycle
+
+Historical snapshot: the Cycle 1 assignments below were current on this record date. Their completion and the Cycle 2 assignments are recorded in the newer entry above.
 
 **Verified `main`:** `502ac2dca4d99a684fbf158ca07349a81eaf5a27`. GitHub reports PR [#9](https://github.com/Kenule-Africa/Daypay/pull/9) closed and merged at this commit; its final implementation head was `bf64ca2170738837293a743b0f49b1bf25e53d47`.
 
