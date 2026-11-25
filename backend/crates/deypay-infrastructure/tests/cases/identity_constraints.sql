@@ -18,9 +18,9 @@ BEGIN
         INSERT INTO customers.usernames(user_id,username) VALUES (other_customer,'@handle');
         RAISE EXCEPTION 'duplicate active handle accepted';
     EXCEPTION WHEN unique_violation THEN NULL; END;
-    INSERT INTO customers.username_keys(normalized_username,reserved) VALUES ('reserved-fixture',true);
+    INSERT INTO customers.username_keys(normalized_username,reserved) VALUES ('reserved_fixture',true);
     BEGIN
-        INSERT INTO customers.usernames(user_id,username) VALUES (other_customer,'@reserved-fixture');
+        INSERT INTO customers.usernames(user_id,username) VALUES (other_customer,'@reserved_fixture');
         RAISE EXCEPTION 'reserved handle accepted';
     EXCEPTION WHEN foreign_key_violation THEN NULL; END;
     INSERT INTO identity.devices(user_id,device_name) VALUES (customer,'test') RETURNING id INTO device;

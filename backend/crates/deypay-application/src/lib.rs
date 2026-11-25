@@ -8,3 +8,4 @@ pub mod login;
 pub mod passwords;
 pub mod registration;
 pub mod repositories;
+pub mod usernames;

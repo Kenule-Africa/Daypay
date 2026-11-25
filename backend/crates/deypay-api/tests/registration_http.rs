@@ -110,14 +110,14 @@ async fn bytes(response: axum::response::Response) -> axum::body::Bytes {
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn public_signup_is_unverified_and_non_enumerating(pool: PgPool) -> sqlx::Result<()> {
     let router = app(&pool, 5, Ok(false)).await;
-    sqlx::query("INSERT INTO customers.username_keys VALUES ('reserved-fixture',true)")
+    sqlx::query("INSERT INTO customers.username_keys VALUES ('reserved_fixture',true)")
         .execute(&pool)
         .await?;
     for (email, name) in [
         ("one@example.test", "@Mixed"),
         ("one@example.test", "other"),
         ("two@example.test", "mixed"),
-        ("three@example.test", "@Reserved-Fixture"),
+        ("three@example.test", "@Reserved_Fixture"),
     ] {
         let response = router
             .clone()
@@ -169,6 +169,47 @@ async fn public_signup_is_unverified_and_non_enumerating(pool: PgPool) -> sqlx::
         .await?,
         1
     );
+    Ok(())
+}
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn unapproved_username_formats_are_validation_failures(pool: PgPool) -> sqlx::Result<()> {
+    let router = app(&pool, 32, Ok(false)).await;
+    // Incompressible: on main this reached the index and returned 503.
+    let oversized: String = (0..200u32)
+        .map(|i| format!("{:016x}", u64::from(i).wrapping_mul(0x9e37_79b9_7f4a_7c15)))
+        .collect();
+    for (i, name) in [
+        "mich\u{430}el",
+        "rex\u{200b}zy",
+        "jose\u{301}",
+        "\u{202e}yzxer",
+        "ab",
+        "ada-okafor",
+        oversized.as_str(),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let response = router
+            .clone()
+            .oneshot(post(submission(&format!("r{i}@example.test"), name)))
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{name:?}"
+        );
+        assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+        assert_eq!(
+            bytes(response).await.as_ref(),
+            br#"{"error":{"code":"VALIDATION_ERROR","message":"Invalid registration request","details":{}}}"#
+        );
+    }
+    let users: i64 = sqlx::query_scalar("SELECT count(*) FROM identity.users")
+        .fetch_one(&pool)
+        .await?;
+    assert_eq!(users, 0);
     Ok(())
 }
 #[sqlx::test(migrator = "MIGRATOR")]

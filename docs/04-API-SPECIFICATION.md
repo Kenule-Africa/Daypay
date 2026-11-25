@@ -875,6 +875,10 @@ Username changes must follow a controlled policy.
 
 Historical transactions must reference immutable user IDs.
 
+## 16.7 Username Format
+
+A username contains only ASCII letters, digits, underscore and period. It is 3–30 characters long and does not start or end with a period or contain two consecutive periods. A leading `@` is optional and is not part of the username. Uniqueness and reserved-name checks ignore letter case. Registration returns 422 for any other format, and the database refuses new active usernames that do not comply. The repository owner approved this format on 2026-11-25.
+
 ---
 
 # 17. KYC AND COMPLIANCE APIS
