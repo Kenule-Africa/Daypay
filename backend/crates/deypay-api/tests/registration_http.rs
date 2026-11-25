@@ -20,6 +20,8 @@ use tower::ServiceExt;
 mod login_sessions;
 #[path = "cases/profile_http.rs"]
 mod profile_http;
+#[path = "cases/registration_admission.rs"]
+mod registration_admission;
 
 // Only the compromise verdict is a fixture. Hashing and persistence use the real adapters.
 struct FixtureScreen(Result<bool, RegistrationError>);
@@ -276,6 +278,12 @@ async fn required_fields_and_acknowledgements_are_enforced(pool: PgPool) -> sqlx
     );
     Ok(())
 }
+async fn advance_registration_window(pool: &PgPool) -> sqlx::Result<()> {
+    sqlx::query("UPDATE identity.email_verification_traffic SET minute=clock_timestamp()-interval '2 minutes' WHERE operation='register'")
+        .execute(pool).await?;
+    Ok(())
+}
+
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn registration_activation_screening_and_abuse_gates(pool: PgPool) -> sqlx::Result<()> {
     let request = || post(submission("ada@example.test", "ada"));
@@ -292,6 +300,7 @@ async fn registration_activation_screening_and_abuse_gates(pool: PgPool) -> sqlx
             StatusCode::SERVICE_UNAVAILABLE,
         ),
     ] {
+        advance_registration_window(&pool).await?;
         let enabled = app(&pool, 1, verdict).await;
         assert_eq!(
             enabled.clone().oneshot(request()).await.unwrap().status(),
@@ -316,6 +325,7 @@ async fn registration_activation_screening_and_abuse_gates(pool: PgPool) -> sqlx
         screening: FixtureScreen(Ok(false)),
         hasher: UnavailableHasher,
     });
+    advance_registration_window(&pool).await?;
     let failed_hash = routes(Environment::Test, Some(config)).with_state(pool.clone());
     assert_eq!(
         failed_hash.oneshot(request()).await.unwrap().status(),

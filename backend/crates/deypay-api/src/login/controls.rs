@@ -83,21 +83,13 @@ impl<R: SessionControls + SessionStore + 'static, V: CredentialVerifier + Send +
             Err(status) => return reply(status),
         };
         let digest = token.digest();
-        let Some(id) = target
+        let id = target
             .ok()
-            .and_then(|Path(value)| Uuid::parse_str(&value).ok())
-        else {
-            // Apply the authenticated endpoint contract even when the supplied ID
-            // is malformed. The normal path validates and mutates in one call.
-            return match auth.guard.store.validate(&digest, None).await {
-                Ok(Some(_)) => reply(StatusCode::BAD_REQUEST),
-                Ok(None) => reply(StatusCode::UNAUTHORIZED),
-                Err(error) => failure(error),
-            };
-        };
+            .and_then(|Path(value)| Uuid::parse_str(&value).ok());
         match auth.guard.store.revoke_session(&digest, id).await {
             Ok(RevokedSession::Current) => cleared(),
             Ok(RevokedSession::Other) => reply(StatusCode::OK),
+            Ok(RevokedSession::Absent) if id.is_none() => reply(StatusCode::BAD_REQUEST),
             Ok(RevokedSession::Absent) => reply(StatusCode::NOT_FOUND),
             Err(e) => failure(e),
         }

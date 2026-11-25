@@ -2,6 +2,7 @@
 -- Apply as a DBA or a migration administrator allowed to assign ownership.
 BEGIN;
 GRANT USAGE ON SCHEMA identity,audit,auth_crypto TO deypay_auth_owner;
+GRANT EXECUTE ON FUNCTION identity.require_session_admission(text,boolean) TO deypay_auth_owner;
 GRANT EXECUTE ON FUNCTION auth_crypto.hmac(bytea,bytea,text) TO deypay_auth_owner;
 GRANT SELECT (id,email,status,email_verified_at), UPDATE (id) ON identity.users TO deypay_auth_owner;
 GRANT SELECT (user_id,password_hash), UPDATE (user_id) ON identity.password_credentials TO deypay_auth_owner;

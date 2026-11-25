@@ -3,6 +3,21 @@ use sqlx::PgPool;
 
 pub struct PgRegistrationRepository(pub PgPool);
 
+impl PgRegistrationRepository {
+    /// Reserve the deployment-wide sandbox budget before parsing or password work.
+    pub async fn admit(&self, cap: std::num::NonZeroU32) -> Result<(), RegistrationError> {
+        match sqlx::query_scalar("SELECT identity.admit_registration_request($1)")
+            .bind(i64::from(cap.get()))
+            .fetch_one(&self.0)
+            .await
+        {
+            Ok(true) => Ok(()),
+            Ok(false) => Err(RegistrationError::Busy),
+            Err(_) => Err(RegistrationError::Unavailable),
+        }
+    }
+}
+
 impl RegistrationRepository for PgRegistrationRepository {
     async fn insert_unverified(
         &self,

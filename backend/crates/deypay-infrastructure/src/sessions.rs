@@ -299,6 +299,15 @@ impl LoginStore for PgSessions {
         }
     }
 }
+// Only the admission SQLSTATE is public. Never propagate query details or identifiers.
+fn session_error(error: sqlx::Error) -> CredentialError {
+    if error.as_database_error().and_then(|e| e.code()).as_deref() == Some("DP429") {
+        CredentialError::Busy
+    } else {
+        CredentialError::Unavailable
+    }
+}
+
 impl SessionStore for PgSessions {
     async fn validate(
         &self,
@@ -316,7 +325,7 @@ impl SessionStore for PgSessions {
         .bind(tag)
         .fetch_optional(&self.pool)
         .await
-        .map_err(|_| CredentialError::Unavailable)?;
+        .map_err(session_error)?;
         Ok(row.map(|(customer_id, account_status)| SessionIdentity {
             customer_id,
             account_status,

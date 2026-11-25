@@ -6,6 +6,8 @@ use deypay_infrastructure::events::PgEventWriter;
 use deypay_infrastructure::repositories::PgRepositories;
 use sqlx::PgPool;
 
+#[path = "persistence/admission.rs"]
+mod admission;
 #[path = "persistence/profiles.rs"]
 mod profiles;
 

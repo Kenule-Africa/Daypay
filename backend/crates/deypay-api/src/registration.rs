@@ -11,11 +11,7 @@ use deypay_application::registration::{
 };
 use deypay_infrastructure::{database::DatabasePool, registration::PgRegistrationRepository};
 use serde::Deserialize;
-use std::{
-    num::NonZeroU32,
-    sync::{Arc, Mutex},
-    time::{Duration, Instant},
-};
+use std::{num::NonZeroU32, sync::Arc};
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -38,11 +34,6 @@ pub struct RegistrationSettings {
     pub attempts_per_minute: NonZeroU32,
 }
 
-struct RegistrationEndpoint {
-    settings: RegistrationSettings,
-    window: Mutex<(Instant, u32)>,
-}
-
 pub fn routes(
     environment: deypay_common::config::Environment,
     settings: Option<RegistrationSettings>,
@@ -55,12 +46,7 @@ pub fn routes(
     } else {
         "published"
     };
-    let endpoint = settings.map(|settings| {
-        Arc::new(RegistrationEndpoint {
-            settings,
-            window: Mutex::new((Instant::now(), 0)),
-        })
-    });
+    let endpoint = settings.map(Arc::new);
     crate::legal::routes(scope).route(
         "/api/v1/auth/register",
         post(move |State(pool), req| {
@@ -72,24 +58,16 @@ pub fn routes(
 
 async fn submit(
     pool: DatabasePool,
-    endpoint: Option<Arc<RegistrationEndpoint>>,
+    endpoint: Option<Arc<RegistrationSettings>>,
     req: Request,
 ) -> Response {
     let Some(endpoint) = endpoint else {
         return reply(Err(RegistrationError::Unavailable));
     };
     // Admit before reading the body or performing password work.
-    {
-        let Ok(mut window) = endpoint.window.lock() else {
-            return reply(Err(RegistrationError::Unavailable));
-        };
-        if window.0.elapsed() >= Duration::from_secs(60) {
-            *window = (Instant::now(), 0);
-        }
-        if window.1 >= endpoint.settings.attempts_per_minute.get() {
-            return reply(Err(RegistrationError::Busy));
-        }
-        window.1 += 1;
+    let repository = PgRegistrationRepository(pool);
+    if let Err(error) = repository.admit(endpoint.attempts_per_minute).await {
+        return reply(Err(error));
     }
     if !req
         .headers()
@@ -123,8 +101,8 @@ async fn submit(
     };
     reply(
         register(
-            &PgRegistrationRepository(pool),
-            endpoint.settings.passwords.as_ref(),
+            &repository,
+            endpoint.passwords.as_ref(),
             &input,
             &body.password,
         )
