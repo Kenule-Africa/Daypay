@@ -1,5 +1,8 @@
 use deypay_application::{
-    login::{CheckedCredential, LoginCredential, LoginStore, SessionLifetime, SessionStore},
+    login::{
+        CheckedCredential, LoginCredential, LoginStore, SessionIdentity, SessionLifetime,
+        SessionStore,
+    },
     passwords::CredentialError,
 };
 use sha2::{Digest, Sha256};
@@ -99,14 +102,35 @@ impl SessionStore for PgSessions {
         current: &str,
         replacement: Option<&str>,
         idle_seconds: i32,
-    ) -> Result<Option<Uuid>, CredentialError> {
-        sqlx::query_scalar("SELECT identity.validate_sandbox_session($1,$2,$3)")
-            .bind(current)
-            .bind(replacement)
-            .bind(idle_seconds)
-            .fetch_one(&self.0)
-            .await
-            .map_err(|_| CredentialError::Unavailable)
+    ) -> Result<Option<SessionIdentity>, CredentialError> {
+        let unavailable = |_| CredentialError::Unavailable;
+        let mut tx = self.0.begin().await.map_err(unavailable)?;
+        let customer: Option<Uuid> =
+            sqlx::query_scalar("SELECT identity.validate_sandbox_session($1,$2,$3)")
+                .bind(current)
+                .bind(replacement)
+                .bind(idle_seconds)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(unavailable)?;
+        // Validation holds a share lock on the customer through commit. Read
+        // the current status while that same lock still protects the identity.
+        let identity = if let Some(customer_id) = customer {
+            let account_status =
+                sqlx::query_scalar("SELECT status FROM identity.users WHERE id=$1")
+                    .bind(customer_id)
+                    .fetch_one(&mut *tx)
+                    .await
+                    .map_err(unavailable)?;
+            Some(SessionIdentity {
+                customer_id,
+                account_status,
+            })
+        } else {
+            None
+        };
+        tx.commit().await.map_err(unavailable)?;
+        Ok(identity)
     }
 }
 

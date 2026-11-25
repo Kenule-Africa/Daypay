@@ -21,7 +21,7 @@ use axum::{
     routing::post,
 };
 use deypay_application::{
-    login::{LoginStore, SessionLifetime, SessionStore, login},
+    login::{LoginStore, SessionIdentity, SessionLifetime, SessionStore, login},
     passwords::{CredentialError, CredentialVerifier, MAX_PASSWORD_BYTES},
     registration::valid_email,
 };
@@ -43,12 +43,16 @@ use uuid::Uuid;
 
 /// Handlers may extract this type only after the session middleware validates
 /// the cookie against the store. It provides identity, without KYC or financial authorization.
-#[derive(Clone, Copy)]
-pub struct AuthenticatedCustomer(Uuid);
+#[derive(Clone)]
+pub struct AuthenticatedCustomer(SessionIdentity);
 
 impl AuthenticatedCustomer {
-    pub fn id(self) -> Uuid {
-        self.0
+    pub fn id(&self) -> Uuid {
+        self.0.customer_id
+    }
+
+    pub fn account_status(&self) -> &str {
+        &self.0.account_status
     }
 }
 
@@ -58,7 +62,7 @@ impl<S: Send + Sync> FromRequestParts<S> for AuthenticatedCustomer {
         parts
             .extensions
             .get::<Self>()
-            .copied()
+            .cloned()
             .ok_or_else(|| reply(StatusCode::UNAUTHORIZED))
     }
 }

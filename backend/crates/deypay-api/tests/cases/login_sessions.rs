@@ -74,8 +74,17 @@ fn router<V: CredentialVerifier + Send + 'static>(
     async fn who(customer: AuthenticatedCustomer) -> String {
         customer.id().to_string()
     }
+    async fn status(customer: AuthenticatedCustomer) -> String {
+        customer.account_status().to_owned()
+    }
     auth.routes()
-        .merge(auth.protect(Router::new().route("/test/principal", get(who).post(who))))
+        .merge(
+            auth.protect(
+                Router::new()
+                    .route("/test/principal", get(who).post(who))
+                    .route("/test/status", get(status)),
+            ),
+        )
         .route("/test/unprotected", get(who))
 }
 
@@ -173,6 +182,14 @@ async fn login_binds_only_the_verified_customer_and_rotates_an_existing_cookie(
         ada.to_string().as_bytes()
     );
     let raw = a.split_once('=').unwrap().1;
+    let request = Request::get("/test/status")
+        .header(header::COOKIE, &a)
+        .header("x-account-status", "KYC_APPROVED")
+        .body(Body::empty())
+        .unwrap();
+    let response = call(&app, request).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(super::bytes(response).await.as_ref(), b"CONTACT_VERIFIED");
     let stored: String =
         sqlx::query_scalar("SELECT token_hash FROM identity.sessions WHERE user_id=$1")
             .bind(ada)

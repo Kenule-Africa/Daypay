@@ -79,6 +79,14 @@ impl SessionLifetime {
     }
 }
 
+/// Server-side snapshot at admission. Authorization for a later write must
+/// recheck its own requirements inside that write transaction.
+#[derive(Clone)]
+pub struct SessionIdentity {
+    pub customer_id: Uuid,
+    pub account_status: String,
+}
+
 /// One atomic server-side operation checks the token, current customer status,
 /// revocation and both deadlines. Refresh also replaces the old digest without
 /// extending the original absolute deadline.
@@ -88,7 +96,7 @@ pub trait SessionStore: Send + Sync {
         current_digest: &str,
         replacement_digest: Option<&str>,
         idle_seconds: i32,
-    ) -> impl Future<Output = Result<Option<Uuid>, CredentialError>> + Send;
+    ) -> impl Future<Output = Result<Option<SessionIdentity>, CredentialError>> + Send;
 }
 
 pub async fn login(
