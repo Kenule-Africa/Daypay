@@ -1,0 +1,11 @@
+-- Run as the migration owner after migrations and the Phase 2 grants. The
+-- runtime receives only the fixed customer-profile operations (IMP-P3-010);
+-- it gains no table privilege on profile, preference or image rows.
+GRANT USAGE ON SCHEMA customers TO deypay_app;
+GRANT EXECUTE ON FUNCTION customers.customer_profile(uuid),
+    customers.rename_customer(uuid,text,text),
+    customers.customer_preferences(uuid),
+    customers.update_customer_preferences(uuid,boolean,boolean,boolean,boolean),
+    customers.store_profile_image(uuid,bytea,integer,integer),
+    customers.profile_image(uuid,uuid),
+    customers.remove_profile_image(uuid) TO deypay_app;

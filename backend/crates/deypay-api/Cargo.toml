@@ -18,12 +18,13 @@ deypay-application = { path = "../deypay-application" }
 axum.workspace = true
 deypay-common = { path = "../deypay-common" }
 deypay-infrastructure = { path = "../deypay-infrastructure" }
-tokio.workspace = true
+tokio = { workspace = true, features = ["sync"] }
 tracing.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 sqlx = { workspace = true, features = ["macros", "migrate"] }
 
 [features]

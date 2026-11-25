@@ -8,6 +8,8 @@ pub mod kyc_provider_mock;
 pub mod legal;
 pub mod password_hashing;
 pub mod password_screening;
+pub mod profile_images;
+pub mod profiles;
 pub mod registration;
 pub mod repositories;
 pub mod sessions;

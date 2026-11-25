@@ -806,29 +806,108 @@ For email verification submit `{"email":"customer@example.com"}`. Registration i
 
 # 15. CUSTOMER PROFILE APIS
 
+Every route in this section requires an active customer session and serves only that customer. A customer identifier in a path, query, header or body is never accepted. Missing, expired, logged-out and revoked sessions return 401 `AUTHENTICATION_REQUIRED`. State-changing requests must carry the configured browser `Origin`, or they return 403. JSON responses use `Cache-Control: no-store`. A route returns 503 `SERVICE_UNAVAILABLE` when customer authentication or profile storage is unavailable. The repository owner approved the editable fields, preference defaults, marketing-consent handling and profile-image contract below on 2026-11-25.
+
 ## 15.1 Get Current Profile
 
 `GET /api/v1/me`
+
+```json
+{
+  "data": {
+    "id": "9d4a7c10-2a20-4c9e-a987-48b781aa0c55",
+    "username": "adaokafor",
+    "first_name": "Ada",
+    "last_name": "Okafor",
+    "email": "ada@example.com",
+    "email_verified": true,
+    "phone": "+2348012345678",
+    "phone_verified": false,
+    "country_code": "NG",
+    "account_status": "contact_verified",
+    "names_editable": true,
+    "profile_image": null,
+    "created_at": "2026-11-25T10:00:00Z",
+    "updated_at": "2026-11-25T10:00:00Z"
+  }
+}
+```
+
+`profile_image` is `null` or the object described in §15.7. The response contains no credential, session, audit, risk or KYC data.
 
 ## 15.2 Update Profile
 
 `PATCH /api/v1/me`
 
+Send a JSON object with `first_name`, `last_name` or both. Each value is trimmed and must be 1–100 characters without control, invisible formatting, line-separator or non-space whitespace characters. Names can change while the account status is `contact_verified` or `kyc_required` and no KYC case has moved past draft; afterwards `names_editable` is `false`. A successful update returns the §15.1 profile.
+
+Any other field, including the identifier, email, phone, username, country, account status, KYC or password, returns 400 `VALIDATION_ERROR`. So do `null`, non-string values, an empty object and a non-JSON body. Invalid names return 422 `VALIDATION_ERROR` with `details.fields` listing them. Locked names return 422 `VALIDATION_ERROR` with `details.reason` `names_locked`. Each update is atomic, and concurrent updates never mix fields from two requests. The audit event records which fields changed, not their values.
+
 ## 15.3 Get Preferences
 
 `GET /api/v1/me/preferences`
+
+```json
+{
+  "data": {
+    "phone_discoverable": false,
+    "email_notifications": true,
+    "push_notifications": false,
+    "marketing_consent": false,
+    "updated_at": null
+  }
+}
+```
+
+These are the defaults before a customer changes anything; `updated_at` is then `null`. The notification flags cover optional notifications only. Security and service messages do not depend on them.
 
 ## 15.4 Update Preferences
 
 `PATCH /api/v1/me/preferences`
 
+Send a JSON object with one or more of the four boolean fields. Omitted fields stay unchanged, so concurrent updates to different fields are all kept. Other fields, `null`, non-boolean values and an empty object return 400. Setting `phone_discoverable` to `true` without a verified phone returns 422 `VALIDATION_ERROR` with `details.reason` `phone_unverified` (§16.5), and nothing is changed. `marketing_consent` can be granted or withdrawn; its audit event cites the DEP-LEG-003 consent wording the customer registered under. A successful update returns the §15.3 response.
+
 ## 15.5 Get Account Status
 
 `GET /api/v1/me/status`
 
+```json
+{"data": {"account_status": "contact_verified"}}
+```
+
+The value is the FRS §8.4 account status in lowercase. It is the account lifecycle status. It is neither a KYC decision nor financial authorization, and no profile route can change it.
+
 ## 15.6 Profile Requirements
 
 The customer must not be able to modify authoritative KYC fields without the approved verification process.
+
+## 15.7 Profile Image
+
+The customer's own profile image is private. Another customer cannot read, replace or remove it.
+
+`PUT /api/v1/me/profile-image` uploads or replaces the image. Send the raw bytes with `Content-Type` `image/jpeg`, `image/png` or `image/webp`. The bytes must be that format, at most 5 MB (5,242,880 bytes) and at most 4096 pixels on each side. DEYPAY decodes the image within a fixed memory budget, applies its EXIF orientation, flattens transparency onto white, reduces the longest side to at most 512 pixels without enlarging it, and stores a new JPEG of at most 150 KB without any EXIF, GPS, ICC or other source metadata. Only that JPEG is ever stored or served. The response is:
+
+```json
+{
+  "data": {
+    "profile_image": {
+      "version": "3f1d2b8e-7c55-4d1e-9a51-1b4c1f0d2e77",
+      "content_type": "image/jpeg",
+      "width": 512,
+      "height": 384,
+      "updated_at": "2026-11-25T10:05:00Z"
+    }
+  }
+}
+```
+
+A missing or other type, or content that is not the declared type, returns 415. A larger body returns 413. An image that cannot be decoded, exceeds the dimension or memory limits, or cannot meet the size limit returns 422. Errors use `VALIDATION_ERROR` with `details.reason` `unsupported_type`, `too_large`, `undecodable`, `too_many_pixels` or `too_complex`. A body not received within 30 seconds returns 400 `VALIDATION_ERROR` with `details.reason` `incomplete_upload`. Each instance processes a bounded number of uploads at once; when none can start within 5 seconds, the request returns 503 `SERVICE_UNAVAILABLE` with `details.reason` `busy` and can be retried. Each replacement is atomic: a failure leaves the previous image in place, and no superseded image remains.
+
+`GET /api/v1/me/profile-image` returns the JPEG with `ETag` set to the quoted version, `Cache-Control: private, no-cache`, `Vary: Cookie`, `X-Content-Type-Options: nosniff` and `Cross-Origin-Resource-Policy: same-site`. A matching `If-None-Match` returns 304. Without an image it returns 404 `NOT_FOUND`.
+
+`DELETE /api/v1/me/profile-image` removes the image and returns 204, also when no image exists.
+
+Images are stored in PostgreSQL, separate from KYC documents, behind a storage interface that an object-storage adapter can replace once the object-storage service is chosen (architecture §46.4).
 
 ---
 
@@ -874,6 +953,10 @@ Phone-based recipient discovery requires a verified phone, the recipient's disco
 Username changes must follow a controlled policy.
 
 Historical transactions must reference immutable user IDs.
+
+## 16.7 Username Format
+
+A username contains only ASCII letters, digits, underscore and period. It is 3–30 characters long and does not start or end with a period or contain two consecutive periods. A leading `@` is optional and is not part of the username. Uniqueness and reserved-name checks ignore letter case. Registration returns 422 for any other format, and the database refuses new active usernames that do not comply. The repository owner approved this format on 2026-11-25.
 
 ---
 

@@ -17,6 +17,8 @@ serde_json.workspace = true
 tracing.workspace = true
 argon2 = { version = "0.5.3", features = ["zeroize"] }
 getrandom = "0.2"
+# Pure-Rust decoders for the three approved upload formats, and the JPEG encoder.
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 zeroize = "1"
 sha2.workspace = true
 uuid.workspace = true

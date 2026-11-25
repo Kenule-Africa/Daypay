@@ -84,17 +84,13 @@ impl Registration<'_> {
             .phone
             .strip_prefix('+')
             .ok_or(RegistrationError::InvalidInput)?;
-        let handle = self.username.strip_prefix('@').unwrap_or(self.username);
         if !self.accept_terms
             || !self.acknowledge_privacy_notice
             || !valid_email(self.email.trim())
             || !(2..=15).contains(&phone.len())
             || phone.starts_with('0')
             || !phone.bytes().all(|b| b.is_ascii_digit())
-            || handle.is_empty()
-            || handle
-                .chars()
-                .any(|c| c == '@' || c.is_whitespace() || c.is_control())
+            || crate::usernames::handle(self.username).is_none()
             || [
                 self.first_name,
                 self.last_name,

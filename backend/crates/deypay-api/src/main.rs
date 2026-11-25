@@ -28,6 +28,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         return Err("Authentication database is unready".into());
     }
     let readiness_auth = auth.clone();
+    // Customer profile routes exist only behind the customer session guard.
+    let profiles = deypay_api::profile::routes(deypay_api::profile::ProfileApi::new(pool.clone()));
+    let customer_routes = match &auth {
+        Some(auth) => auth.protect(profiles),
+        None => deypay_api::profile::unavailable(),
+    };
     let app = Router::new()
         .route(
             "/health/live",
@@ -45,7 +51,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             deypay_api::registration::RegistrationSettings::from_env(settings.environment)?,
         ))
         .with_state(pool.clone())
-        .merge(deypay_api::login::routes(auth.as_ref()));
+        .merge(deypay_api::login::routes(auth.as_ref()))
+        .merge(customer_routes);
     let listener = TcpListener::bind(address).await?;
     let shutdown = shutdown_signal()?;
     tracing::info!(address = %listener.local_addr()?, "API listening");

@@ -198,10 +198,10 @@ async fn binding_expiry_and_distributed_admission(pool: PgPool) -> sqlx::Result<
     let (app, db) = setup(&pool).await?;
     let inbox = Arc::new(MockDelivery::default());
     let worker = VerificationWorker::sandbox(inbox.clone(), [22; 32], BASE).unwrap();
-    register(&pool, "a@example.test", "a").await?;
+    register(&pool, "a@example.test", "alpha").await?;
     worker.tick(&db).await?;
     let (aid, first) = inbox.last_message().unwrap();
-    register(&pool, "b@example.test", "b").await?;
+    register(&pool, "b@example.test", "bravo").await?;
     worker.tick(&db).await?;
     let (_, second) = inbox.last_message().unwrap();
     let crossed = format!("{aid}.{}", token(&second).split_once('.').unwrap().1);

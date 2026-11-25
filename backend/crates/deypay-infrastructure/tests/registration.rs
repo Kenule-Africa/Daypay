@@ -309,7 +309,7 @@ async fn competing_handles_claim_once_and_reserved_names_leave_no_identity(
 ) -> sqlx::Result<()> {
     let repo = sandbox(&pool).await?;
     let invalid_key =
-        sqlx::query("INSERT INTO customers.username_keys VALUES ('@Reserved-Fixture',true)")
+        sqlx::query("INSERT INTO customers.username_keys VALUES ('@Reserved_Fixture',true)")
             .execute(&pool)
             .await
             .unwrap_err();
@@ -317,14 +317,14 @@ async fn competing_handles_claim_once_and_reserved_names_leave_no_identity(
         invalid_key.as_database_error().and_then(|e| e.constraint()),
         Some("username_keys_canonical")
     );
-    sqlx::query("INSERT INTO customers.username_keys VALUES ('reserved-fixture',true)")
+    sqlx::query("INSERT INTO customers.username_keys VALUES ('reserved_fixture',true)")
         .execute(&pool)
         .await?;
     let secret = "accepted fixture secret";
     register(
         &repo,
         &FixturePasswords,
-        &request("reserved@example.test", "@Reserved-Fixture"),
+        &request("reserved@example.test", "@Reserved_Fixture"),
         secret,
     )
     .await
@@ -387,5 +387,151 @@ async fn invalid_requests_and_persistence_failures_leave_no_partial_identity(
     );
     let rows: i64 = sqlx::query_scalar("SELECT (SELECT count(*) FROM identity.users)+(SELECT count(*) FROM integrations.outbox_events)+(SELECT count(*) FROM audit.audit_events)+(SELECT count(*) FROM customers.registration_consent_evidence)").fetch_one(&pool).await?;
     assert_eq!(rows, 0);
+    Ok(())
+}
+
+const PROFILE_MIGRATION: i64 = 202611250801;
+const LOOKALIKES: [&str; 10] = [
+    "mich\u{430}el",
+    "rex\u{200b}zy",
+    "jose\u{301}",
+    "\u{202e}yzxer",
+    "\u{ff44}\u{ff41}\u{ff4e}",
+    "\u{c0}da",
+    "ab",
+    "a..b",
+    ".ada",
+    "ada-okafor",
+];
+
+/// Calls the registration routine directly, as a bypassed or faulty API would.
+async fn direct(pool: &PgPool, email: &str, username: &str) -> Result<(), Option<String>> {
+    sqlx::query("SELECT identity.register_customer($1,'+2348012345678',$2,'$argon2id$direct','Test','Customer','NG','1.0','1.0',true,true)")
+        .bind(email)
+        .bind(username)
+        .execute(pool)
+        .await
+        .map(|_| ())
+        .map_err(|e| e.as_database_error().and_then(|d| d.constraint()).map(str::to_owned))
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn lookalike_and_oversized_handles_are_refused_at_both_boundaries(
+    pool: PgPool,
+) -> sqlx::Result<()> {
+    let repo = sandbox(&pool).await?;
+    // Valid originals the lookalikes would impersonate.
+    for (email, name) in [("m@example.test", "michael"), ("r@example.test", "rexzy")] {
+        register(
+            &repo,
+            &FixturePasswords,
+            &request(email, name),
+            "accepted fixture secret",
+        )
+        .await
+        .unwrap();
+    }
+    let oversized = "a".repeat(3000);
+    for (i, name) in LOOKALIKES
+        .iter()
+        .copied()
+        .chain([oversized.as_str()])
+        .enumerate()
+    {
+        let email = format!("reject{i}@example.test");
+        assert_eq!(
+            register(
+                &repo,
+                &FixturePasswords,
+                &request(&email, name),
+                "accepted fixture secret"
+            )
+            .await,
+            Err(RegistrationError::InvalidInput),
+            "{name:?}"
+        );
+        assert_eq!(
+            direct(&pool, &email, name).await,
+            Err(Some("usernames_approved_format".to_owned())),
+            "{name:?}"
+        );
+    }
+    let handles: Vec<String> =
+        sqlx::query_scalar("SELECT normalized_username FROM customers.usernames ORDER BY 1")
+            .fetch_all(&pool)
+            .await?;
+    assert_eq!(handles, ["michael", "rexzy"]);
+    let users: i64 = sqlx::query_scalar("SELECT count(*) FROM identity.users")
+        .fetch_one(&pool)
+        .await?;
+    assert_eq!(users, 2);
+    Ok(())
+}
+
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn concurrent_case_variants_create_exactly_one_account(pool: PgPool) -> sqlx::Result<()> {
+    sandbox(&pool).await?;
+    let variants = [
+        "Daniel", "DANIEL", "daniel", "@dAnIeL", "@DaNiEl", "daniEL", "@daniel", "DANiel",
+    ];
+    let mut racers = tokio::task::JoinSet::new();
+    for (i, name) in variants.into_iter().enumerate() {
+        let repo = PgRegistrationRepository(pool.clone());
+        racers.spawn(async move {
+            let email = format!("racer{i}@example.test");
+            register(
+                &repo,
+                &FixturePasswords,
+                &request(&email, name),
+                "accepted fixture secret",
+            )
+            .await
+        });
+    }
+    // Every racer receives the same non-enumerating outcome.
+    while let Some(outcome) = racers.join_next().await {
+        assert_eq!(outcome.unwrap(), Ok(()));
+    }
+    let (users, handles, keys, emails): (i64, i64, i64, i64) = sqlx::query_as(
+        "SELECT (SELECT count(*) FROM identity.users),
+                (SELECT count(*) FROM customers.usernames WHERE normalized_username='daniel'),
+                (SELECT count(*) FROM customers.username_keys),
+                (SELECT count(*) FROM integrations.outbox_events)",
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!((users, handles, keys, emails), (1, 1, 1, 1));
+    Ok(())
+}
+
+#[sqlx::test(migrations = false)]
+async fn legacy_handles_survive_the_format_upgrade_and_can_retire(
+    pool: PgPool,
+) -> sqlx::Result<()> {
+    for migration in MIGRATOR.iter().filter(|m| m.version < PROFILE_MIGRATION) {
+        sqlx::raw_sql(&migration.sql).execute(&pool).await?;
+    }
+    sandbox(&pool).await?;
+    direct(&pool, "legacy@example.test", "x").await.unwrap();
+    for migration in MIGRATOR.iter().filter(|m| m.version >= PROFILE_MIGRATION) {
+        sqlx::raw_sql(&migration.sql).execute(&pool).await?;
+    }
+    let validated: bool = sqlx::query_scalar(
+        "SELECT convalidated FROM pg_constraint WHERE conname='usernames_approved_format'",
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert!(!validated, "existing rows are not rewritten or rejected");
+    let retired = sqlx::query(
+        "UPDATE customers.usernames SET is_active=false, retired_at=greatest(created_at,now()) WHERE username='x'",
+    )
+    .execute(&pool)
+    .await?;
+    assert_eq!(retired.rows_affected(), 1);
+    // The legacy handle cannot be claimed again in its old form.
+    assert_eq!(
+        direct(&pool, "new@example.test", "x").await,
+        Err(Some("usernames_approved_format".to_owned()))
+    );
     Ok(())
 }
