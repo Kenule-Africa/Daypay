@@ -783,9 +783,15 @@ For email verification submit `{"email":"customer@example.com"}`. Registration i
 
 `POST /api/v1/auth/forgot-password`
 
+Submit `{"email":"customer@example.com"}` as JSON with the configured browser `Origin`. The response is HTTP 202 with `{"data":{}}` for every valid address: known, unknown, unverified, ineligible, within the per-account cooldown or hourly cap, or over the address admission budget. The repository owner approved the recovery policy on 2026-11-25. A reset email goes only to a registered, already verified address whose account is in one of the active authentication release's allowed states. The email links to `/reset-password#<selector>.<secret>` on the configured application origin. The link is single use and expires after 30 minutes by default. A newer request supersedes older links. Each account receives at most one reset email per cooldown period (60 seconds by default) and a capped number per hour (5 by default). A malformed address returns 422 `VALIDATION_ERROR`. Unknown fields, a missing field or a non-JSON body return 400. A missing or foreign `Origin` returns 403. Admission limits return 429 and unavailable recovery returns 503. Responses use `Cache-Control: no-store`. The ingress routes this endpoint to the isolated authentication verifier; the general API returns 503.
+
 ## 14.8 Reset Password
 
 `POST /api/v1/auth/reset-password`
+
+Submit `{"token":"<selector>.<secret>","password":"<new password>"}` as JSON with the configured browser `Origin`. The reset page at `/reset-password` removes the token from the address bar and submits it in the body. The new password must satisfy the registration password policy and must not appear in the compromised-password dataset; it is stored only as an Argon2id hash. On success the response is HTTP 200 with `{"data":{}}` and an expired session cookie. Every session of the account is revoked, including the current one, so the customer signs in again with the new password (security SEC-REC-004). The reset is audited.
+
+A malformed, unknown, expired, superseded, already used or exhausted link returns 422 `VALIDATION_ERROR` with `details.reason` `invalid_link`. The fifth wrong secret (by default) revokes the link. A rejected password returns 422 with `details.reason` `password_rejected` and does not spend the link. Unknown fields, missing fields or a non-JSON body return 400. A missing or foreign `Origin` returns 403. Admission limits return 429 and unavailable recovery returns 503. Responses use `Cache-Control: no-store`. The ingress routes this endpoint to the isolated authentication verifier; the general API returns 503.
 
 ## 14.9 List Sessions
 
@@ -916,6 +922,14 @@ Images are stored in PostgreSQL, separate from KYC documents, behind a storage i
 ## 16.1 Check Username Availability
 
 `GET /api/v1/usernames/availability?username=exampleuser`
+
+The check is public and advisory; the repository owner approved this policy on 2026-11-25. A username in the §16.7 format returns HTTP 200:
+
+```json
+{"data": {"available": true}}
+```
+
+`available` is `false` when the username, ignoring letter case and the optional `@`, is reserved or belongs to an active account. The two cases are indistinguishable, and no information about an account is returned. Registration remains the authority, so a later registration can still find the username taken. A username outside the §16.7 format returns 422 `VALIDATION_ERROR` with `details.fields` `["username"]`. A missing, repeated or additional query parameter returns 400. Per-deployment and per-username admission limits return 429, and an unavailable check returns 503. Responses use `Cache-Control: no-store`.
 
 ## 16.2 Resolve Recipient
 

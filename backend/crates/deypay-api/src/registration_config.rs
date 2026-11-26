@@ -21,18 +21,7 @@ impl RegistrationSettings {
             Ok("sandbox") => {}
             _ => return Err("Invalid registration mode"),
         }
-        let path = env::var_os("DEYPAY_SCREENING_FILE").ok_or("Missing sandbox screening file")?;
-        let data = fs::read(path).map_err(|_| "Cannot read sandbox screening file")?;
-        let checksum = env::var("DEYPAY_SCREENING_SHA256")
-            .map_err(|_| "Missing sandbox screening checksum")?;
-        let digest = parse_digest(&checksum).ok_or("Invalid sandbox screening checksum")?;
-        let expiry = env::var("DEYPAY_SCREENING_VALID_UNTIL_UNIX")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .and_then(|seconds| UNIX_EPOCH.checked_add(Duration::from_secs(seconds)))
-            .ok_or("Invalid sandbox screening expiry")?;
-        let screening = LocalCompromisedPasswords::load(&data, digest, expiry)
-            .map_err(|_| "Invalid or expired sandbox screening dataset")?;
+        let screening = screening_from_env()?;
         // Local sandbox defaults only. Production has its own outstanding security gates.
         let hasher = sandbox_hasher()?;
         let attempts_per_minute =
@@ -47,6 +36,23 @@ impl RegistrationSettings {
             attempts_per_minute,
         }))
     }
+}
+
+/// The configured compromised-password dataset. Registration and the recovery
+/// verifier (IMP-P3-008) screen new passwords against the same dataset.
+pub(crate) fn screening_from_env() -> Result<LocalCompromisedPasswords, &'static str> {
+    let path = env::var_os("DEYPAY_SCREENING_FILE").ok_or("Missing sandbox screening file")?;
+    let data = fs::read(path).map_err(|_| "Cannot read sandbox screening file")?;
+    let checksum =
+        env::var("DEYPAY_SCREENING_SHA256").map_err(|_| "Missing sandbox screening checksum")?;
+    let digest = parse_digest(&checksum).ok_or("Invalid sandbox screening checksum")?;
+    let expiry = env::var("DEYPAY_SCREENING_VALID_UNTIL_UNIX")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .and_then(|seconds| UNIX_EPOCH.checked_add(Duration::from_secs(seconds)))
+        .ok_or("Invalid sandbox screening expiry")?;
+    LocalCompromisedPasswords::load(&data, digest, expiry)
+        .map_err(|_| "Invalid or expired sandbox screening dataset")
 }
 
 pub(crate) fn sandbox_hasher() -> Result<Argon2idHasher, &'static str> {

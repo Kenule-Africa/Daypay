@@ -10,6 +10,10 @@ GRANT SELECT (user_id,password_hash), UPDATE (user_id) ON identity.password_cred
 -- updates either identity column, and runtime logins cannot assume its role.
 GRANT SELECT, INSERT, UPDATE ON identity.sessions TO deypay_auth_owner;
 GRANT INSERT (actor_type,actor_id,action,resource_type,resource_id,reason) ON audit.audit_events TO deypay_auth_owner;
+-- Password recovery (IMP-P3-008): the reset capabilities reach the challenge,
+-- credential and outbox rows only through these two internal definers.
+GRANT EXECUTE ON FUNCTION identity.enqueue_password_reset(uuid,text[],integer,integer),
+    identity.redeem_password_reset(uuid,text,text,integer,text[]) TO deypay_auth_owner;
 GRANT CREATE ON SCHEMA identity TO deypay_auth_owner;
 ALTER TABLE identity.auth_policy OWNER TO deypay_auth_owner;
 ALTER TABLE identity.auth_window OWNER TO deypay_auth_owner;
@@ -29,7 +33,12 @@ GRANT EXECUTE ON FUNCTION identity.auth_ready(uuid), identity.auth_configuration
     identity.auth_admit(uuid,text), identity.auth_credential(uuid,text,bigint,bytea),
     identity.auth_reject(uuid,uuid,bigint,bytea), identity.auth_issue(uuid,uuid,text,text,text,text,bigint,bytea),
     identity.auth_validate(uuid,text,text,bigint,bytea), identity.auth_logout(uuid,text,bigint,bytea),
-    identity.auth_list_sessions(uuid,text,bigint,bytea), identity.auth_revoke_session(uuid,text,uuid,bigint,bytea) TO deypay_auth;
+    identity.auth_list_sessions(uuid,text,bigint,bytea), identity.auth_revoke_session(uuid,text,uuid,bigint,bytea),
+    identity.auth_request_reset(uuid,text,integer,integer,bigint,bytea),
+    identity.auth_reset_password(uuid,uuid,text,text,integer,bigint,bytea) TO deypay_auth;
+-- The verifier's recovery endpoints charge the IMP-P3-012 public admission
+-- budgets (forgot_password, reset_password) before any lookup.
+GRANT EXECUTE ON FUNCTION identity.admit_public_request(text,text) TO deypay_auth;
 GRANT EXECUTE ON FUNCTION identity.auth_reader_ready(uuid,text,text),
     identity.auth_principal(uuid,text,text,text) TO deypay_app;
 DO $$ BEGIN

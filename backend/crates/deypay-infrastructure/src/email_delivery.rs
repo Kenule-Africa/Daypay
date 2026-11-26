@@ -7,6 +7,9 @@ pub const SENDER: &str = "DEYPAY <deypay@kenuleafrica.xyz>";
 
 #[derive(Serialize)]
 pub struct Message {
+    /// Names the flow in the provider idempotency key; never sent as content.
+    #[serde(skip)]
+    pub kind: &'static str,
     pub from: &'static str,
     pub to: [String; 1],
     pub subject: &'static str,
@@ -35,6 +38,39 @@ pub fn verification_message(address: &str, link: &Url, expires: &str) -> Message
         escape(expires)
     );
     Message {
+        kind: "verify-email",
+        from: SENDER,
+        to: [address.into()],
+        subject,
+        text,
+        html,
+    }
+}
+
+/// Reset email (IMP-P3-008). The link carries the single-use secret in its fragment.
+pub fn password_reset_message(address: &str, link: &Url, expires: &str) -> Message {
+    let subject = "Reset your DEYPAY password";
+    let warning = "If you did not ask to reset your password, you can ignore this email. Your password stays the same.";
+    let effect = "The link works once. Resetting your password signs you out on every device.";
+    let text = format!(
+        "Reset your DEYPAY password
+
+Open this link to choose a new password:
+{link}
+
+This link expires at {expires} UTC. {effect}
+
+{warning}
+
+DEYPAY · Kenule Africa"
+    );
+    let html = format!(
+        r#"<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;background:#f5f7f8;color:#172e2c;font:16px/1.6 Arial,sans-serif"><main style="max-width:540px;margin:auto;background:white;padding:32px 24px"><p>DEYPAY</p><h1 style="font-size:26px">Reset your password</h1><p>Choose a new password for your DEYPAY account.</p><p><a href="{}" style="display:inline-block;background:#07594c;color:white;padding:12px 20px;border-radius:6px">Choose a new password</a></p><p>This link expires at {} UTC. {effect}</p><p>{warning}</p><p>DEYPAY · Kenule Africa</p></main></body></html>"#,
+        escape(link.as_str()),
+        escape(expires)
+    );
+    Message {
+        kind: "reset-password",
         from: SENDER,
         to: [address.into()],
         subject,
@@ -106,7 +142,7 @@ impl Resend {
             .client
             .post(self.endpoint.clone())
             .header(reqwest::header::AUTHORIZATION, self.key.clone())
-            .header("Idempotency-Key", format!("verify-email/{id}"))
+            .header("Idempotency-Key", format!("{}/{id}", message.kind))
             .json(message)
             .send()
             .await

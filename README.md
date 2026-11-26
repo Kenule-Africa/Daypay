@@ -72,3 +72,19 @@ After applying the SQLx migrations, apply `infrastructure/postgres/email-verific
 API defaults are 60 seconds between requests per address (`EMAIL_RESEND_COOLDOWN_SECONDS`), five emails per address per hour including the initial intent (`EMAIL_RESEND_LIMIT_PER_HOUR`), five incorrect proofs per challenge (`EMAIL_VERIFY_MAX_GUESSES`) and 120 requests per endpoint per minute across replicas (`EMAIL_VERIFY_REQUESTS_PER_MINUTE`).
 
 At deployment, verify the sender domain and leave link tracking disabled for verification mail. A provider acknowledgement records delivery submission. The only operation that verifies the address is the customer's confirmation POST. Monitor terminal `VERIFY_EMAIL` jobs by status and `last_error`. A customer can request a fresh message after a terminal failure and the resend cooldown.
+
+## Password recovery and username availability
+
+Migration `202611251301` adds password recovery (IMP-P3-008) and the username availability check (IMP-P3-009). Apply it after `202611251201`, then reapply `infrastructure/postgres/auth-grants.psql`. That script gives the verifier the two recovery capabilities and the IMP-P3-012 admission check, and it still verifies `auth_acl_ok()` and `auth_owner_ok()`. Apply `infrastructure/postgres/password-recovery-worker-grants.psql` with the same variables as the verification worker grants, and `infrastructure/postgres/username-availability-grants.psql` and `infrastructure/postgres/public-admission-grants.psql` for the general API. Configure `identity.admission_policy` rows for `forgot_password`, `reset_password` and `username_availability` (see `docs/engineering/AUTHENTICATION-RATE-LIMITS.md`). Without a row, that endpoint returns 503.
+
+Route `POST /api/v1/auth/forgot-password` and `POST /api/v1/auth/reset-password` to the `deypay-auth` verifier at the ingress. The general API refuses both and serves only the static `/reset-password` page and `/reset-password.js`. Set `PASSWORD_RECOVERY_ENABLED=true` on the verifier and the worker; otherwise the verifier answers both routes with 503 and the worker sends no reset email.
+
+| Setting | Process | Value |
+|---|---|---|
+| `DEYPAY_SCREENING_FILE`, `DEYPAY_SCREENING_SHA256`, `DEYPAY_SCREENING_VALID_UNTIL_UNIX` | Verifier | The compromised-password dataset used by registration. Required when recovery is enabled. |
+| `PASSWORD_RESET_COOLDOWN_SECONDS`, `PASSWORD_RESET_LIMIT_PER_HOUR`, `PASSWORD_RESET_MAX_GUESSES` | Verifier | Defaults 60, 5 and 5, applied per account inside PostgreSQL. |
+| `PASSWORD_RESET_TOKEN_KEY` | Worker | A random 32-byte key encoded as 64 hex characters, different from `EMAIL_VERIFY_TOKEN_KEY`. Supply through the secret store. |
+| `PASSWORD_RESET_BASE_URL` | Worker | The approved absolute URL ending in `/reset-password` on the browser origin of the authentication release. HTTPS is required outside local/test. |
+| `PASSWORD_RESET_TTL_SECONDS` | Worker | Default 1800 (owner decision, 2026-11-25), range 60–3600. |
+
+The worker reuses `EMAIL_PROVIDER`, `EMAIL_FROM`, `RESEND_API_KEY` and the email retry settings. Monitor terminal `RESET_PASSWORD_EMAIL` jobs by status and `last_error`. Leave link tracking disabled for reset mail.
