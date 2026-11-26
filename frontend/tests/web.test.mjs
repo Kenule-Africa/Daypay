@@ -173,9 +173,11 @@ test("profile navigation stops exposing customer data when the API expires a ses
 
   state.me = 401;
   const expired = await navigate();
-  assert.equal(expired.status, 307);
-  assert.equal(new URL(expired.headers.get("location"), origin).pathname, "/login");
+  // Client navigation carries the redirect in the Flight stream.
+  assert.equal(expired.status, 200);
+  assert.match(expired.headers.get("content-type") ?? "", /text\/x-component/);
   const body = await expired.text();
+  assert.match(body, /NEXT_REDIRECT;replace;\/login\?/);
   for (const field of ["id", "email", "phone", "username"]) {
     assert.ok(!body.includes(profile[field]), `rejected RSC response exposed ${field}`);
   }
