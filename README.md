@@ -10,7 +10,7 @@ Use stable Rust with rustfmt and Clippy, Node.js 22 LTS and PostgreSQL 16 or new
 2. Start PostgreSQL with `docker compose up -d --wait postgres`. Data persists in a named development volume. The bootstrap creates a login with database connection and schema usage privileges on first initialization. Keep the generated credentials with that volume across restarts.
 3. Verify the application login with `docker compose exec -T postgres sh -ec 'PGPASSWORD="$DEYPAY_DB_PASSWORD" psql -X -h 127.0.0.1 -U deypay_app -d deypay -f /opt/deypay/verify.psql'` from Bash or PowerShell. This checks the server version, database identity and privileges. For a native local instance, have its administrator create a fresh `deypay` database, then run `psql -X -d deypay -f infrastructure/postgres/bootstrap.psql` with the generated `DEYPAY_DB_PASSWORD` exported. Run `verify.psql` over TCP as `deypay_app`.
 4. From separate terminals, run `node --env-file=.env scripts/run-local.mjs api` and `node --env-file=.env scripts/run-local.mjs worker`. The worker verifies its database connection at startup. Job handling belongs to later phases.
-5. In `frontend/`, run `npm ci` and `npm run dev`. Open `http://127.0.0.1:3000`. The server renders readiness using the API at `http://127.0.0.1:8000`; set server-side `API_BASE_URL` when running the processes on different hosts.
+5. In `frontend/`, run `npm ci` and `npm run dev`. Open `http://127.0.0.1:3000`. The server reads the general API at `http://127.0.0.1:8000`; set server-side `API_BASE_URL` when running the processes on different hosts. See [Customer web app](#customer-web-app) for the browser routing contract.
 
 ## Service configuration
 
@@ -52,7 +52,7 @@ Use `GET /api/v1/legal/documents` to discover the current versions and exact Mar
 
 From `backend/`, run `cargo fmt --all -- --check`, `cargo clippy --locked --workspace --all-targets -- -D warnings`, `cargo build --locked --workspace` and `cargo test --locked --workspace`. After building the binaries and starting the development database, run `node --env-file=.env --test scripts/backend-health.test.mjs` from the repository root. This covers API liveness and readiness, worker startup failure on a database outage and, on POSIX, graceful worker shutdown on SIGTERM. On Windows, stop the connected worker with Ctrl+C and check for the shutdown log and a zero exit code.
 
-From `frontend/`, run `npm run lint`, `npm run build`, `npm run typecheck` and `npm test`. The HTTP smoke test starts the built frontend with a controlled API to exercise available and unavailable states. From the root, run `node --test scripts/engineering-tracking.test.mjs scripts/local-environment.test.mjs` to verify the roadmap tracker, provider register and local credential setup.
+From `frontend/`, run `npm run lint`, `npm run build`, `npm run typecheck` and `npm test`. `npm test` runs the validation unit tests and starts the built frontend against an in-test HTTP double of the API to exercise the session guard, redirects, caching headers and unavailable states. From the root, run `node --test scripts/engineering-tracking.test.mjs scripts/local-environment.test.mjs` to verify the roadmap tracker, provider register and local credential setup.
 ## Email verification
 
 The API and worker opt in with `EMAIL_VERIFICATION_ENABLED=true`. Registration keeps its own release gates. Local and test processes use sandbox consent records. Staging and production accept only identities with published registration evidence.
@@ -88,3 +88,12 @@ Route `POST /api/v1/auth/forgot-password` and `POST /api/v1/auth/reset-password`
 | `PASSWORD_RESET_TTL_SECONDS` | Worker | Default 1800 (owner decision, 2026-11-25), range 60–3600. |
 
 The worker reuses `EMAIL_PROVIDER`, `EMAIL_FROM`, `RESEND_API_KEY` and the email retry settings. Monitor terminal `RESET_PASSWORD_EMAIL` jobs by status and `last_error`. Leave link tracking disabled for reset mail.
+
+## Customer web app
+
+`frontend/` serves the landing page, registration, email verification, sign-in, password recovery and the protected `/app` account area (overview, profile and photo, preferences, sessions). It calls only the implemented APIs; financial features are shown as unavailable.
+
+- **One HTTPS origin.** Serve the web app and both APIs from the authentication release's browser origin (`DEYPAY_LOGIN_ORIGIN`). At the ingress, route `POST /api/v1/auth/{login,refresh,logout,forgot-password,reset-password}`, `GET /api/v1/auth/sessions` and `DELETE /api/v1/auth/sessions/{id}` to `deypay-auth`, other `/api/` paths to `deypay-api`, and everything else to the web app. The browser sends same-origin requests, so the session cookie stays host-only and the Origin check applies. Route `/verify-email` and `/reset-password` to the web app; its pages follow the same fragment-token handling as the API's fallback pages.
+- **Server-side guard.** Every `/app` request forwards only the `__Host-deypay_session` cookie to `GET /api/v1/me` at `API_BASE_URL` (a private address; use TLS between hosts). A 401 redirects to sign-in, and nothing private renders or is cached.
+- **Headers.** Middleware sets a per-request nonce Content-Security-Policy; all pages render dynamically so the nonce applies. Token pages send no referrer and are not stored.
+- **Local development.** `next dev` proxies `/api/` to `API_BASE_URL` and the verifier paths to `DEYPAY_DEV_AUTH_URL` when both are set. The `__Host-` cookie and the Origin check need HTTPS, so use `next dev --experimental-https` with a matching `DEYPAY_LOGIN_ORIGIN` for live sign-in. Production builds never proxy.
