@@ -1,5 +1,25 @@
 # Engineering progress
 
+## 2026-11-26 · PR #14 Phase 3 authentication acceptance
+
+**Accepted `main` commit:** `4fc5c034385ebe34d3b4c9f10594664b923ecd50`, reported as the PR [#14](https://github.com/Kenule-Africa/Daypay/pull/14) merge commit.
+
+**Automated engineering verification passed.** GitHub Actions run [45810331511](https://github.com/Kenule-Africa/Daypay/actions/runs/45810331511) completed successfully for the exact commit above, with backend and frontend checks passing.
+
+**Acceptance:** IMP-P3-008 Password Recovery, IMP-P3-009 Username Availability and IMP-P3-012 Authentication Rate Limiting are Completed — Engineering Accepted based on the merged implementation and successful exact-commit CI. This is automated engineering acceptance; it is not evidence that the services are live, connected to production infrastructure, or approved for customer activation.
+
+**Still In testing:** IMP-P3-002 Email Verification remains In testing until an authorized real Resend staging message is delivered and successfully confirmed. CI and provider-adapter tests do not prove external delivery.
+
+### Outstanding live authentication and verification gates
+
+- Production authentication configuration, signing/verification secrets and required runtime settings must be provisioned and validated through the approved secret/configuration process.
+- PostgreSQL endpoint connectivity, TLS, isolated runtime roles and required grants from the deployed API/auth processes are not verified.
+- Production HTTPS ingress and routing to the intended API/auth processes, including the configured origin and secure session-cookie behavior, are not verified.
+- Authentication admission policies and deployment-level limits/monitoring must be approved and activated; passing the rate-limiting CI is not evidence that production policy values or runtime enforcement are configured.
+- Resend staging sender/domain configuration, HTTPS confirmation origin and safe authorized-recipient delivery/confirmation remain outstanding for P3-002.
+
+**Next planned work:** Claude — production account frontend using the existing real API/session contracts. Codex — authentication environment activation and verification of the live configuration/connectivity gates above. Preserve separate ownership; do not treat successful CI as live activation. Financial eligibility and execution remain fail-closed pending all applicable KYC, policy, provider and release approvals.
+
 ## 2026-11-25 · Cycle 1 engineering acceptance and Cycle 2 assignments
 
 **Verified latest `main`:** `142dd04b3434327219e9a1c86603987aee3f798a`. PR [#11](https://github.com/Kenule-Africa/Daypay/pull/11) and PR [#12](https://github.com/Kenule-Africa/Daypay/pull/12) are merged. The verified GitHub branch listing did not include either Cycle 2 branch; branch publication and implementation are not claimed.
