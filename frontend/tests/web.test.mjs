@@ -137,12 +137,12 @@ test("the landing page renders with a nonce CSP and anti-framing headers", async
 });
 
 test("the account area redirects to sign-in without a session cookie", async () => {
-  for (const path of ["/app", "/app/profile", "/app/security"]) {
+  for (const path of ["/app", "/app/profile", "/app/security", "/app/preferences?section=notifications"]) {
     const response = await get(path);
     assert.equal(response.status, 307);
     const location = new URL(response.headers.get("location"), origin);
     assert.equal(location.pathname, "/login");
-    assert.equal(location.searchParams.get("next"), path);
+    assert.equal(location.searchParams.get("next"), new URL(path, origin).pathname);
     assert.equal(response.headers.get("cache-control"), "no-store");
   }
   assert.equal(state.seen.length, 0);
@@ -156,7 +156,31 @@ test("a rejected session is sent to sign-in without rendering private data", asy
   assert.equal(location.pathname, "/login");
   assert.equal(location.searchParams.get("reason"), "expired");
   const body = await response.text();
-  assert.ok(!body.includes(profile.email));
+  for (const field of ["id", "email", "phone", "username"]) {
+    assert.ok(!body.includes(profile[field]), `rejected HTML response exposed ${field}`);
+  }
+});
+
+test("profile navigation stops exposing customer data when the API expires a session", async () => {
+  const navigate = () => fetch(origin + "/app/profile", {
+    redirect: "manual",
+    headers: { cookie: signedIn, rsc: "1" },
+  });
+  const active = await navigate();
+  assert.equal(active.status, 200);
+  assert.match(active.headers.get("content-type") ?? "", /text\/x-component/);
+  assert.ok((await active.text()).includes(profile.email));
+
+  state.me = 401;
+  const expired = await navigate();
+  // Client navigation carries the redirect in the Flight stream.
+  assert.equal(expired.status, 200);
+  assert.match(expired.headers.get("content-type") ?? "", /text\/x-component/);
+  const body = await expired.text();
+  assert.match(body, /NEXT_REDIRECT;replace;\/login\?/);
+  for (const field of ["id", "email", "phone", "username"]) {
+    assert.ok(!body.includes(profile[field]), `rejected RSC response exposed ${field}`);
+  }
 });
 
 // Requests as the HTTPS ingress forwards them: the browser's Host and scheme.
