@@ -1,5 +1,26 @@
 # Engineering progress
 
+## 2026-11-26 · Phase 5 ledger independent-review remediation (PR #18)
+
+Claude resolved the independent review of PR #18 (reviewed commit `85a5e71`) on the same branch. The analysis, residual risks and test mapping are in [PHASE5-LEDGER-SECURITY-REVIEW.md](PHASE5-LEDGER-SECURITY-REVIEW.md). IMP-P5-001–017 remain In review.
+
+- **FinancialGate bypass (confirmed):**
+  - Customer transfers, reservations and system credits to customers are now refused inside PostgreSQL (LE014) until the database administrator records an approved activation with a per-operation ceiling in `ledger.capability_activations`. None is seeded.
+  - ADMIN attribution is limited to approved corrections.
+  - A customer actor can move only their own funds.
+- **Maker-checker identity spoofing (confirmed):**
+  - Each controller function now acts only for the operator bound to the authenticated database login (`ledger.operator_logins`). A stated operator UUID is a claim that must match the binding (LE016).
+  - No login is bound by default, so operator actions are fail-closed until administrative authentication (IMP-P16-001) issues per-operator credentials.
+- **Provider evidence (confirmed):**
+  - Settlement, provider-confirmed non-execution and remainder releases now require an outcome recorded through the new `deypay_ledger_evidence` role. The outcome is bound to the reservation's registered provider operation (LE015).
+  - Workflows can no longer record EXECUTED.
+  - A login cannot hold both the poster and evidence roles.
+  - The evidence role is granted to no login.
+- **Privileges:**
+  - Grant verification now checks role memberships, an exact per-role EXECUTE allowlist, search_path pinning on every routine, and that `deypay_ledger_owner` cannot write the trust anchors.
+  - A test installs every migration and the grants as a non-superuser migration administrator.
+- **Tests:** 18 PostgreSQL tests (14 extended, 4 new adversarial tests). Every denied operation is checked to write no accounting, outbox or audit record. Hosted CI evidence for the exact commit is in the pull request.
+
 ## 2026-11-26 · Phase 5 financial ledger implementation (IMP-P5-001–017)
 
 Claude implemented the complete Phase 5 ledger on `feat/claude-phase5-financial-ledger` under the owner's 2026-11-26 financial-architecture decisions. All seventeen tasks are In review; engineering acceptance follows owner review and merge.
