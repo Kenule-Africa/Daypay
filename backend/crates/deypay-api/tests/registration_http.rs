@@ -24,6 +24,8 @@ mod password_recovery;
 mod profile_http;
 #[path = "cases/registration_admission.rs"]
 mod registration_admission;
+#[path = "cases/username_availability.rs"]
+mod username_availability;
 
 // Only the compromise verdict is a fixture. Hashing and persistence use the real adapters.
 struct FixtureScreen(Result<bool, RegistrationError>);

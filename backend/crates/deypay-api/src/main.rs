@@ -50,6 +50,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             settings.environment,
             deypay_api::registration::RegistrationSettings::from_env(settings.environment)?,
         ))
+        .merge(deypay_api::usernames::routes())
         .with_state(pool.clone())
         .merge(deypay_api::login::routes(auth.as_ref()))
         .merge(deypay_api::password_recovery::page_routes())

@@ -48,3 +48,33 @@ impl RegistrationRepository for PgRegistrationRepository {
         Ok(())
     }
 }
+
+/// Advisory username availability (IMP-P3-009). The general API may execute
+/// only the IMP-P3-012 admission and `customers.username_available`;
+/// registration's unique keys decide.
+impl deypay_application::usernames::UsernameDirectory for PgRegistrationRepository {
+    async fn admit(
+        &self,
+        handle: &str,
+    ) -> Result<(), deypay_application::usernames::DirectoryError> {
+        use crate::rate_limit::{AdmissionError, AuthOperation, admit_subject};
+        use deypay_application::usernames::DirectoryError;
+        admit_subject(&self.0, AuthOperation::UsernameAvailability, handle)
+            .await
+            .map_err(|error| match error {
+                AdmissionError::Limited => DirectoryError::Limited,
+                AdmissionError::Unavailable => DirectoryError::Unavailable,
+            })
+    }
+
+    async fn available(
+        &self,
+        handle: &str,
+    ) -> Result<bool, deypay_application::usernames::DirectoryError> {
+        sqlx::query_scalar("SELECT customers.username_available($1)")
+            .bind(handle)
+            .fetch_one(&self.0)
+            .await
+            .map_err(|_| deypay_application::usernames::DirectoryError::Unavailable)
+    }
+}

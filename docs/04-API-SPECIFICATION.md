@@ -923,6 +923,14 @@ Images are stored in PostgreSQL, separate from KYC documents, behind a storage i
 
 `GET /api/v1/usernames/availability?username=exampleuser`
 
+The check is public and advisory; the repository owner approved this policy on 2026-11-25. A username in the §16.7 format returns HTTP 200:
+
+```json
+{"data": {"available": true}}
+```
+
+`available` is `false` when the username, ignoring letter case and the optional `@`, is reserved or belongs to an active account. The two cases are indistinguishable, and no information about an account is returned. Registration remains the authority, so a later registration can still find the username taken. A username outside the §16.7 format returns 422 `VALIDATION_ERROR` with `details.fields` `["username"]`. A missing, repeated or additional query parameter returns 400. Per-deployment and per-username admission limits return 429, and an unavailable check returns 503. Responses use `Cache-Control: no-store`.
+
 ## 16.2 Resolve Recipient
 
 `GET /api/v1/recipients/resolve?username=exampleuser`
