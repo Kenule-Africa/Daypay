@@ -9,7 +9,9 @@ use deypay_infrastructure::{MIGRATOR, profiles::PgProfiles};
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use uuid::Uuid;
 
-const OPERATIONS: [&str; 7] = [
+/// Every privileged customer operation the runtime may execute, including the
+/// IMP-P3-009 availability check added by migration 202611251301.
+const OPERATIONS: [&str; 8] = [
     "customers.customer_preferences(uuid)",
     "customers.customer_profile(uuid)",
     "customers.profile_image(uuid,uuid)",
@@ -17,6 +19,7 @@ const OPERATIONS: [&str; 7] = [
     "customers.rename_customer(uuid,text,text)",
     "customers.store_profile_image(uuid,bytea,integer,integer)",
     "customers.update_customer_preferences(uuid,boolean,boolean,boolean,boolean)",
+    "customers.username_available(text)",
 ];
 const HELPERS: [&str; 5] = [
     "customers.lock_profile_image(uuid)",
@@ -30,6 +33,7 @@ async fn runtime(pool: &PgPool) -> sqlx::Result<PgPool> {
     for script in [
         include_str!("../../../../../infrastructure/postgres/phase-two-grants.psql"),
         include_str!("../../../../../infrastructure/postgres/profile-grants.psql"),
+        include_str!("../../../../../infrastructure/postgres/username-availability-grants.psql"),
         include_str!("../../../../../infrastructure/postgres/registration-sandbox.psql"),
     ] {
         sqlx::raw_sql(script).execute(pool).await?;

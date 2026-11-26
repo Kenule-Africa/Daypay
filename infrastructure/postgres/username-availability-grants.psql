@@ -1,0 +1,5 @@
+-- Run as the migration owner after migration 202611251301. The general API
+-- gains only the advisory availability check (IMP-P3-009); it receives no
+-- privilege on username, key or customer rows.
+GRANT USAGE ON SCHEMA customers TO deypay_app;
+GRANT EXECUTE ON FUNCTION customers.username_available(text) TO deypay_app;
