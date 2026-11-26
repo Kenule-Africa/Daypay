@@ -13,3 +13,14 @@ deypay-common = { path = "../deypay-common" }
 deypay-infrastructure = { path = "../deypay-infrastructure" }
 tokio.workspace = true
 tracing.workspace = true
+
+# Used only by the workstation verification outbox example; never by the worker binary.
+[dev-dependencies]
+getrandom = "0.2"
+url = "2"
+uuid.workspace = true
+
+# Workstation-only harness: refuses staging/production and is not part of any deployable build.
+[[example]]
+name = "local_verification_outbox"
+test = true

@@ -380,8 +380,11 @@ version = "0.1.0"
 dependencies = [
  "deypay-common",
  "deypay-infrastructure",
+ "getrandom 0.2.17",
  "tokio",
  "tracing",
+ "url",
+ "uuid",
 ]
 
 [[package]]

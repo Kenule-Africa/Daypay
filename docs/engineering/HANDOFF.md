@@ -58,7 +58,7 @@ Next planned work is Claude's production account frontend and Codex's authentica
 
 1. Claude proceeds with the production account frontend within the existing account-first Phase 17 milestone, using real APIs and the approved session/profile contracts; do not introduce mock product endpoints or invented financial state.
 2. Codex owns authentication environment activation. Verify and record live configuration/secrets custody, PostgreSQL connectivity and roles, HTTPS ingress/routing, approved admission policies and monitoring. Keep authentication disabled/fail-closed until applicable gates are cleared.
-3. Keep IMP-P3-002 In testing until authorized real Resend staging delivery and confirmation are recorded. CI does not establish external delivery.
+3. Keep IMP-P3-002 In testing until authorized real Resend staging delivery and confirmation are recorded. CI does not establish external delivery. Local token generation, redemption and HTTPS sign-in were exercised on the workstation with the [local outbox example](LOCAL-EMAIL-VERIFICATION.md) on 2026-11-26; that is not delivery evidence. See [PROGRESS.md](PROGRESS.md) for the open ingress-cookie and dev-redirect findings.
 4. Keep PR #10 open and on hold. Do not resume KYC verification implementation until the first account UI and internal transaction validation are complete and the owner authorizes resumption.
 5. Continue the approved financial-backend and internal-validation sequence after the account frontend; maintain fail-closed financial eligibility and all provider, KYC, compliance and release gates.
 
