@@ -19,6 +19,12 @@ This entry follows up the three open findings below. PR #16 (the workstation out
 - **Ingress:** the Caddy fallback now forwards one well-formed `__Host-deypay_session` (64 lowercase hex) to the web app, and nothing else, on non-`/_next/*` requests. Authorization stays stripped. Malformed, uppercase, duplicated, absent and other-only cookies reach the app cookie-less; valid cookies alone or among others pass through (7/7). Verifier routes are unchanged.
 - **Credentials:** the four local PostgreSQL role passwords that had appeared in tool output were rotated. libpq computed SCRAM verifiers client-side and the roles changed in one transaction. Five protected files were updated in place. New logins succeeded, old passwords were rejected, and API, verifier and HTTPS readiness returned 200 after restart.
 
+**Password recovery on the workstation (IMP-P3-008):**
+
+- The local verifier now runs with `PASSWORD_RECOVERY_ENABLED=true`. Before this, `forgot-password` returned 503 ("temporarily unavailable"); it now returns 202.
+- The workstation outbox example now also runs the production `RecoveryWorker` (sandbox scope, loopback `/reset-password` page, own random key) when `PASSWORD_RESET_BASE_URL` is set. Reset links are redeemed through the real `/reset-password` page and the verifier endpoint.
+- A private launcher, `admin\email-outbox.py`, runs it with the worker role. External delivery is still not exercised.
+
 **Still to do:**
 
 - **Owner browser walkthrough:** sign-in, dashboard, profile, preferences, security, refresh and logout through `https://127.0.0.2:8443`. It was not run by the agent: the browser extension was unavailable, and agent password entry on this host is not permitted.
