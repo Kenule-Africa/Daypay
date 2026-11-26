@@ -18,6 +18,8 @@ use tower::ServiceExt;
 
 #[path = "cases/login_sessions.rs"]
 mod login_sessions;
+#[path = "cases/password_recovery.rs"]
+mod password_recovery;
 #[path = "cases/profile_http.rs"]
 mod profile_http;
 #[path = "cases/registration_admission.rs"]

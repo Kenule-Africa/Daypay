@@ -7,6 +7,7 @@ pub mod events;
 pub mod kyc_provider_mock;
 pub mod legal;
 pub mod password_hashing;
+pub mod password_recovery;
 pub mod password_screening;
 pub mod profile_images;
 pub mod profiles;

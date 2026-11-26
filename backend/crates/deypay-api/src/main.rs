@@ -52,6 +52,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         ))
         .with_state(pool.clone())
         .merge(deypay_api::login::routes(auth.as_ref()))
+        .merge(deypay_api::password_recovery::page_routes())
         .merge(customer_routes);
     let listener = TcpListener::bind(address).await?;
     let shutdown = shutdown_signal()?;

@@ -27,6 +27,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 mod controls;
+pub mod recovery;
 
 /// Handlers may extract this type only after the session middleware validates
 /// the cookie against the store. It provides identity, without KYC or financial authorization.
@@ -136,11 +137,14 @@ impl VerifierAuth {
 }
 
 /// Credential traffic must be routed directly to the isolated verifier listener.
+/// That includes password recovery, which carries reset tokens and new passwords.
 pub fn routes(_: Option<&Arc<CustomerAuth>>) -> Router {
     let closed = post(|| async { reply(StatusCode::SERVICE_UNAVAILABLE) });
     Router::new()
         .route("/api/v1/auth/login", closed.clone())
-        .route("/api/v1/auth/refresh", closed)
+        .route("/api/v1/auth/refresh", closed.clone())
+        .route("/api/v1/auth/forgot-password", closed.clone())
+        .route("/api/v1/auth/reset-password", closed)
 }
 
 impl<R: SessionStore + 'static> SessionGuard<R> {

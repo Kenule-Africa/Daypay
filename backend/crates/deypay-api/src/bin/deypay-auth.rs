@@ -1,6 +1,7 @@
 //! Dedicated credential and session-control listener with its own deployment identity.
-//! Route POST login, refresh and logout, GET sessions and DELETE sessions/{session_id}
-//! under /api/v1/auth directly here at the trusted HTTPS ingress.
+//! Route POST login, refresh, logout, forgot-password and reset-password, GET sessions
+//! and DELETE sessions/{session_id} under /api/v1/auth directly here at the trusted
+//! HTTPS ingress.
 use axum::{Router, http::StatusCode, routing::get};
 use deypay_api::login::VerifierAuth;
 use deypay_common::{
@@ -13,8 +14,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let settings = Settings::from_env()?;
     init_logging(&settings.log_level)?;
     let auth = VerifierAuth::from_env(&settings).await?;
+    let recovery = deypay_api::login::recovery::RecoverySettings::from_env()?;
     let addr = api_bind(std::env::var("API_BIND_ADDR").ok().as_deref())?;
-    let routes = auth.routes().merge(
+    let routes = auth.routes().merge(auth.recovery_routes(recovery)).merge(
         Router::new()
             .route("/health/live", get(|| async { StatusCode::OK }))
             .route(

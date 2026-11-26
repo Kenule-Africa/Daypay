@@ -11,6 +11,7 @@ use uuid::Uuid;
 use zeroize::Zeroizing;
 
 mod controls;
+pub mod recovery;
 
 /// A 256-bit bearer secret. Its only wire representation is a browser cookie.
 /// Database operations take the digest. This type deliberately omits Debug and Serialize.
