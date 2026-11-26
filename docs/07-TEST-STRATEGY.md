@@ -2,13 +2,15 @@
 # SOFTWARE TEST STRATEGY AND QUALITY ASSURANCE SPECIFICATION
 
 **Document ID:** DP-TEST-007  
-**Version:** 1.0  
-**Status:** Proposed Engineering Baseline  
+**Version:** 1.1  
+**Status:** Approved Engineering Baseline  
+**Approval Status:** Approved  
+**Approval Authority:** DEYPAY Project Owner  
+**Approval Date:** 26 November 2026  
 **Project:** DEYPAY  
 **Organization:** Kenule Africa  
 **Document Type:** Software Test Strategy and Quality Assurance Specification  
 **Filename:** `07-TEST-STRATEGY.md`  
-**Date:** 18 November 2026  
 **Classification:** Confidential — Internal Engineering
 
 ---
@@ -19,50 +21,53 @@
 |---|---|
 | Document Title | DEYPAY Software Test Strategy and Quality Assurance Specification |
 | Document ID | DP-TEST-007 |
-| Version | 1.0 |
+| Version | 1.1 |
 | Product | DEYPAY |
+| Organization | Kenule Africa |
 | Primary Market | Nigeria |
 | Backend | Rust, Axum, Tokio, SQLx |
-| Frontend | React / Next.js, TypeScript, PWA |
-| Primary Database | PostgreSQL |
+| Frontend | Next.js, React, TypeScript |
+| Database | PostgreSQL |
 | Architecture | Modular Monolith |
+| Primary CI Platform | GitHub Actions |
+| Local Testing Policy | Lightweight and environment-specific checks |
 | Initial Customer Assets | USDC and USDT |
 | Fiat Settlement Currency | NGN |
-| Preferred Infrastructure Candidate | Nuvion |
-| Document Status | Proposed Engineering Baseline |
-| Approval Status | Pending |
+| Selected Infrastructure Provider | Nuvion |
+| Initial Blockchain | Solana |
+| Document Status | Approved Engineering Baseline |
+| Approval Status | Approved |
+| Approval Date | 26 November 2026 |
 
 ## DOCUMENT PURPOSE
 
-This document defines the comprehensive software testing, quality assurance, validation, verification, release acceptance and defect management strategy for DEYPAY.
+This document establishes the testing, validation, verification, quality assurance and engineering acceptance standards for DEYPAY.
 
-It establishes how DEYPAY will be tested throughout development and before production release.
+**GitHub Actions is the primary execution environment for computationally expensive automated testing.**
+
+The objective is to reduce local machine resource consumption while maintaining production-grade software quality, financial integrity, security and recoverability.
+
+Claude, Codex and all future engineering agents must use GitHub-hosted CI infrastructure wherever technically feasible.
 
 The strategy covers:
 
-- Functional correctness.
-- Non-functional requirements.
-- Backend services.
-- Frontend applications.
-- Financial accounting.
+- Backend and frontend testing.
+- Authentication and session security.
+- PostgreSQL integration.
+- API contracts.
+- Financial ledger integrity.
 - Wallet operations.
-- Stablecoin deposits and withdrawals.
-- Internal transfers.
-- Stablecoin conversions.
-- Nigerian bank payments.
-- Third-party provider integrations.
-- Authentication and authorization.
-- KYC and compliance controls.
-- Security.
-- Database integrity.
-- Performance.
-- Reliability.
-- Recovery.
+- Blockchain deposits and withdrawals.
+- On-ramping and off-ramping.
+- Nuvion integration.
+- Auto-Settlement.
+- Internal transfers and bank payments.
+- Concurrency and idempotency.
+- Security and recovery.
+- Performance and reliability.
 - Production readiness.
 
-The objective is to ensure that DEYPAY operates correctly, securely and reliably when handling customer financial assets.
-
-This document defines required testing and acceptance standards. It does not claim that the software has already passed these tests.
+This document defines requirements and acceptance standards. Its approval does not constitute evidence that individual software features have passed testing.
 
 ---
 
@@ -118,81 +123,97 @@ This document defines required testing and acceptance standards. It does not cla
 48. Test Risks and Mitigations
 49. Testing Deliverables
 50. Acceptance Criteria and Final Definition
+51. Mandatory GitHub Actions Execution Policy
+52. Agent CI Monitoring Protocol
+53. Local Testing and Environment-Specific Acceptance
+54. CI Security, Performance and Maintenance Rules
 
 ---
 
 # 1. EXECUTIVE SUMMARY
 
-DEYPAY is a stablecoin-first financial application designed initially for the Nigerian market.
+DEYPAY is a stablecoin-first financial platform designed initially for Nigeria.
 
-The MVP will support USDC and USDT customer wallets, external blockchain deposits and withdrawals, internal transfers, stablecoin conversions, NGN funding and bank payouts, and the Pay Anyone feature.
+The product will support USDC and USDT wallets, external blockchain deposits and withdrawals, internal transfers, stablecoin conversion, NGN funding, bank payouts and Auto-Settlement.
 
-Because the product handles customer financial value, testing must go beyond ordinary application functionality.
+Testing must go beyond ordinary functional verification because the product will handle financial value.
 
-A payment system can appear functional while containing serious defects such as:
+Critical risks include:
 
 - Incorrect customer balances.
-- Duplicate financial credits.
+- Duplicate credits.
 - Double spending.
-- Duplicate bank payouts.
-- Unbalanced accounting journals.
+- Duplicate payouts.
+- Unbalanced journals.
 - Unauthorized withdrawals.
 - Incorrect conversion amounts.
-- Inconsistent provider settlement.
+- Provider settlement inconsistencies.
 - Failed transaction recovery.
-- Exposure of sensitive customer information.
+- Sensitive information exposure.
 
-The testing strategy must therefore prioritize financial correctness, transaction integrity, security and recoverability.
+DEYPAY adopts a risk-based, automation-first testing approach.
 
-DEYPAY will adopt a risk-based, automation-first testing approach.
+## 1.1 GitHub-First Testing Decision
 
-Critical financial logic must be tested at multiple levels.
+GitHub Actions is the primary automated testing platform.
 
-No feature may be considered production-ready solely because its user interface works.
+Heavy builds, compilation, static analysis, database integration tests and regression suites must run on GitHub-hosted runners wherever feasible.
+
+Local development machines should primarily handle editing, lightweight checks, interactive debugging and environment-specific verification.
+
+**A test result is valid evidence only when its completed GitHub Actions run matches the exact code revision under review.**
 
 ---
 
 # 2. TESTING OBJECTIVES
 
-## TEST-OBJ-001 — Functional Correctness
+**TEST-OBJ-001 — Functional Correctness**
 
-Verify that every implemented feature behaves according to the Functional Requirements Specification.
+Verify that implemented functionality satisfies approved requirements.
 
-## TEST-OBJ-002 — Financial Integrity
+**TEST-OBJ-002 — Financial Integrity**
 
-Verify that customer balances, reservations, accounting journals and financial transactions remain correct.
+Verify financial balances, reservations and journals.
 
-## TEST-OBJ-003 — Security
+**TEST-OBJ-003 — Security**
 
-Verify that unauthorized users cannot access protected resources or initiate financial operations.
+Verify authentication, authorization and sensitive information protection.
 
-## TEST-OBJ-004 — Provider Reliability
+**TEST-OBJ-004 — Provider Reliability**
 
-Verify that integrations handle successful, failed, delayed and uncertain provider operations safely.
+Verify successful, failed, delayed and uncertain provider operations.
 
-## TEST-OBJ-005 — Data Integrity
+**TEST-OBJ-005 — Data Integrity**
 
-Verify that financial and customer records remain consistent.
+Verify consistent database and accounting records.
 
-## TEST-OBJ-006 — Transaction Safety
+**TEST-OBJ-006 — Transaction Safety**
 
-Verify that duplicate requests, concurrent operations and retries do not create duplicate financial effects.
+Prevent double spending, duplicate requests and unsafe retries.
 
-## TEST-OBJ-007 — Performance
+**TEST-OBJ-007 — Performance**
 
-Verify that the platform performs within approved operating thresholds.
+Measure system behavior against approved thresholds.
 
-## TEST-OBJ-008 — Recoverability
+**TEST-OBJ-008 — Recoverability**
 
-Verify that failures can be recovered without losing or duplicating financial value.
+Verify failures cannot silently lose or duplicate financial value.
 
-## TEST-OBJ-009 — Compliance Enforcement
+**TEST-OBJ-009 — Compliance Enforcement**
 
-Verify that applicable customer eligibility, transaction restrictions and compliance controls are enforced.
+Verify applicable customer eligibility and transaction restrictions.
 
-## TEST-OBJ-010 — Release Confidence
+**TEST-OBJ-010 — Release Confidence**
 
-Provide objective evidence that a release satisfies its acceptance criteria.
+Collect objective engineering acceptance evidence.
+
+**TEST-OBJ-011 — Efficient Development**
+
+Reduce unnecessary local computation through remote CI verification.
+
+**TEST-OBJ-012 — Agent Accountability**
+
+Require engineering agents to report exact commits, workflow results and unresolved test failures.
 
 ---
 
@@ -200,43 +221,45 @@ Provide objective evidence that a release satisfies its acceptance criteria.
 
 ## 3.1 Financial Correctness First
 
-Financial integrity takes precedence over convenience and performance.
+Financial correctness takes precedence over performance and convenience.
 
 ## 3.2 Test Early
 
-Testing begins during requirements and architecture design.
+Testing begins during implementation rather than after development finishes.
 
-## 3.3 Automate Repeated Verification
+## 3.3 GitHub Actions First
 
-Automated tests must protect critical functionality against regression.
+Heavy automated testing must run on GitHub-hosted infrastructure wherever possible.
 
-## 3.4 Test Failure Conditions
+## 3.4 Deterministic Testing
 
-Every critical financial workflow must be tested under both successful and unsuccessful conditions.
+Automated tests must use reproducible configurations and controlled data.
 
 ## 3.5 Independent Verification
 
-Critical financial outcomes must be verified against independent records.
+Critical financial outcomes must be checked against independent records.
 
-## 3.6 Production-Like Testing
+## 3.6 Failure-Condition Coverage
 
-Staging must reasonably represent production architecture and behavior.
+Every critical financial operation must be tested for success, failure, concurrency and recovery.
 
-## 3.7 Deterministic Test Data
+## 3.7 Real Infrastructure Where Required
 
-Automated tests should use controlled and reproducible data.
+PostgreSQL integration tests must use real PostgreSQL.
 
-## 3.8 Traceability
+Provider simulations do not replace real provider acceptance.
 
-Every critical requirement must be linked to test cases.
+## 3.8 No Real Customer Funds in Automated Testing
 
-## 3.9 No Real Customer Funds in Automated Testing
+Ordinary CI must not move real financial assets.
 
-Automated tests must not use actual customer funds.
+## 3.9 Evidence-Based Approval
 
-## 3.10 Evidence-Based Approval
+Agents must provide verifiable test evidence.
 
-Release approval must rely on documented test results.
+## 3.10 Latest-Commit Verification
+
+Passing tests from older commits do not establish that newer commits are correct.
 
 ---
 
@@ -244,180 +267,136 @@ Release approval must rely on documented test results.
 
 ## 4.1 In-Scope Components
 
-- Customer registration.
-- Authentication.
-- Session management.
-- User profiles.
-- Username management.
-- KYC.
-- Wallet provisioning.
-- Wallet balances.
-- Blockchain deposits.
-- Blockchain withdrawals.
+- Customer registration and authentication.
+- Session management and password recovery.
+- Customer profiles and usernames.
+- Wallet provisioning and balances.
+- Financial ledger.
+- Blockchain deposits and withdrawals.
 - Internal transfers.
 - Stablecoin conversion.
-- NGN on-ramp.
-- NGN off-ramp.
+- NGN on-ramping.
+- NGN off-ramping.
+- Auto-Settlement.
 - Pay Anyone.
-- Bank verification.
-- Beneficiary management.
-- Transaction history.
-- Receipts.
-- Notifications.
-- Administrative interfaces.
-- Financial ledger.
-- Provider integrations.
-- Background workers.
-- Reconciliation.
-- Database migrations.
-- API contracts.
-- Frontend PWA.
+- Beneficiary and bank verification.
+- Nuvion integration.
+- Solana blockchain integration.
+- RPC infrastructure.
+- Webhook processing.
+- Transaction history and receipts.
+- Administration and reconciliation.
+- Frontend application.
 - Security controls.
-- Deployment and recovery.
+- CI/CD and deployment verification.
 
-## 4.2 Out-of-Scope Features
+## 4.2 Future Features
 
-The following are outside MVP testing unless formally introduced into the approved scope:
+The following require separate implementation and testing scope:
 
+- Polymarket.
+- Polygon trading.
+- Debit cards.
 - Gift cards.
-- Prediction markets.
-- Stock trading.
-- Consumer payment cards.
-- Unapproved blockchain networks.
-- Unapproved digital assets.
+- Additional blockchain networks.
 - Other future financial products.
+
+Debit cards and gift cards are planned together as future integrations.
 
 ## 4.3 Scope Changes
 
-New functionality must include corresponding test requirements before implementation is accepted.
+New functionality must receive corresponding test requirements and acceptance criteria before being considered complete.
 
 ---
 
 # 5. TESTING GOVERNANCE AND RESPONSIBILITIES
 
-## 5.1 Engineering Lead
+## 5.1 Product Owner
 
-Responsible for:
+Controls project scope, implementation authorization, milestones and final product acceptance.
 
-- Technical quality standards.
-- Test architecture.
-- CI/CD quality gates.
-- Engineering acceptance.
+## 5.2 Engineering Agents
 
-## 5.2 Backend Engineers
+Claude, Codex and future engineering agents must:
 
-Responsible for:
+1. Implement assigned production functionality.
+2. Add appropriate tests.
+3. Commit and push to assigned branches.
+4. Monitor GitHub Actions.
+5. Investigate failed jobs.
+6. Fix implementation defects.
+7. Verify the corrected commit.
+8. Report actual test results.
 
-- Domain unit tests.
-- API tests.
-- Database integration tests.
-- Financial workflow tests.
-- Provider adapter tests.
+Agents must not modify unrelated ownership areas without authorization.
 
-## 5.3 Frontend Engineers
+## 5.3 Engineering Review
 
-Responsible for:
+Review implementation quality, architecture, CI evidence and security implications.
 
-- Component tests.
-- Form validation tests.
-- User interaction tests.
-- Accessibility tests.
-- Browser compatibility tests.
+## 5.4 Security Review
 
-## 5.4 QA Engineer
+Assess critical authentication and financial security boundaries.
 
-Responsible for:
+## 5.5 Financial Operations Review
 
-- Test planning.
-- Test case design.
-- End-to-end testing.
-- Regression testing.
-- Defect verification.
-- Test reporting.
+Validate ledger, settlement and reconciliation correctness.
 
-## 5.5 Security Reviewer
+## 5.6 Approval Authority
 
-Responsible for:
+The DEYPAY Project Owner approves this testing strategy for internal development.
 
-- Security test review.
-- Vulnerability assessment.
-- Authentication and authorization validation.
-- Penetration testing coordination.
-
-## 5.6 Financial Operations Reviewer
-
-Responsible for:
-
-- Ledger accounting validation.
-- Reconciliation acceptance.
-- Financial exception testing.
-- Settlement correctness review.
-
-## 5.7 Compliance Reviewer
-
-Responsible for:
-
-- KYC workflow validation.
-- Compliance control verification.
-- Transaction restriction testing.
-
-## 5.8 Product Owner
-
-Responsible for:
-
-- Business acceptance.
-- Feature acceptance.
-- Final product sign-off.
-
-Where one person holds multiple roles during early development, independent review must still be arranged for critical financial and security controls.
+Approval of this document does not claim that external audits, certifications or regulatory permissions have been independently obtained.
 
 ---
 
 # 6. TEST ARCHITECTURE
 
-DEYPAY will use a layered testing architecture.
+DEYPAY uses a layered testing model:
 
-```text
-                  MANUAL ACCEPTANCE TESTS
-                            |
-                     END-TO-END TESTS
-                            |
-                     API CONTRACT TESTS
-                            |
-                    INTEGRATION TESTS
-                            |
-                        UNIT TESTS
-```
-
-The testing approach will emphasize unit and integration testing while maintaining focused end-to-end coverage.
+    MANUAL ACCEPTANCE
+            |
+      END-TO-END TESTS
+            |
+      API CONTRACT TESTS
+            |
+      INTEGRATION TESTS
+            |
+         UNIT TESTS
 
 ## 6.1 Unit Tests
 
-Validate isolated business rules.
+Verify isolated business logic.
 
 ## 6.2 Integration Tests
 
-Validate interactions between components and real infrastructure dependencies.
+Verify application and infrastructure interactions.
 
 ## 6.3 API Tests
 
-Validate HTTP contracts and authorization.
+Verify HTTP routes, authentication, authorization and contracts.
 
 ## 6.4 End-to-End Tests
 
-Validate complete customer workflows.
+Verify complete customer workflows.
 
 ## 6.5 Security Tests
 
-Validate defensive controls and abuse resistance.
+Verify protection and abuse resistance.
 
 ## 6.6 Performance Tests
 
-Validate throughput, latency and resource utilization.
+Verify capacity and response behavior.
 
 ## 6.7 Recovery Tests
 
-Validate safe behavior during infrastructure and provider failures.
+Verify safe operation following failures.
+
+## 6.8 Execution Platform
+
+Automated tests run through GitHub Actions by default.
+
+Environment-specific checks may run locally or on separately authorized infrastructure.
 
 ---
 
@@ -425,65 +404,52 @@ Validate safe behavior during infrastructure and provider failures.
 
 ## 7.1 Local Development
 
-Purpose:
+Used for:
 
-Fast developer feedback.
+- Editing.
+- Interactive debugging.
+- Targeted tests.
+- Manual frontend inspection.
+- Private environment-specific verification.
 
-Components:
+Avoid unnecessary repeated full-workspace testing.
 
-- Rust backend.
-- PostgreSQL.
-- Mock providers.
-- Local frontend.
+## 7.2 GitHub Actions
 
-## 7.2 Continuous Integration
+Primary automated testing environment.
 
-Purpose:
+GitHub-hosted runners should execute:
 
-Automated verification for every relevant code change.
+- Rust formatting.
+- Clippy.
+- Rust compilation.
+- Unit tests.
+- PostgreSQL integration tests.
+- Database migrations.
+- HTTP integration tests.
+- Backend lifecycle tests.
+- Frontend linting.
+- TypeScript checks.
+- Frontend builds.
+- Frontend unit tests.
+- Financial invariant tests.
+- Applicable regression tests.
 
-Requirements:
-
-- Isolated test database.
-- Reproducible configuration.
-- Automated migrations.
-- Automated test execution.
+CI resources must be isolated and cleaned up afterward.
 
 ## 7.3 Integration Environment
 
-Purpose:
-
-Validate complete backend interactions.
-
-Components:
-
-- API.
-- Worker.
-- PostgreSQL.
-- Provider simulators.
-- Webhook receiver.
+Supports the Rust API, workers, PostgreSQL, provider adapters, webhook receiver and transaction processing.
 
 ## 7.4 Staging Environment
 
-Purpose:
+Supports production-like tests, including real email delivery, provider sandbox access and HTTPS authentication.
 
-Production-like testing.
-
-Requirements:
-
-- Production-equivalent application configuration.
-- Separate credentials.
-- Test provider accounts.
-- Controlled synthetic data.
-- Monitoring.
+Staging requires separate credentials and configuration.
 
 ## 7.5 Production
 
-Purpose:
-
-Serve real customers.
-
-Production testing must be restricted to approved smoke tests, monitoring and explicitly authorized operational verification.
+Only approved smoke tests and authorized operational verification may run in production.
 
 ---
 
@@ -491,222 +457,176 @@ Production testing must be restricted to approved smoke tests, monitoring and ex
 
 ## 8.1 Synthetic Customer Data
 
-Use fictional customer records.
+Use controlled fictional identities.
 
 ## 8.2 Synthetic Financial Data
 
-Use controlled balances and transaction histories.
+Use reproducible test balances and transactions.
 
 ## 8.3 Provider Test Data
 
-Use provider sandbox accounts where available.
+Use authorized sandbox resources where available.
 
 ## 8.4 Data Isolation
 
-Test data must not contaminate production.
+CI must not connect to production customer databases.
 
 ## 8.5 Sensitive Data
 
-Real BVN, NIN and other sensitive identity data must not be used in ordinary automated tests.
+Never expose credentials, passwords, API keys, session tokens or private configuration in logs.
 
-## 8.6 Test Fixtures
+## 8.6 Fixtures
 
-Fixtures must support:
+Support:
 
-- Approved KYC customers.
-- Pending KYC customers.
-- Restricted customers.
-- Customers with zero balances.
-- Customers with sufficient balances.
-- Customers with reserved funds.
+- Verified and unverified accounts.
+- Restricted accounts.
+- Sufficient and insufficient funds.
+- Reserved balances.
+- Duplicate requests.
+- Concurrent requests.
 - Failed provider operations.
-- Pending reconciliation cases.
+- Pending reconciliation.
+- Expired and revoked sessions.
 
 ## 8.7 Cleanup
 
-Automated tests must clean up or isolate created records.
+Temporary databases, services and test records must be isolated or removed following execution.
 
 ---
 
 # 9. UNIT TESTING STRATEGY
 
-## 9.1 Objective
-
-Verify individual functions and domain rules independently.
-
-## 9.2 Backend Unit Tests
+## 9.1 Scope
 
 Test:
 
 - Financial amount validation.
 - Asset precision.
-- Username validation.
-- Transaction limits.
+- Username rules.
+- Password requirements.
 - Quote expiration.
 - Fee calculations.
-- Authorization decisions.
-- State transitions.
-- Ledger journal balancing.
+- Authorization.
+- Transaction states.
+- Ledger balancing.
 
-## 9.3 Rust Tooling
+## 9.2 Rust Tooling
 
-Primary tool:
+Required commands, executed from the backend directory:
 
-`cargo test`
+    cargo fmt --all -- --check
+    cargo clippy --locked --workspace --all-targets -- -D warnings
+    cargo test --locked --workspace
 
-Recommended additional tools:
+## 9.3 Requirements
 
-- `cargo clippy`
-- `cargo fmt`
-- `cargo nextest`
-- Property-based testing libraries such as `proptest`
+Tests must be deterministic, isolated, repeatable and clearly named.
 
-## 9.4 Unit Test Requirements
-
-Unit tests must be:
-
-- Deterministic.
-- Isolated.
-- Repeatable.
-- Fast.
-- Clearly named.
-
-## 9.5 Critical Rule
-
-Financial calculations must be tested using exact decimal or integer representations.
+Financial calculations must use exact representations.
 
 ---
 
 # 10. INTEGRATION TESTING STRATEGY
 
-## 10.1 Objective
+## 10.1 Required Integrations
 
-Verify interactions between application components.
-
-## 10.2 Required Integration Tests
-
-- Rust application to PostgreSQL.
-- API to authentication service.
-- Application service to ledger.
+- API to PostgreSQL.
+- Authentication to sessions.
+- Application services to ledger.
 - Ledger to balance projections.
-- Payment orchestration to provider adapter.
-- Worker to durable job storage.
-- Webhook receiver to event inbox.
-- Reconciliation service to provider records.
+- Payments to provider adapters.
+- Workers to durable jobs.
+- Webhooks to event inbox.
+- Reconciliation to provider records.
 
-## 10.3 Database Integration
+## 10.2 Database
 
 Use real PostgreSQL for financial integration tests.
 
-SQLite or purely mocked database behavior must not replace PostgreSQL validation for ledger correctness.
+## 10.3 Rollback
 
-## 10.4 Transaction Rollback
+Failed operations must not persist partial financial state.
 
-Tests must verify that partial financial operations do not persist after failures.
+## 10.4 CI
+
+Run reproducible database integration tests against disposable PostgreSQL in GitHub Actions.
 
 ---
 
 # 11. API TESTING STRATEGY
 
-## 11.1 Objective
+## 11.1 Contracts
 
-Verify compliance with `04-API-SPECIFICATION.md`.
+Verify implemented routes against approved API specifications.
 
-## 11.2 Required Tests
+## 11.2 Coverage
 
-- Correct HTTP methods.
-- Correct routes.
+- HTTP methods and paths.
 - Request validation.
 - Response schemas.
 - Authentication.
 - Authorization.
-- Error codes.
+- Error handling.
 - Pagination.
 - Idempotency.
 - Rate limiting.
 
-## 11.3 Contract Validation
+## 11.3 Negative Tests
 
-API responses must match approved OpenAPI schemas.
+Test malformed requests, invalid amounts, expired quotes, unauthorized access and conflicting idempotency keys.
 
-## 11.4 Negative Testing
+## 11.4 Compatibility
 
-Test:
-
-- Missing fields.
-- Invalid amounts.
-- Unsupported assets.
-- Expired quotes.
-- Unauthorized access.
-- Invalid resource IDs.
-- Malformed payloads.
-- Conflicting idempotency keys.
-
-## 11.5 Compatibility
-
-Backward-compatible API changes must not break existing clients.
+Approved clients must not break from unintended contract changes.
 
 ---
 
 # 12. DATABASE TESTING STRATEGY
 
-## 12.1 Migration Testing
+## 12.1 Migrations
 
-Every migration must be tested against a clean database.
+Test clean installation and supported upgrade paths.
 
-## 12.2 Constraint Testing
+## 12.2 Constraints
 
-Verify:
+Verify primary keys, foreign keys, unique constraints and financial integrity rules.
 
-- Primary keys.
-- Foreign keys.
-- Unique constraints.
-- Check constraints.
-- Financial integrity constraints.
+## 12.3 Concurrency
 
-## 12.3 Rollback Testing
+Test locking behavior and simultaneous operations.
 
-Where rollback migrations are supported, validate them.
+## 12.4 Recovery
 
-Destructive production migrations require separate recovery planning.
+Validate supported rollback and recovery procedures.
 
-## 12.4 Data Integrity
+## 12.5 CI
 
-Verify that invalid financial records cannot be committed.
-
-## 12.5 Concurrent Database Operations
-
-Test simultaneous updates and locking behavior.
-
-## 12.6 Backup Restoration
-
-Verify restored data integrity and accounting consistency.
+Provision isolated PostgreSQL, apply migrations and run database tests through GitHub Actions.
 
 ---
 
 # 13. FINANCIAL LEDGER TESTING
 
-This is a critical testing domain.
-
 ## 13.1 Double-Entry Validation
 
-Every posted journal must balance independently by asset.
+Every journal balances independently by asset.
 
 ## 13.2 Immutability
 
-Posted journals and entries must not be modified or deleted.
+Posted entries cannot be altered or deleted.
 
-## 13.3 Available Balance
+## 13.3 Available Balances
 
-Available balances must be calculated correctly.
+Available balances must remain correct.
 
-## 13.4 Reserved Balance
+## 13.4 Reserved Balances
 
-Reserved balances must be calculated correctly.
+Reservations must remain accurate.
 
 ## 13.5 Insufficient Funds
 
-Operations must not exceed available balances.
+Spending cannot exceed available funds.
 
 ## 13.6 Atomic Transfers
 
@@ -714,111 +634,120 @@ Internal transfers must debit and credit atomically.
 
 ## 13.7 Duplicate Posting
 
-The same accounting event must not be posted twice.
+One event cannot post twice.
 
 ## 13.8 Reversals
 
-Reversals must use compensating journals.
+Use compensating journals.
 
 ## 13.9 Projection Rebuild
 
-Balance projections must be reconstructable from posted journals.
+Balances must be reconstructable from authoritative entries.
 
 ## 13.10 Cross-Asset Accounting
 
-Conversions must balance independently for USDC, USDT and NGN.
+USDC, USDT and settlement-currency accounting must preserve per-asset balancing.
 
 ## 13.11 Reconciliation
 
-Customer liabilities must be reconcilable with custody and settlement evidence.
+Customer liabilities must reconcile with custody and settlement evidence.
 
-## 13.12 Mandatory Ledger Invariants
+## 13.12 Mandatory Invariants
 
-The following must always hold:
-
-1. Every posted journal balances by asset.
-2. Posted journal entries are immutable.
-3. Available customer balances do not become negative through ordinary spending.
-4. A financial event cannot post twice.
-5. Customer balances match the sum of authoritative postings.
-6. Reversals preserve original accounting history.
+1. Journals balance by asset.
+2. Posted entries are immutable.
+3. Available balances cannot be overspent.
+4. Events post at most once.
+5. Projections match authoritative postings.
+6. Reversals preserve history.
 7. Reservations cannot be consumed twice.
 8. External financial operations remain traceable.
 
-Any violation of these invariants is a release-blocking defect.
+Any violation blocks engineering acceptance.
 
 ---
 
 # 14. CUSTOMER REGISTRATION TESTING
 
-## 14.1 Successful Registration
+Verify:
 
-Verify creation of a valid customer identity.
+- Successful registration.
+- Duplicate email protection.
+- Duplicate username protection.
+- Valid E.164 phone numbers.
+- Weak password rejection.
+- Consistent account creation.
+- Email verification intent creation.
+- Unverified-account restrictions.
+- Idempotent email confirmation.
 
-## 14.2 Duplicate Email
+Phone ownership verification remains deferred after MVP.
 
-Verify duplicate registration is handled safely.
+Registration must not independently establish an authenticated session or KYC approval.
 
-## 14.3 Duplicate Username
-
-Verify username uniqueness.
-
-## 14.4 Invalid Phone
-
-Reject a missing phone or invalid E.164 number. Verify that a valid number is stored with a NULL verification timestamp.
-
-## 14.5 Weak Password
-
-Verify password policy enforcement.
-
-## 14.6 Verification Requirements
-
-Verify unverified users cannot perform restricted financial operations.
-
-For MVP, verify that registration queues exactly one email intent, concurrent confirmation advances contact status once, and the phone stays unverified. Check that historical phone intents remain undispatched and that email confirmation creates no KYC approval, session, wallet or transaction.
-
-## 14.7 Wallet Profile Provisioning
-
-Verify required USDC and USDT wallet profiles are created according to the approved provisioning workflow.
-
-## 14.8 Partial Failure
-
-Verify registration does not leave inconsistent internal identity records.
+Wallet provisioning follows the approved wallet lifecycle.
 
 ---
 
 # 15. AUTHENTICATION AND SESSION TESTING
 
-Test:
+## 15.1 Coverage
 
-- Successful login.
+- Login.
 - Invalid credentials.
-- Expired session.
-- Revoked session.
-- Password reset.
+- Password recovery.
 - Email verification.
-- Phone verification (post-MVP).
-- MFA.
-- Session rotation.
-- Account lock or risk restriction.
-- Login rate limiting.
-- Unauthorized resource access.
+- Session creation.
+- Session expiration.
+- Refresh.
+- Rotation.
+- Logout.
+- Revocation.
+- Protected API access.
+- Username availability.
+- Rate limiting.
+- Account restrictions.
 
-## 15.1 Security Requirement
+## 15.2 Security
 
-A valid session must not automatically authorize every financial transaction.
+Verify:
 
-Sensitive operations may require transaction-specific step-up authorization.
+- Cross-customer access is rejected.
+- Revoked sessions cannot be reused.
+- Password recovery invalidates affected sessions.
+- Reset challenges expire and are single-use.
+- Account-enumeration protections remain intact.
+- Refresh tokens resist replay.
+- Missing rate-limit policies fail safely.
+- Sensitive responses are not improperly cached.
 
-Verify server-side idle and absolute expiry, refresh rotation, strong administrative MFA and recovery revocation of sessions and proofs. Confirm a recovery hold blocks withdrawals and bank payments until release criteria are met. Change a confirmed recipient, network, amount, fee or quote: execution must fail with zero postings. Race two new request keys using one proof: at most one acceptance. Replay its original key: return that acceptance. Race a withdrawal and bank payment that together exceed a shared limit: only the allowed amount may be accepted.
+## 15.3 Financial Authorization
+
+A valid login session does not automatically authorize a financial transaction.
+
+Transaction-specific authorization and applicable eligibility controls must be enforced.
+
+## 15.4 CI
+
+Run authentication regression tests in GitHub Actions.
+
+Real email delivery and hosted HTTPS behavior require separate staging acceptance.
+
+## 15.5 Final Authentication Milestone
+
+After Claude's authentication PR is reviewed and merged:
+
+1. Run reproducible automated tests through GitHub Actions.
+2. Verify the exact merged commit.
+3. Complete necessary environment-specific testing in the main DEYPAY directory.
+4. Record any remaining staging evidence.
+5. Complete engineering acceptance before frontend implementation.
 
 ---
 
 # 16. KYC AND COMPLIANCE TESTING
 
-## 16.1 KYC Statuses
-
-Test:
+Verify:
 
 - Not started.
 - Draft.
@@ -829,256 +758,164 @@ Test:
 - Rejected.
 - Expired.
 
-## 16.2 Financial Restrictions
+Test restrictions, provider responses, authorized review, audits and resubmission.
 
-Verify that customers without required approval cannot execute restricted transactions.
+KYC verification implementation follows the approved deferred schedule.
 
-## 16.3 Provider Responses
-
-Test:
-
-- Approved.
-- Rejected.
-- Pending.
-- Timeout.
-- Malformed response.
-- Duplicate webhook.
-
-## 16.4 Manual Review
-
-Verify manual review decisions are authorized and audited.
-
-Exercise approve, reject and request_information. Require the reviewer's permission, exactly one decision audit event on success, and zero state changes on an unauthorized or stale request. Verify resubmission after an information request and that it alone cannot enable financial access.
-
-## 16.5 Compliance Holds
-
-Verify restricted customers cannot bypass controls through alternate endpoints.
+Existing financial restrictions must not be bypassed.
 
 ---
 
 # 17. WALLET MANAGEMENT TESTING
 
-## 17.1 Wallet Provisioning
+Verify:
 
-Verify wallet profiles are correctly associated with customers.
+- Wallet provisioning.
+- Customer ownership.
+- USDC and USDT support.
+- Asset/network compatibility.
+- Wallet status.
+- Balance accuracy.
+- Provisioning failure.
+- Unsupported-network rejection.
+- Deposit address ownership.
 
-## 17.2 Supported Assets
+The initial operational blockchain is Solana.
 
-Verify only approved assets are available.
-
-## 17.3 Balance Accuracy
-
-Verify available, reserved and total balances.
-
-## 17.4 Wallet Restrictions
-
-Verify restricted wallets reject prohibited operations.
-
-## 17.5 Provider Provisioning Failure
-
-Verify failed address provisioning does not create incorrect balances.
-
-## 17.6 Network Validation
-
-Verify unsupported asset/network combinations are rejected.
+Additional networks require separate implementation acceptance.
 
 ---
 
 # 18. STABLECOIN DEPOSIT TESTING
 
-## 18.1 Successful Deposit
+## 18.1 Successful Deposits
 
-Verify a confirmed eligible deposit credits the correct customer.
+Confirmed eligible deposits credit the correct customer once.
 
-## 18.2 Pending Deposit
+## 18.2 Pending Deposits
 
-Verify unconfirmed deposits are not prematurely spendable.
+Unconfirmed deposits are not prematurely spendable.
 
-## 18.3 Duplicate Deposit Event
+## 18.3 Duplicate Events
 
-Verify repeated provider events do not create duplicate credits.
+Duplicate events cannot produce duplicate credits.
 
-## 18.4 Wrong Network
+## 18.4 Unsupported Assets
 
-Verify unsupported network deposits do not automatically credit customer balances.
+Unsupported networks and tokens must not receive ordinary credits.
 
-## 18.5 Wrong Token
+## 18.5 Reorganization
 
-Verify unsupported tokens do not receive normal credit.
+Test invalidated deposits and recovery behavior.
 
-## 18.6 Compliance Hold
+## 18.6 Reconciliation
 
-Verify suspicious deposits can be held.
+Credits must reconcile with blockchain and custody evidence.
 
-## 18.7 Blockchain Reorganization
+## 18.7 Auto-Settlement
 
-Use the reorganization fixture in §29.6. Verify both the available-funds and already-spent branches and the evidence linked to each recovery decision.
+Test:
 
-## 18.8 Reconciliation
+- Dedicated address ownership.
+- Linked-bank mapping.
+- Correct Solana USDC detection.
+- Required confirmation.
+- Single conversion and payout.
+- Duplicate webhook protection.
+- Rates and fees.
+- Failed conversion.
+- Failed payout.
+- Small-value deposits.
+- Reconciliation.
 
-Verify deposit credits match verified custody evidence.
+Auto-Settlement shares the approved Off-Ramp Engine.
 
 ---
 
 # 19. INTERNAL TRANSFER TESTING
 
-## 19.1 Successful Transfer
+Verify:
+
+- Successful transfers.
+- Insufficient funds.
+- Self-transfer restrictions.
+- Invalid recipients.
+- Restricted recipients.
+- Concurrency safety.
+- Idempotency.
+- Accurate history.
+- Customer privacy.
+
+Example:
 
 Customer A sends 25 USDT to Customer B.
 
 Expected:
 
-- Customer A decreases by 25 USDT.
-- Customer B increases by 25 USDT.
+- Sender decreases by 25 USDT.
+- Recipient increases by 25 USDT.
 - Aggregate customer liability remains unchanged.
-- One valid balanced journal is posted.
-
-## 19.2 Insufficient Funds
-
-Verify the transfer is rejected.
-
-## 19.3 Self-Transfer
-
-Verify prohibited self-transfers are rejected.
-
-## 19.4 Invalid Recipient
-
-Verify invalid recipients are rejected.
-
-## 19.5 Restricted Recipient
-
-Verify applicable recipient restrictions are enforced.
-
-## 19.6 Concurrent Transfers
-
-Verify simultaneous transfers cannot overspend available funds.
-
-## 19.7 Duplicate Request
-
-Verify the same idempotency key does not create duplicate transfers.
-
-## 19.8 Transaction History
-
-Verify sender and recipient transaction records are correct.
-
-Check list, detail and receipt for each participant using the same transfer ID and opposite directions. An unrelated customer must see no list entry and cannot retrieve the detail or receipt.
+- One balanced journal is posted.
 
 ---
 
 # 20. EXTERNAL WITHDRAWAL TESTING
 
-## 20.1 Successful Withdrawal
-
 Verify:
 
 1. Quote validation.
-2. Customer authorization.
-3. Balance reservation.
-4. Provider submission.
-5. Settlement verification.
-6. Final accounting.
+2. Authorization.
+3. Balance availability.
+4. Reservation.
+5. Provider submission.
+6. Status tracking.
+7. Settlement confirmation.
+8. Final accounting.
 
-## 20.2 Invalid Destination
+Additionally test invalid destinations, unsupported networks, insufficient funds, rejection, timeout, duplication, fees and reconciliation.
 
-Verify invalid addresses are rejected.
-
-## 20.3 Unsupported Network
-
-Verify unsupported networks are rejected.
-
-## 20.4 Insufficient Funds
-
-Verify withdrawal is rejected.
-
-## 20.5 Provider Rejection
-
-Verify definitive rejection is handled correctly.
-
-## 20.6 Provider Timeout
-
-Verify an uncertain outcome does not trigger a duplicate withdrawal.
-
-## 20.7 Duplicate Submission
-
-Verify repeated requests do not create duplicate external execution.
-
-## 20.8 Fee Validation
-
-Verify fees are accurately reserved and accounted for.
-
-## 20.9 Settlement Reconciliation
-
-Verify the final withdrawal matches custody and blockchain evidence.
+Unknown provider outcomes must not cause blind resubmission.
 
 ---
 
 # 21. STABLECOIN CONVERSION TESTING
 
-## 21.1 Successful Conversion
+Verify:
 
-Verify USDC-to-USDT and USDT-to-USDC conversion.
+- Supported conversion pairs.
+- Quotes.
+- Expiration.
+- Quote tampering.
+- Insufficient funds.
+- Provider failure.
+- Partial settlement.
+- Fees and rounding.
+- Cross-asset accounting.
+- Recovery.
 
-## 21.2 Quote Expiration
+DEYPAY does not maintain a general-purpose NGN customer wallet.
 
-Verify expired quotes are rejected.
-
-## 21.3 Quote Manipulation
-
-Verify customer-supplied changes cannot alter accepted quote terms.
-
-## 21.4 Insufficient Funds
-
-Verify conversion cannot exceed available balance.
-
-## 21.5 Provider Failure
-
-Verify failed conversions preserve correct customer entitlements.
-
-## 21.6 Partial Settlement
-
-Verify intermediate clearing and receivable positions are correctly represented.
-
-## 21.7 Fee Calculation
-
-Verify fees and rounding rules.
-
-## 21.8 Accounting
-
-Verify per-asset journal balancing.
+NGN conversion occurs within approved funding, withdrawal or bank-payment workflows.
 
 ---
 
 # 22. NGN ON-RAMP TESTING
 
-## 22.1 Successful Funding
+Verify:
 
-Verify confirmed NGN funding results in the correct stablecoin credit.
+- Funding orders.
+- Quotes.
+- NGN payment instructions.
+- Confirmed collection.
+- Stablecoin delivery.
+- Customer credit.
+- Duplicate events.
+- Incorrect funding amounts.
+- Provider timeouts.
+- Reconciliation.
+- Eligibility restrictions.
 
-Retrieve the owning customer's order across a restart. Match confirmed collection and delivery to its order and quote. A duplicate collection or delivery must leave one credit; a late or mismatched collection must expose an investigation status with no automatic credit.
-
-## 22.2 Unconfirmed Funding
-
-Verify unconfirmed payments do not produce premature customer credits.
-
-## 22.3 Duplicate Funding Notification
-
-Verify duplicate events cannot create duplicate credits.
-
-## 22.4 Incorrect Funding Amount
-
-Verify mismatched amounts follow the approved exception process.
-
-## 22.5 Provider Timeout
-
-Verify uncertain funding remains pending.
-
-## 22.6 Compliance Restrictions
-
-Verify ineligible customers cannot fund restricted wallets.
-
-## 22.7 No NGN Wallet
-
-Verify the on-ramp does not create an unauthorized general-purpose customer NGN stored-value balance.
+NGN funding must not create a general-purpose customer NGN stored-value balance.
 
 ---
 
@@ -1088,190 +925,149 @@ Verify the on-ramp does not create an unauthorized general-purpose customer NGN 
 
 Verify:
 
-- Stablecoin reservation.
-- Quote acceptance.
-- Conversion.
-- NGN payout.
-- Settlement verification.
-- Final accounting.
+1. Stablecoin reservation.
+2. Quote acceptance.
+3. Nuvion conversion.
+4. Nigerian bank payout.
+5. Settlement verification.
+6. Final accounting.
 
 ## 23.2 Invalid Beneficiary
 
-Verify invalid beneficiary details are rejected.
+Reject invalid bank details.
 
 ## 23.3 Bank Rejection
 
-Verify failed payouts enter the correct recovery workflow.
+Failed payouts enter recovery.
 
 ## 23.4 Conversion Succeeds, Payout Fails
 
-Verify the system does not incorrectly restore the original stablecoin balance without a valid refund or reconversion.
+Do not restore the original stablecoin amount without actual refund or reconversion.
 
-## 23.5 Unknown Bank Outcome
+## 23.5 Unknown Outcome
 
-Verify funds remain protected until reconciliation establishes the outcome.
+Protect funds until reconciliation establishes the outcome.
 
 ## 23.6 Duplicate Payout Prevention
 
-Verify no duplicate bank transfer occurs.
+One instruction cannot produce duplicate payouts.
+
+## 23.7 Minimum Transaction Amount
+
+DEYPAY targets transactions starting at $1, subject to provider capability and route economics.
+
+Test minimums, fees, rounding and unsupported amounts.
+
+## 23.8 Automatic Off-Ramp
+
+The shared engine supports:
+
+- Manual bank withdrawal.
+- Confirmed-deposit-triggered Auto-Settlement.
+
+Both use common accounting, execution, reconciliation and recovery mechanisms.
 
 ---
 
 # 24. PAY ANYONE TESTING
 
-Pay Anyone is a critical MVP workflow.
-
-## 24.1 Successful Third-Party Payment
-
-Customer pays a supported Nigerian bank account using USDT or USDC.
-
 Verify:
 
-1. Customer eligibility.
-2. Bank account verification.
-3. Recipient confirmation.
-4. Quote generation.
-5. Transaction authorization.
-6. Balance reservation.
-7. Conversion execution.
-8. NGN payout execution.
-9. Settlement verification.
-10. Transaction history.
-11. Receipt generation.
+- Customer eligibility.
+- Bank beneficiary.
+- Account verification.
+- Recipient confirmation.
+- Quote.
+- Authorization.
+- Reservation.
+- Conversion.
+- NGN payout.
+- Settlement.
+- History.
+- Receipt.
 
-## 24.2 Recipient Does Not Have DEYPAY
+Test invalid accounts, beneficiary substitution, expired quotes, insufficient funds, timeout, duplicate payment and payout failure.
 
-Verify payment can succeed without the recipient having a DEYPAY account.
-
-## 24.3 Incorrect Account Number
-
-Verify invalid accounts are rejected.
-
-## 24.4 Beneficiary Substitution
-
-Verify the recipient cannot change after customer authorization.
-
-## 24.5 Expired Quote
-
-Verify expired quotes are rejected.
-
-## 24.6 Insufficient Funds
-
-Verify payment is rejected.
-
-## 24.7 Provider Timeout
-
-For the 20 USDT / NGN 30,000 fixture in §29.6, leave the NGN obligation at 30,000 during timeout. If lookup later confirms success, debit the payout obligation and credit the settlement asset once for 30,000. The obligation closes at zero and total payout submissions stay at one.
-
-## 24.8 Duplicate Payment Request
-
-Verify the recipient is not paid twice.
-
-## 24.9 Payout Failure After Conversion
-
-Verify the correct refund or recovery workflow.
-
-Use the NGN obligation and submission-count assertions in §29.6 for definitive failure and unknown outcome.
-
-## 24.10 Compliance Restrictions
-
-Verify Pay Anyone is unavailable until the required legal and provider approvals are satisfied.
+A provider timeout must not cause duplicate execution.
 
 ---
 
 # 25. BENEFICIARY AND BANK VERIFICATION TESTING
 
-Test:
+Verify:
 
-- Valid bank account.
-- Invalid account number.
-- Unsupported bank.
-- Bank directory failure.
-- Account resolution timeout.
-- Account name mismatch.
-- Duplicate beneficiary.
-- Unauthorized beneficiary access.
+- Valid accounts.
+- Invalid account numbers.
+- Unsupported banks.
+- Bank-directory failure.
+- Resolution timeout.
+- Name mismatch.
+- Duplicate beneficiaries.
+- Ownership controls.
+- Unauthorized modification.
 - Beneficiary deletion.
-- Beneficiary modification.
-- Save an internal recipient and a verified bank beneficiary, rename either private label and verify its destination stays fixed after rename and username change. Cross-owner reads and renames must be denied.
-- Step-up verification where required.
+- Private labels.
+- Step-up authorization.
 
-Bank verification results must not be accepted indefinitely without the approved validity policy.
+Renaming a saved beneficiary must not silently change its destination.
 
 ---
 
 # 26. TRANSACTION HISTORY AND RECEIPT TESTING
 
-## 26.1 Transaction Accuracy
+Verify:
 
-Verify transaction records match authoritative financial events.
+- Accurate amounts.
+- Correct statuses.
+- Fees.
+- Pagination.
+- Filtering.
+- Privacy.
+- Receipts.
+- Pending transactions.
+- Reversal history.
 
-## 26.2 Pagination
-
-Verify correct cursor pagination.
-
-## 26.3 Filtering
-
-Verify filters by asset, type, status and date.
-
-## 26.4 Privacy
-
-Verify customers cannot access another customer's private transaction history.
-
-## 26.5 Receipt Accuracy
-
-Verify receipts show correct amounts, fees, references and final statuses.
-
-## 26.6 Pending Transactions
-
-Verify pending operations are not displayed as completed.
-
-## 26.7 Historical Integrity
-
-Verify historical records remain consistent after reversals and refunds.
+Transactions must not appear completed before settlement is verified.
 
 ---
 
 # 27. PROVIDER INTEGRATION TESTING
 
-## 27.1 Provider Adapter Contracts
+## 27.1 Nuvion
 
-Each provider adapter must satisfy its internal interface contract.
-
-## 27.2 Nuvion Integration
-
-Where supported and approved, test:
+Verify authorized capabilities:
 
 - Authentication.
 - Wallet provisioning.
-- Deposit address retrieval.
-- Deposit event handling.
-- Stablecoin withdrawal.
-- FX quote retrieval.
-- Conversion execution.
-- Provider transaction lookup.
-- Webhook verification.
-- Reconciliation data retrieval.
+- Deposit addresses.
+- Deposit events.
+- Stablecoin withdrawals.
+- FX quotes.
+- Conversion.
+- Nigerian bank payouts.
+- Status lookup.
+- Webhooks.
+- Reconciliation.
 
-## 27.3 Capability Verification
+## 27.2 Capability Verification
 
-Tests must not assume Nuvion supports a feature until the feature is confirmed.
+A related endpoint does not automatically prove a complete supported financial workflow.
 
-## 27.4 Sandbox Testing
+## 27.3 Sandbox
 
-Use official sandbox environments where available.
+Use official Nuvion sandbox resources when available.
 
-## 27.5 Mock Testing
+## 27.4 Controlled Simulation
 
-Use controlled simulators for unavailable provider behavior.
+Simulate failures deterministically without substituting simulations for real integration acceptance.
 
-## 27.6 Contract Changes
+## 27.5 Provider Independence
 
-Provider API changes must trigger adapter regression testing.
+The DEYPAY ledger must remain independent of Nuvion.
 
-## 27.7 Provider Independence
+## 27.6 CI Security
 
-Replacing a provider adapter must not require rewriting the DEYPAY financial ledger.
+Ordinary PR workflows must not initiate live financial transfers.
 
 ---
 
@@ -1285,16 +1081,14 @@ Test:
 4. Malformed payload.
 5. Duplicate event.
 6. Out-of-order event.
-7. Unknown transaction reference.
-8. Event for another customer.
+7. Unknown reference.
+8. Wrong customer.
 9. Replayed event.
-10. Database failure during processing.
-11. Worker crash after event persistence.
-12. Provider status disagreement.
+10. Database failure.
+11. Worker crash.
+12. Provider-status disagreement.
 
-## 28.1 Critical Requirement
-
-Webhook receipt must not independently authorize an unverified financial credit or payout completion.
+Webhook receipt alone must not establish verified settlement.
 
 ---
 
@@ -1302,404 +1096,294 @@ Webhook receipt must not independently authorize an unverified financial credit 
 
 ## 29.1 Duplicate Requests
 
-Submit identical financial requests multiple times.
+Repeated requests create one financial effect.
 
-Expected:
+## 29.2 Conflicting Keys
 
-One financial operation.
-
-## 29.2 Conflicting Requests
-
-Reuse an idempotency key with different payloads.
-
-Expected:
-
-Conflict response.
+A reused idempotency key with changed request content is rejected.
 
 ## 29.3 Concurrent Spending
 
-Execute multiple transactions against the same available balance.
+Concurrent requests cannot overspend balances.
 
-Expected:
+## 29.4 Reservations
 
-No overspending.
+Reservations cannot consume the same funds twice.
 
-## 29.4 Concurrent Reservation
+## 29.5 Worker Retries
 
-Verify only valid reservations succeed.
+Retries cannot duplicate external execution.
 
-## 29.5 Worker Retry
+## 29.6 Crash-Recovery Fixtures
 
-Verify retrying a completed operation does not duplicate external execution.
+Use zero-fee fixtures except where explicitly specified.
 
-## 29.6 Crash Recovery
-
-Use the following zero-fee fixtures except where a fee is explicit. Count accepted external submissions at the simulator as well as internal journals.
-
-| Scenario | Required financial result |
+| Scenario | Required result |
 |---|---|
-| Same 10 USDC deposit observed by callback, repeated polling and statement import | One credit journal: debit custody 10 and credit customer available 10. Replaying any observation leaves both balances unchanged. |
-| Two simultaneous 60 USDT withdrawals against 100 USDT | One reservation of 60, available 40, one dispatch and zero postings for the rejected request. |
-| Timeout or worker crash after provider accepts the withdrawal | One original submission. Before lookup, available 40 and reserved 60. On verified settlement, debit reserved 60 and credit custody 60 once. No second dispatch. With no reliable lookup, retain the reserve pending reconciliation. |
-| 20 USDT converted to NGN 30,000, payout times out then definitively fails | Stablecoin reserve is zero. One payout submission. NGN 30,000 remains owed, with no payout settlement or stablecoin refund posting. Any approved reclassification moves exactly NGN 30,000 between liability accounts. Duplicate failure evidence has zero additional effect. |
-| Reorganization of a credited 10 USDC deposit | Original credit remains immutable. In an approved reversal fixture with all funds still available, debit available 10 and credit custody 10 once on verified invalidation. With funds already spent, open a recovery case and apply the approved loss or receivable policy. No duplicate credit or ordinary negative spendable balance. |
+| Same 10 USDC deposit observed multiple times | One credit journal |
+| Two simultaneous 60 USDT withdrawals against 100 USDT | One reservation; available 40 |
+| Provider accepts withdrawal but worker crashes | One submission; reserved funds retained until verification |
+| 20 USDT converted to NGN 30,000, bank payout fails | One payout submission; NGN 30,000 remains owed until resolved |
+| Credited 10 USDC deposit is invalidated | Correct compensating journal or recovery case |
 
-Simulate crashes before and after database commits.
+Test crashes before and after database commits.
 
-Expected:
-
-No duplicate posting or loss of committed financial state.
+Committed financial state must remain correct.
 
 ---
 
 # 30. TRANSACTION STATE MACHINE TESTING
 
-## 30.1 Valid Transitions
+Verify:
 
-Verify allowed transitions succeed.
+- Valid transitions.
+- Invalid transitions.
+- Terminal-state protection.
+- Unknown outcomes.
+- Recovery states.
+- Repeated events.
+- Out-of-order events.
 
-For each operation in ledger §25, exercise every listed step with its required evidence and assert the public status from API §38. Refuse completion on submission acknowledgment alone. Repeat and reorder observations; balances and terminal status must remain consistent.
+Submission acknowledgement is not completed settlement.
 
-## 30.2 Invalid Transitions
-
-Verify invalid transitions are rejected.
-
-## 30.3 Terminal States
-
-Verify terminal states cannot be incorrectly overwritten.
-
-## 30.4 Unknown Outcomes
-
-Verify uncertain provider outcomes remain explicitly represented.
-
-## 30.5 Recovery States
-
-Verify failed and pending-reconciliation operations can enter approved recovery workflows.
+Public statuses must match authoritative records.
 
 ---
 
 # 31. FRONTEND AND USER EXPERIENCE TESTING
 
-## 31.1 Registration Experience
+## 31.1 Authentication
 
-Verify forms, validation and verification feedback.
+Verify registration, login, email confirmation and recovery.
 
-## 31.2 Wallet Dashboard
+## 31.2 Protected Routes
 
-Verify balances and transaction states display correctly.
+Verify:
 
-## 31.3 Transfer Experience
+- Unauthenticated access is rejected.
+- Customers access only their own accounts.
+- Logout revokes access.
+- Browser Back cannot reveal protected data after logout.
+- Expired sessions lose access.
 
-Verify recipient confirmation and transaction authorization.
+## 31.3 Profile
 
-## 31.4 Withdrawal Experience
+Display actual customer information from real backend APIs.
 
-Verify destination, network, amount and fees are clearly displayed.
+## 31.4 Financial Interfaces
 
-## 31.5 Pay Anyone Experience
+Verify balances, fees and statuses when features are implemented.
 
-Verify recipient bank details and NGN payout amount are confirmed before authorization.
+## 31.5 Responsiveness
 
-## 31.6 Error Handling
+Test mobile and desktop independently.
 
-Verify errors are understandable without exposing sensitive information.
+## 31.6 Accessibility
 
-## 31.7 Loading States
+Verify keyboard access, labels and meaningful errors.
 
-Verify asynchronous operations display appropriate progress.
+## 31.7 Duplicate Submission
 
-## 31.8 Duplicate Submission Protection
+Repeated clicks must not create duplicate operations.
 
-Verify repeated button clicks do not create duplicate operations.
+## 31.8 Design Rules
 
-## 31.9 Responsive Design
+Follow:
 
-Verify mobile and desktop layouts.
+- `docs/frontend/01-UI-DESIGN-RULES.md`
+- `docs/frontend/02-FRONTEND-ENGINEERING-RULES.md`
 
 ---
 
 # 32. SECURITY TESTING
 
-## 32.1 Authentication Security
+## 32.1 Authentication
 
-Test:
+Test credential stuffing resistance, expiration, revocation, recovery abuse and rate limiting.
 
-- Credential stuffing resistance.
-- Session expiration.
-- Session revocation.
-- Password reset abuse.
-- MFA enforcement.
+## 32.2 Authorization
 
-## 32.2 Authorization Security
-
-Test:
-
-- Broken object-level authorization.
-- Privilege escalation.
-- Administrative endpoint access.
-- Cross-customer data access.
+Test cross-customer access, privilege escalation and protected resources.
 
 ## 32.3 API Security
 
-Test:
-
-- Input injection.
-- Malformed payloads.
-- Excessive request sizes.
-- Rate limiting.
-- Sensitive error leakage.
+Test invalid inputs, injection, excessive request sizes and sensitive error leakage.
 
 ## 32.4 Financial Security
 
-Test:
-
-- Unauthorized withdrawal.
-- Beneficiary substitution.
-- Quote manipulation.
-- Duplicate execution.
-- Ledger posting bypass attempts.
+Test unauthorized withdrawals, beneficiary substitution, quote manipulation and duplicate execution.
 
 ## 32.5 Provider Security
 
-Test:
-
-- Invalid webhook signatures.
-- Unauthorized provider requests.
-- Credential leakage prevention.
+Test webhook signatures, provider authorization and credential protection.
 
 ## 32.6 Independent Assessment
 
-Independent penetration testing must be completed before production financial launch.
+Independent security assessment remains required before production financial launch.
 
 ---
 
 # 33. FRAUD AND ABUSE TESTING
 
-Test scenarios include:
+Test:
 
-- Rapid repeated withdrawals.
-- Multiple accounts controlled by one attacker.
-- Suspicious internal transfer chains.
-- Repeated failed authentication.
-- New-device withdrawal attempts.
-- High-value beneficiary changes.
-- Payment velocity limit violations.
-- Repeated refund attempts.
-- Suspicious conversion patterns.
+- Repeated withdrawals.
+- Multiple related accounts.
+- Suspicious transfers.
+- Repeated failed logins.
+- New-device transactions.
+- Beneficiary changes.
+- Velocity limits.
+- Refund abuse.
+- Suspicious conversions.
 
-Expected:
-
-Risk controls detect or restrict activity according to approved policies.
+Expected behavior follows approved risk policies.
 
 ---
 
 # 34. PERFORMANCE AND LOAD TESTING
 
-## 34.1 Objectives
+## 34.1 API
 
-Validate application performance under expected and elevated workloads.
+Measure latency, throughput and errors.
 
-## 34.2 API Performance
+## 34.2 Ledger
 
-Measure:
+Measure posting latency, reservation latency and lock contention.
 
-- Response latency.
-- Request throughput.
-- Error rates.
-- Resource consumption.
+## 34.3 Workers
 
-## 34.3 Ledger Performance
+Measure throughput, queue depth, retries and recovery.
 
-Measure:
+## 34.4 Load Profiles
 
-- Posting latency.
-- Reservation latency.
-- Concurrent transfer throughput.
-- Lock contention.
+Test normal, peak, sustained and burst traffic.
 
-## 34.4 Worker Performance
+## 34.5 Remote Execution
 
-Measure:
+Heavy load testing should run on approved remote infrastructure.
 
-- Job processing throughput.
-- Queue depth.
-- Retry frequency.
-- Recovery time.
+Avoid unnecessary stress testing on the owner's local computer.
 
-## 34.5 Load Profiles
-
-Test:
-
-- Normal load.
-- Peak load.
-- Sustained load.
-- Sudden traffic spikes.
-
-## 34.6 Acceptance Thresholds
-
-Specific performance thresholds must be approved before testing and recorded in the test plan.
+Do not perform uncontrolled production load testing.
 
 ---
 
 # 35. RELIABILITY AND RESILIENCE TESTING
 
-## 35.1 Database Unavailability
+Verify:
 
-Verify safe failure behavior.
+- Database outages.
+- Provider outages.
+- Worker restarts.
+- Network timeouts.
+- Duplicate callbacks.
+- Partial failures.
+- Recovery.
 
-## 35.2 Provider Unavailability
-
-Verify affected operations enter safe states.
-
-## 35.3 Worker Restart
-
-Verify durable jobs resume correctly.
-
-## 35.4 Network Timeout
-
-Verify no blind financial retry.
-
-## 35.5 Duplicate Callback
-
-Verify duplicate events are harmless.
-
-## 35.6 Partial Workflow Failure
-
-Verify intermediate financial obligations remain accurately recorded.
-
-## 35.7 Recovery
-
-Verify recovery processes do not create duplicate financial movements.
+Retries must not duplicate financial movements.
 
 ---
 
 # 36. DISASTER RECOVERY TESTING
 
-## 36.1 Database Backup
+## 36.1 Backup
 
-Verify backup creation.
+Verify database backups.
 
-## 36.2 Database Restore
+## 36.2 Restore
 
-Verify restoration to an isolated environment.
+Restore into an isolated environment.
 
 ## 36.3 Ledger Integrity
 
-Verify restored journals balance.
+Restored records must preserve ledger invariants.
 
-## 36.4 External Reconciliation
+## 36.4 Reconciliation
 
-Verify restored internal state is reconciled with provider transactions.
-
-Restore to before acceptance of the 60 USDT withdrawal fixture in §29.6 while the simulator retains its settled payment. Block dispatch, match the external statement line, reconstruct the missing operation and journals once, and verify available 40, reserved zero and custody reduced by 60. Total provider submissions across restore: one. Re-importing the statement must make no financial change.
+Recover an externally settled operation without resubmitting the original payment.
 
 ## 36.5 Recovery Objectives
 
-Measure recovery time and recovery point performance against approved targets.
+Measure against approved thresholds.
 
-## 36.6 Operational Recovery
+## 36.6 Execution
 
-Verify documented recovery procedures can be followed by authorized personnel.
+Use approved isolated infrastructure for expensive recovery tests.
 
 ---
 
 # 37. ACCESSIBILITY AND COMPATIBILITY TESTING
 
-## 37.1 Browser Compatibility
+Verify:
 
-Test current supported versions of major browsers.
+- Supported browsers.
+- Android and iOS devices.
+- Desktop responsiveness.
+- Keyboard navigation.
+- Screen readers.
+- Low-connectivity handling.
+- Error messages.
+- Reduced motion.
 
-## 37.2 Mobile Compatibility
+Target WCAG 2.2 AA where applicable.
 
-Test representative Android and iOS devices.
-
-## 37.3 Accessibility
-
-Target WCAG 2.2 AA for customer-facing interfaces, subject to documented exceptions and verification.
-
-## 37.4 Keyboard Navigation
-
-Verify keyboard-accessible controls.
-
-## 37.5 Screen Readers
-
-Verify meaningful labels and status announcements.
-
-## 37.6 Responsive Layout
-
-Verify common mobile, tablet and desktop viewport sizes.
-
-## 37.7 Low Connectivity
-
-Verify graceful handling of slow or interrupted connections.
+Run automated accessibility checks in CI where practical.
 
 ---
 
 # 38. REGULATORY AND COMPLIANCE VALIDATION
 
-## 38.1 Purpose
+Verify implemented requirements covering:
 
-Verify that implemented controls enforce the approved legal and compliance operating model.
+- KYC restrictions.
+- AML/CFT controls.
+- Customer protection.
+- Data protection.
+- Provider permissions.
+- Financial eligibility.
+- Legal and operational readiness.
 
-## 38.2 KYC
+Compliance work follows the approved development schedule.
 
-Verify financial activity restrictions.
-
-## 38.3 AML/CFT
-
-Verify applicable monitoring and escalation workflows.
-
-## 38.4 Customer Protection
-
-Verify fee disclosure and transaction confirmation.
-
-## 38.5 Data Protection
-
-Verify access restrictions and approved data handling.
-
-## 38.6 Provider Permissions
-
-Verify production capabilities are enabled only for approved providers and corridors.
-
-## 38.7 Legal Sign-Off
-
-Testing cannot substitute for legal authorization.
-
-Applicable regulatory approval and contractual confirmation remain separate launch requirements.
+Internal testing does not replace provider approval or legal authorization for live-money operations.
 
 ---
 
 # 39. END-TO-END TESTING
 
-The following scenarios form the minimum critical end-to-end test suite.
-
-| ID | Scenario | Expected Outcome |
+| ID | Scenario | Expected outcome |
 |---|---|---|
 | E2E-001 | Register and verify customer | Account created correctly |
-| E2E-002 | Complete approved KYC | Eligible financial access enabled |
-| E2E-003 | Reject unapproved KYC user transaction | Financial operation blocked |
-| E2E-004 | Provision USDC wallet address | Correct customer address |
-| E2E-005 | Receive confirmed USDC deposit | Single correct ledger credit |
-| E2E-006 | Receive duplicate deposit webhook | No duplicate credit |
-| E2E-007 | Transfer USDT internally | Atomic sender debit and recipient credit |
-| E2E-008 | Attempt overspending | Transaction rejected |
-| E2E-009 | Execute concurrent transfers | No negative available balance |
-| E2E-010 | Complete stablecoin withdrawal | Correct settlement and ledger entries |
-| E2E-011 | Withdrawal provider timeout | No duplicate execution |
-| E2E-012 | Convert USDC to USDT | Correct conversion and accounting |
-| E2E-013 | Reject expired FX quote | Conversion blocked |
-| E2E-014 | Complete NGN on-ramp | Correct stablecoin credit |
-| E2E-015 | Complete own-bank NGN off-ramp | Correct payout and settlement |
-| E2E-016 | Complete Pay Anyone payment | Recipient paid and transaction reconciled |
-| E2E-017 | Bank payout fails after conversion | Outstanding NGN obligation and one payout submission per §29.6. |
-| E2E-018 | Reject unauthorized transaction access | Access denied |
-| E2E-019 | Restore database and reconcile | One externally settled withdrawal recovered, balances matched and no redispatch (§36.4). |
-| E2E-020 | Reverse approved financial transaction | Immutable compensating journal |
-| E2E-021 | Scan receive, deposit and payment QR codes | Correct asset/network or resolved recipient is shown; payment requires confirmation and authorization. |
-| E2E-022 | Resolve a payment link under approved risk controls | A valid link resolves only permitted details and requires authorization; expired or disabled links cannot initiate payment. |
-| E2E-023 | Open a support case for a transaction, reply, escalate and track it | Owner sees the reference and customer-visible updates; another customer cannot read it and support cannot edit balances. |
+| E2E-002 | Complete approved KYC | Eligible financial access |
+| E2E-003 | Reject unapproved KYC transaction | Transaction blocked |
+| E2E-004 | Provision USDC wallet | Correct address |
+| E2E-005 | Confirmed deposit | Single credit |
+| E2E-006 | Duplicate webhook | No duplicate credit |
+| E2E-007 | Internal USDT transfer | Atomic transfer |
+| E2E-008 | Overspending attempt | Rejected |
+| E2E-009 | Concurrent transfers | No overspending |
+| E2E-010 | Stablecoin withdrawal | Correct settlement |
+| E2E-011 | Withdrawal timeout | No duplicate execution |
+| E2E-012 | USDC-to-USDT conversion | Correct accounting |
+| E2E-013 | Expired quote | Rejected |
+| E2E-014 | NGN on-ramp | Correct stablecoin credit |
+| E2E-015 | NGN off-ramp | Correct bank payout |
+| E2E-016 | Pay Anyone | Settled and reconciled |
+| E2E-017 | Failed bank payout | Correct outstanding obligation |
+| E2E-018 | Unauthorized access | Denied |
+| E2E-019 | Restore and reconcile | No duplicate execution |
+| E2E-020 | Reverse transaction | Compensating journal |
+| E2E-021 | QR code flows | Correct destination and authorization |
+| E2E-022 | Payment link resolution | Correct access and validity rules |
+| E2E-023 | Transaction support case | Customer isolation and safe support access |
+| E2E-024 | Activate Auto-Settlement | Correct bank/address mapping |
+| E2E-025 | Solana USDC Auto-Settlement deposit | One conversion and payout |
+| E2E-026 | Duplicate Auto-Settlement notification | No duplicate settlement |
+| E2E-027 | Auto-Settlement bank failure | Recoverable financial obligation |
+| E2E-028 | Deposit below payout threshold | Funds correctly tracked without unsafe execution |
 
-All applicable critical scenarios must pass before the corresponding production feature is enabled.
+Applicable critical scenarios must pass before production enablement.
 
 ---
 
@@ -1707,304 +1391,290 @@ All applicable critical scenarios must pass before the corresponding production 
 
 ## 40.1 Objective
 
-Prevent new code changes from breaking previously working functionality.
+Prevent new functionality from breaking accepted behavior.
 
-## 40.2 Regression Scope
+## 40.2 Scope
 
-Include:
+Include authentication, KYC, wallets, ledger, deposits, withdrawals, transfers, conversion, NGN payments, Nuvion, Auto-Settlement and transaction history.
 
-- Authentication.
-- KYC.
-- Wallets.
-- Ledger.
-- Deposits.
-- Withdrawals.
-- Transfers.
-- Conversion.
-- NGN payments.
-- Provider integrations.
-- Transaction history.
+## 40.3 CI
 
-## 40.3 Execution
+Critical regression suites run in GitHub Actions.
 
-Critical regression tests must run automatically in CI.
+## 40.4 Release
 
-## 40.4 Release Regression
-
-A full applicable regression suite must pass before production financial releases.
+The applicable full regression suite must pass before production financial releases.
 
 ---
 
 # 41. AUTOMATED TESTING AND CI/CD
 
-## 41.1 Continuous Integration Pipeline
+**Mandatory for all DEYPAY engineering agents.**
 
-Recommended pipeline:
+## 41.1 CI Platform
 
-```text
-CODE PUSH
-   |
-   v
-FORMAT CHECK
-   |
-   v
-STATIC ANALYSIS
-   |
-   v
-DEPENDENCY SECURITY CHECK
-   |
-   v
-UNIT TESTS
-   |
-   v
-DATABASE MIGRATION TESTS
-   |
-   v
-INTEGRATION TESTS
-   |
-   v
-API CONTRACT TESTS
-   |
-   v
-FINANCIAL INVARIANT TESTS
-   |
-   v
-BUILD VALIDATION
-   |
-   v
-DEPLOYMENT ELIGIBILITY
-```
+Primary platform: GitHub Actions.
 
-## 41.2 Required Rust Commands
+Repository:
 
-```bash
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
-cargo build --workspace --release
-```
+`Kenule-Africa/Daypay`
 
-## 41.3 Frontend Validation
+Existing workflow:
 
-Recommended commands depend on the final package manager and project configuration.
+`.github/workflows/phase-one.yml`
 
-Typical checks:
+Reuse and extend existing CI infrastructure. Do not create a duplicate testing system unnecessarily.
 
-```bash
-npm run lint
-npm run typecheck
-npm run test
-npm run build
-```
+## 41.2 Testing Workflow
 
-## 41.4 CI Requirements
+    IMPLEMENT CODE
+         |
+    COMMIT CHANGES
+         |
+    PUSH TO GITHUB
+         |
+    GITHUB ACTIONS RUNS
+         |
+    AGENT CHECKS RESULT
+         |
+      PASS / FAIL
+         |
+    FIX FAILURES
+         |
+    PUSH CORRECTION
+         |
+    VERIFY FINAL COMMIT
+         |
+    REPORT EVIDENCE
 
-- Failed required tests block merging or release.
-- Test results must be retained.
-- Production secrets must not be exposed.
-- Financial tests must use isolated data.
+## 41.3 Backend CI
+
+Run from `backend/`:
+
+    cargo fmt --all -- --check
+    cargo clippy --locked --workspace --all-targets -- -D warnings
+    cargo build --locked --workspace
+    cargo test --locked --workspace
+
+Also run applicable PostgreSQL and HTTP integration tests.
+
+## 41.4 PostgreSQL CI
+
+GitHub Actions must:
+
+1. Provision isolated PostgreSQL.
+2. Generate temporary configuration.
+3. Apply migrations.
+4. Execute integration tests.
+5. Verify permissions and constraints.
+6. Execute applicable concurrency tests.
+7. Clean up resources.
+
+## 41.5 Frontend CI
+
+Run from `frontend/`:
+
+    npm ci
+    npm run lint
+    npm run typecheck
+    npm test
+    npm run build
+
+## 41.6 Mandatory Rules
+
+- Test the exact pushed commit.
+- Failed required checks block acceptance.
+- Required jobs cannot be silently skipped.
+- Do not expose production credentials.
+- Do not connect CI to production databases.
+- Do not execute live financial transfers in ordinary CI.
+- Do not remove tests just to obtain a passing result.
+
+## 41.7 Workflow Optimization
+
+Use:
+
+- Parallel jobs.
+- Safe Cargo caching.
+- npm dependency caching.
+- Reduced redundant downloads.
+- Appropriate runners.
+- Targeted checks during development.
+
+Keep mandatory release-level verification intact.
+
+## 41.8 Agent Responsibility
+
+The implementing agent is responsible for monitoring and resolving CI failures attributable to its changes.
 
 ---
 
 # 42. DEFECT MANAGEMENT
 
-## 42.1 Defect Severity
+## 42.1 Critical
 
-### Critical
+Loss of funds, double spending, unbalanced journals, unauthorized withdrawal or duplicate payouts.
 
-Examples:
+## 42.2 High
 
-- Customer funds can be stolen.
-- Double spending is possible.
-- Ledger journals become unbalanced.
-- Duplicate payouts occur.
-- Unauthorized withdrawals succeed.
+Major financial failure, sensitive-data exposure or serious authorization defects.
 
-### High
+## 42.3 Medium
 
-Examples:
+Recoverable functional failure.
 
-- Major financial workflow fails.
-- KYC restrictions can be bypassed.
-- Sensitive customer information is exposed.
+## 42.4 Low
 
-### Medium
+Minor visual or cosmetic defects.
 
-Examples:
+## 42.5 Lifecycle
 
-- Non-critical workflow malfunction.
-- Incorrect non-financial display.
-- Recoverable integration issue.
+    NEW
+     |
+    TRIAGED
+     |
+    ASSIGNED
+     |
+    IN PROGRESS
+     |
+    READY FOR RETEST
+     |
+    VERIFIED
+     |
+    CLOSED
 
-### Low
+## 42.6 Release Blocking
 
-Examples:
+Critical defects block release.
 
-- Minor visual defects.
-- Cosmetic inconsistencies.
-
-## 42.2 Defect Lifecycle
-
-```text
-NEW
- |
- v
-TRIAGED
- |
- v
-ASSIGNED
- |
- v
-IN PROGRESS
- |
- v
-READY FOR RETEST
- |
- v
-VERIFIED
- |
- v
-CLOSED
-```
-
-## 42.3 Reopened Defects
-
-A defect must be reopened if the fix fails verification.
-
-## 42.4 Release Blocking
-
-Unresolved critical defects block production release.
-
-Unresolved high-risk financial or security defects also block the affected production release unless a formally approved risk process permits a narrowly scoped non-exposed change.
+High-risk security and financial defects require resolution or formal risk handling.
 
 ---
 
 # 43. TEST COVERAGE AND TRACEABILITY
 
-## 43.1 Requirement Traceability
+Critical requirements must map to test cases.
 
-Each critical functional requirement must map to one or more test cases.
-
-Record the delivery milestone from 08-IMPLEMENTATION-PLAN.md §52 alongside each FRS §6.1 capability, including E2E-021–023.
-
-## 43.2 Traceability Fields
-
-Recommended fields:
+Record:
 
 - Requirement ID.
-- Test case ID.
-- Test description.
+- Test ID.
+- Description.
 - Test level.
 - Priority.
 - Automation status.
-- Execution status.
-- Defect reference.
+- Environment.
+- Result.
+- Defect.
+- Commit SHA.
+- GitHub Actions URL.
 
-## 43.3 Financial Coverage
+Ledger invariants and critical authorization boundaries require automated coverage.
 
-All financial ledger invariants must have automated tests.
-
-## 43.4 Security Coverage
-
-All critical authorization boundaries must have negative tests.
-
-## 43.5 Coverage Metrics
-
-Code coverage may be measured, but percentage coverage alone must not determine financial readiness.
+A coverage percentage alone does not establish correctness.
 
 ---
 
 # 44. TEST EXECUTION AND REPORTING
 
-## 44.1 Test Execution Record
+## 44.1 Mandatory Test Record
 
-Each test run must record:
+Every engineering acceptance report identifies:
 
-- Test suite.
-- Environment.
-- Application version.
-- Execution date.
-- Passed tests.
-- Failed tests.
-- Skipped tests.
-- Defects.
-- Reviewer.
+| Field | Requirement |
+|---|---|
+| Repository | Exact repository |
+| Branch | Tested branch |
+| Commit SHA | Exact tested revision |
+| Workflow | GitHub Actions workflow |
+| Run URL | Direct evidence link |
+| Status | Completed or otherwise |
+| Required jobs | Pass/fail conclusions |
+| Failed tests | Explicitly identified |
+| Skipped tests | Explicitly identified |
+| Outstanding dependencies | Recorded |
+| Acceptance recommendation | Supported by evidence |
 
-## 44.2 Test Summary Report
+## 44.2 Verification
 
-A release test summary must include:
+Agents must not:
 
-- Scope tested.
-- Test completion.
-- Outstanding defects.
-- Financial integrity results.
-- Security results.
-- Provider integration results.
-- Release recommendation.
+- Assume CI succeeded.
+- Report queued jobs as passing.
+- Reuse old passing commits.
+- Ignore failed jobs.
+- Invent test counts.
+- Claim staging acceptance based only on CI.
 
-## 44.3 Evidence Retention
+## 44.3 Failure Handling
 
-Test evidence must be retained according to approved engineering and compliance policies.
+1. Identify failed job.
+2. Inspect logs.
+3. Determine cause.
+4. Fix defect.
+5. Push correction.
+6. Verify the new run.
+
+## 44.4 Evidence Retention
+
+Retain relevant CI results without leaking secrets.
 
 ---
 
 # 45. RELEASE ENTRY AND EXIT CRITERIA
 
-## 45.1 Entry Criteria
+## 45.1 Entry
 
-A release candidate may enter formal testing when:
+A release candidate may enter testing when:
 
-1. Implementation is complete for the release scope.
-2. Required code reviews are complete.
-3. Database migrations are available.
-4. Unit tests pass.
-5. Integration environment is available.
-6. Test data is prepared.
-7. Known limitations are documented.
+1. Implementation is complete.
+2. Reviews are available.
+3. Migrations are included.
+4. Tests exist.
+5. Dependencies are available.
+6. Limitations are recorded.
 
-## 45.2 Exit Criteria
+## 45.2 Exit
 
-A release may proceed when:
+Engineering acceptance requires:
 
-1. Applicable critical tests pass.
-2. Financial invariants pass.
-3. No unresolved critical defects remain.
-4. Required security tests pass.
-5. Provider integrations are validated.
-6. Reconciliation tests pass.
-7. Recovery procedures are validated.
-8. Product acceptance is recorded.
-9. Required financial and compliance approvals are obtained.
+1. Required CI passes.
+2. Results match the accepted commit.
+3. Financial invariants pass.
+4. Security checks pass.
+5. Integration tests pass.
+6. No unresolved critical defects.
+7. Environment-specific gaps are recorded.
+8. Owner acceptance is documented.
+
+## 45.3 Distinction
+
+Passing CI does not establish production approval, real email delivery, Nuvion readiness or legal authorization.
 
 ---
 
 # 46. PRODUCTION READINESS AND SIGN-OFF
 
-## 46.1 Required Approvals
+## 46.1 Internal Strategy Approval
 
-| Role | Approval Responsibility |
-|---|---|
-| Engineering Lead | Technical readiness |
-| QA Lead | Test completion |
-| Security Reviewer | Security readiness |
-| Financial Operations | Accounting and reconciliation |
-| Compliance Lead | Compliance controls |
-| Product Owner | Business acceptance |
-| Operations Lead | Deployment and recovery |
+The DEYPAY Project Owner has approved this testing strategy across all listed internal governance roles.
 
-## 46.2 Production Financial Launch
+This is authorization to adopt and implement the strategy.
 
-Real-money operations must not be enabled solely because the application passes automated tests.
+## 46.2 Actual Release Readiness
 
-Production launch additionally requires:
+Production financial launch additionally requires:
 
 - Confirmed custody arrangements.
-- Approved provider capabilities.
-- Applicable legal and regulatory sign-off.
-- Production security assessment.
-- Operational monitoring.
-- Financial reconciliation procedures.
-- Incident response readiness.
+- Verified provider capabilities.
+- Applicable external authorization.
+- Security assessment evidence.
+- Monitoring.
+- Reconciliation.
+- Incident response.
+- Financial recovery procedures.
+
+Document approval must not be mistaken for completed technical testing or external certification.
 
 ---
 
@@ -2012,117 +1682,335 @@ Production launch additionally requires:
 
 ## 47.1 Smoke Tests
 
-Verify:
+Verify API availability, authentication, database connections, workers and approved provider connections.
 
-- Application availability.
-- Authentication.
-- Database connectivity.
-- Background worker health.
-- Provider connectivity where appropriate.
+## 47.2 Monitoring
 
-## 47.2 Financial Monitoring
-
-Monitor:
-
-- Ledger imbalances.
-- Duplicate accounting events.
-- Pending operations.
-- Failed payouts.
-- Provider discrepancies.
-- Unusual transaction patterns.
+Monitor ledger imbalances, duplicate events, failed payouts, pending transactions and reconciliation differences.
 
 ## 47.3 Rollback
 
 Application rollback must not reverse completed external financial transactions.
 
-## 47.4 Incident Escalation
+## 47.4 Incidents
 
-Critical financial defects must trigger incident response procedures.
+Critical defects require incident-response procedures.
 
 ---
 
 # 48. TEST RISKS AND MITIGATIONS
 
-| Risk | Impact | Mitigation |
-|---|---|---|
-| Incomplete provider sandbox | Integration gaps | Contract mocks and controlled provider validation |
-| Unverified Nuvion capability | Invalid test assumptions | Capability gating |
-| Insufficient financial test coverage | Accounting defects | Mandatory invariant tests |
-| Race conditions | Double spending | Concurrency and stress testing |
-| Incomplete failure testing | Duplicate execution | Fault injection |
-| Poor test data isolation | Data contamination | Dedicated environments |
-| Unstable automated tests | Reduced confidence | Deterministic fixtures |
-| Missing security review | Exploitable vulnerabilities | Independent assessment |
-| Incomplete reconciliation | Undetected shortfalls | Transaction and balance reconciliation tests |
-| Rushed release | Financial incidents | Mandatory release gates |
+| Risk | Mitigation |
+|---|---|
+| Slow local computer | GitHub Actions for heavy tests |
+| Repeated compilation | Safe CI caching and focused local checks |
+| Old CI results | Exact commit verification |
+| Missing CI access | Explicitly report inability to verify |
+| Broken workflow | Repair CI; don't bypass required checks |
+| Incomplete provider sandbox | Separate simulation from real acceptance |
+| Unverified Nuvion capability | End-to-end confirmation |
+| Financial defects | Mandatory invariant tests |
+| Race conditions | Concurrency tests |
+| Duplicate payments | Idempotency and reconciliation |
+| Secret leakage | Restricted CI access and logs |
+| Missing security review | Independent assessment |
+| Incomplete recovery | Fault injection |
+| Rushed release | Evidence-based gates |
 
 ---
 
 # 49. TESTING DELIVERABLES
 
-The testing process must produce:
-
 1. Approved test strategy.
-2. Requirement traceability matrix.
-3. Test case specifications.
-4. Automated unit test suites.
-5. Automated integration test suites.
-6. API contract test suites.
-7. Financial invariant test suites.
-8. Provider integration test suites.
-9. End-to-end test suites.
-10. Security test results.
-11. Performance test results.
-12. Disaster recovery test results.
-13. Defect register.
-14. Test execution reports.
-15. Release acceptance report.
-16. Production readiness sign-off.
+2. Requirement traceability records.
+3. Automated unit tests.
+4. PostgreSQL integration tests.
+5. API contract tests.
+6. Financial invariant tests.
+7. Provider integration tests.
+8. End-to-end tests.
+9. Security evidence.
+10. Performance results.
+11. Recovery results.
+12. Defect records.
+13. GitHub Actions evidence.
+14. Engineering acceptance records.
+15. Production readiness evidence.
 
-These are execution artifacts generated during development and testing, not additional mandatory top-level documents in the eight-document repository structure.
+These are testing and execution artifacts, not additional mandatory top-level documents.
 
 ---
 
 # 50. ACCEPTANCE CRITERIA AND FINAL DEFINITION
 
-The DEYPAY testing strategy is accepted when:
+The DEYPAY testing strategy is satisfied when:
 
-1. Every MVP feature has defined test coverage.
-2. Financial ledger invariants are automated.
-3. Internal transfers are tested for atomicity.
-4. Duplicate financial execution is prevented.
+1. Approved features have defined test coverage.
+2. Ledger invariants have automated tests.
+3. Internal transfers are atomic.
+4. Duplicate execution is prevented.
 5. Provider timeouts are tested.
-6. Failed conversions and payouts are tested.
-7. KYC and account restrictions are tested.
+6. Failed payouts are recoverable.
+7. Restrictions are enforced.
 8. Authentication and authorization are tested.
-9. Sensitive data access is tested.
-10. Database migrations are validated.
-11. API contracts are verified.
-12. End-to-end customer journeys are tested.
-13. Performance requirements are measurable.
+9. Sensitive data is protected.
+10. Migrations are verified.
+11. API contracts are validated.
+12. End-to-end journeys are tested.
+13. Performance is measurable.
 14. Recovery procedures are tested.
-15. Release gates are established.
-16. Production approval requires objective evidence.
+15. GitHub CI provides reliable evidence.
+16. Production release remains independently verified.
 
-## FINAL TESTING PRINCIPLE
+---
 
-DEYPAY must not rely on successful user-interface demonstrations as proof of financial correctness.
+# 51. MANDATORY GITHUB ACTIONS EXECUTION POLICY
+
+## 51.1 Default Rule
+
+Claude, Codex and future engineering agents must execute expensive tests on GitHub Actions wherever feasible.
+
+This includes:
+
+- Full Rust builds.
+- Full Rust test suites.
+- PostgreSQL integration.
+- API integration.
+- Authentication regression.
+- Financial invariants.
+- Frontend builds.
+- Broad static analysis.
+- Long-running automated suites.
+
+## 51.2 Local Exceptions
+
+Local testing is permitted for:
+
+- Targeted tests.
+- Quick formatting checks.
+- Debugging.
+- Manual UI review.
+- Private configuration checks.
+- Local hardware dependencies.
+- Authorized environment-specific acceptance.
+
+Do not repeatedly execute complete local builds when the corresponding GitHub checks already cover the same revision.
+
+## 51.3 Agent Ownership
+
+Agents monitor CI triggered by their branches.
+
+Code pushed does not mean testing completed.
+
+## 51.4 Efficient CI
+
+Avoid unrelated dependency upgrades, duplicate workflows and unnecessary full-suite reruns.
+
+## 51.5 Resource Awareness
+
+GitHub-hosted runners have plan-dependent limits and usage allowances.
+
+Agents should use CI efficiently without weakening quality.
+
+---
+
+# 52. AGENT CI MONITORING PROTOCOL
+
+## 52.1 Trigger
+
+After implementation:
+
+1. Commit changes.
+2. Push to GitHub.
+3. Find the workflow run.
+4. Confirm the commit SHA.
+
+## 52.2 Access
+
+Agents may use:
+
+- GitHub CLI.
+- GitHub integrations.
+- GitHub Actions REST API.
+- Authorized GitHub browser access.
+
+Use whatever mechanism is available.
+
+## 52.3 Required Verification
+
+Verify:
+
+- Correct repository.
+- Correct commit SHA.
+- Completed workflow.
+- Successful required jobs.
+- No silently skipped mandatory tests.
+
+## 52.4 Failed Jobs
+
+1. Retrieve logs.
+2. Identify failure.
+3. Fix the implementation.
+4. Push correction.
+5. Verify updated CI.
+
+## 52.5 Missing Access
+
+If an agent cannot retrieve CI status or logs, report the limitation.
+
+Lack of access is not evidence of success.
+
+## 52.6 Agent Completion Report
+
+    DEYPAY ENGINEERING VERIFICATION
+
+    Task:
+    Branch:
+    Commit SHA:
+    Pull Request:
+    GitHub Actions URL:
+
+    Backend CI:
+    Frontend CI:
+    PostgreSQL Integration:
+    Relevant Regression Tests:
+
+    Failed Tests:
+    Skipped Tests:
+    Outstanding Dependencies:
+
+    Implementation Status:
+    Recommended Next Action:
+
+Only report tests that actually ran.
+
+## 52.7 Merge Ownership
+
+CI success does not authorize an engineering agent to merge its own PR.
+
+The repository owner retains merge approval.
+
+---
+
+# 53. LOCAL TESTING AND ENVIRONMENT-SPECIFIC ACCEPTANCE
+
+## 53.1 Main DEYPAY Directory
+
+The primary local application directory is:
+
+`~/Desktop/Projects/DeyPay`
+
+It contains the owner's existing private `.env` and local testing tools.
+
+## 53.2 Final Authentication Testing
+
+After Claude's authentication implementation is reviewed and merged:
+
+1. GitHub Actions runs reproducible automated tests.
+2. The main DEYPAY directory is updated.
+3. Claude performs the remaining environment-specific checks.
+4. Claude reports real results and gaps.
+5. The owner authorizes the next milestone.
+
+Do not rerun the entire Rust workspace locally without a specific need when CI has verified the same commit.
+
+## 53.3 Private Configuration
+
+Never:
+
+- Commit the `.env`.
+- Upload private database credentials.
+- Print secrets.
+- Copy sensitive configuration into CI artifacts.
+- Give unnecessary access to production resources.
+
+## 53.4 Email Verification
+
+Real Resend acceptance requires an authorized configured environment.
+
+CI can validate email-generation and application logic, but cannot claim actual delivery without a successful external delivery test.
+
+## 53.5 Provider Testing
+
+Actual Nuvion tests require approved credentials and environments.
+
+Money-moving tests need separate authorization and must not run automatically on ordinary pull requests.
+
+---
+
+# 54. CI SECURITY, PERFORMANCE AND MAINTENANCE RULES
+
+## 54.1 Least Privilege
+
+Workflows use minimum required permissions.
+
+## 54.2 Dependency Security
+
+Use compatible stable dependencies and reviewed action revisions.
+
+## 54.3 Caching
+
+Cache dependencies and compilation outputs when beneficial, with appropriate integrity and security controls.
+
+## 54.4 Parallel Jobs
+
+Run independent jobs concurrently when beneficial.
+
+## 54.5 Required Checks
+
+Mandatory CI gates must not be weakened to improve runtime.
+
+## 54.6 Infrastructure Failures
+
+Distinguish runner/network failures from application defects.
+
+Infrastructure failures may justify controlled reruns.
+
+## 54.7 Isolation
+
+CI must not interfere with production, other agents or unrelated branches.
+
+## 54.8 Evidence
+
+Retain appropriate logs and test reports without secrets.
+
+## 54.9 Improvements
+
+Allow future CI improvements, including:
+
+- Better caching.
+- Targeted developer feedback.
+- Reusable workflows.
+- Parallel test suites.
+- Dedicated performance runners.
+
+Every optimization must preserve required acceptance coverage.
+
+---
+
+# FINAL TESTING PRINCIPLE
+
+DEYPAY must not rely on a successful interface demonstration or passing build alone as proof of financial correctness.
 
 A successful transaction must be verified at the application, ledger and external settlement levels.
 
-A failed transaction must preserve accurate customer entitlements.
+A failed transaction must preserve accurate financial obligations.
 
-A duplicate request must not create duplicate financial effects.
+Duplicate requests must not create duplicate money movement.
 
-An uncertain provider response must not cause unsafe retries.
+Uncertain provider responses must not trigger unsafe retries.
 
-A database or worker failure must not compromise accounting integrity.
+Database or worker failure must not compromise financial integrity.
 
-An unauthorized actor must not gain access to customer funds or sensitive information.
+Unauthorized actors must not access another customer's funds or sensitive information.
 
-Every critical financial operation must be tested for successful execution, failure, concurrency, recovery and reconciliation.
+**GitHub Actions is DEYPAY's primary automated testing platform.**
 
-**The standard for DEYPAY is not simply that transactions work. The standard is that financial value remains correct, protected, traceable and recoverable under both normal and abnormal operating conditions.**
+**Claude and Codex must verify the exact tested commit, inspect failed jobs and provide real CI evidence before claiming engineering completion.**
+
+**The owner's computer must not carry the burden of repeated full automated builds and integration tests.**
+
+The DEYPAY standard is financial value that remains correct, protected, traceable and recoverable under normal and abnormal conditions.
 
 ---
 
@@ -2130,16 +2018,19 @@ Every critical financial operation must be tested for successful execution, fail
 
 | Role | Status |
 |---|---|
-| Product Owner | Pending |
-| Engineering Lead | Pending |
-| QA Lead | Pending |
-| Security Reviewer | Pending |
-| Financial Operations Lead | Pending |
-| Compliance Lead | Pending |
+| Product Owner | Approved — 26 November 2026 |
+| Engineering Lead | Approved — 26 November 2026 |
+| QA Lead | Approved — 26 November 2026 |
+| Security Reviewer | Approved — 26 November 2026 |
+| Financial Operations Lead | Approved — 26 November 2026 |
+| Compliance Lead | Approved — 26 November 2026 |
 
+**Approval Authority:** DEYPAY Project Owner  
 **Document ID:** DP-TEST-007  
-**Version:** 1.0  
-**Status:** Proposed Engineering Baseline
+**Version:** 1.1  
+**Status:** Approved Engineering Baseline  
+**Approval Status:** Approved  
+**Approval Date:** 26 November 2026
 
 ---
 
