@@ -1,5 +1,29 @@
 # Engineering progress
 
+## 2026-11-26 · Local authentication browser-path follow-ups (Phase 17 account slice, IMP-P3-002 workstation)
+
+This entry follows up the three open findings below. PR #16 (the workstation outbox) merged at `5aebe3d`; its push run [45869868410](https://github.com/Kenule-Africa/Daypay/actions/runs/45869868410) on `7faf84d` passed backend (13/13 steps) and frontend (11/11). **External email delivery remains unverified**, and IMP-P3-002 stays In testing.
+
+**Fixed in the repository:**
+
+- **Redirect origin.** The middleware sign-in redirect is now built from the forwarded `Host` and scheme. Under `next dev`, the redirect used Next's own `localhost:3000` origin, which Next.js leaves unchanged only for other hosts. A malformed `Host` falls back to `nextUrl`. The redirect is `no-store`. Verified on dev and production servers: `/app`, `/app/profile`, `/app/preferences` and `/app/security` redirect to `https://127.0.0.2:8443/login?next=…`. A new CI test covers this.
+- **Windows startup path.** `npm run dev` now starts `next dev` through `scripts/next-dev.mjs` from a canonical, uppercase drive-letter project path. The earlier 500 ("Could not find the module …error.tsx#default in the React Client Manifest") occurred with a lowercase `c:\` project path and was intermittent. This matches the Next.js warning that a casing mismatch "can cause files to resolve inconsistently". Launched from a lowercase `c:\` directory, the launcher's server rendered every account page with a real session. Unit tests cover the path rule.
+
+**Token exposure, investigated:**
+
+- **Production:** no exposure. A production build was checked through ingress-equivalent headers with a real session. `/`, `/login`, `/register`, `/app`, `/app/profile`, `/app/preferences` and `/app/security`, in both HTML and RSC payloads, never contained the token (21/21 checks). A new CI test asserts the same on every build.
+- **`next dev`:** exposure is inherent to Next.js 15.5's development tooling and cannot be removed from application code. In development, `cookies()` and `headers()` resolve through `makeDevtoolsIOAwarePromise`, and React serializes that I/O entry's value (the cookie jar) into `self.__next_f`. Reading the cookie inside `.then` did not help, because the leaked value is Next's own `cookies` I/O entry. Removing it would mean moving session handling out of server rendering, which needs an owner decision. Mitigation: authenticated acceptance through the ingress uses `npm run build` and `npm run start`. The README warns that development pages expose request cookies.
+
+**Local environment (private, outside Git):**
+
+- **Ingress:** the Caddy fallback now forwards one well-formed `__Host-deypay_session` (64 lowercase hex) to the web app, and nothing else, on non-`/_next/*` requests. Authorization stays stripped. Malformed, uppercase, duplicated, absent and other-only cookies reach the app cookie-less; valid cookies alone or among others pass through (7/7). Verifier routes are unchanged.
+- **Credentials:** the four local PostgreSQL role passwords that had appeared in tool output were rotated. libpq computed SCRAM verifiers client-side and the roles changed in one transaction. Five protected files were updated in place. New logins succeeded, old passwords were rejected, and API, verifier and HTTPS readiness returned 200 after restart.
+
+**Still to do:**
+
+- **Owner browser walkthrough:** sign-in, dashboard, profile, preferences, security, refresh and logout through `https://127.0.0.2:8443`. It was not run by the agent: the browser extension was unavailable, and agent password entry on this host is not permitted.
+- **Decision:** whether to redesign server-side session handling to remove the development-only exposure.
+
 ## 2026-11-26 · Local email verification and sign-in exercised (IMP-P3-002 workstation)
 
 **Scope.** This was a workstation-only check on the private local HTTPS environment (`https://127.0.0.2:8443`, PostgreSQL 18.7 on loopback, separate API, verifier and worker database roles). The running API and verifier binaries were built from the PR #14 backend source (`4fc5c03`), according to the environment's own record. The outbox example was built from this branch. **External email delivery was not exercised and remains unverified.** No email left the workstation. IMP-P3-002 stays In testing until a real Resend staging message is delivered and confirmed.

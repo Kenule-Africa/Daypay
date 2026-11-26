@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { createServer } from "node:http";
+import { createServer, request as httpRequest } from "node:http";
 import { after, before, beforeEach, test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -157,6 +157,45 @@ test("a rejected session is sent to sign-in without rendering private data", asy
   assert.equal(location.searchParams.get("reason"), "expired");
   const body = await response.text();
   assert.ok(!body.includes(profile.email));
+});
+
+// Requests as the HTTPS ingress forwards them: the browser's Host and scheme.
+function viaIngress(path, cookie) {
+  return new Promise((resolve, reject) => {
+    const target = new URL(path, origin);
+    const headers = { host: "127.0.0.2:8443", "x-forwarded-proto": "https", "x-forwarded-host": "127.0.0.2:8443" };
+    if (cookie) headers.cookie = cookie;
+    const req = httpRequest({ hostname: target.hostname, port: target.port, path: target.pathname, headers }, res => {
+      res.resume();
+      res.on("end", () => resolve({ status: res.statusCode, location: res.headers.location }));
+    });
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+test("sign-in redirects stay on the browser's origin behind the HTTPS ingress", async () => {
+  for (const path of ["/app", "/app/security"]) {
+    const { status, location } = await viaIngress(path);
+    assert.equal(status, 307);
+    const target = new URL(location);
+    assert.equal(target.origin, "https://127.0.0.2:8443");
+    assert.equal(target.pathname, "/login");
+    assert.equal(target.searchParams.get("next"), path);
+  }
+});
+
+test("the session token never appears in rendered pages or RSC payloads", async () => {
+  for (const path of ["/", "/login", "/register", "/app", "/app/profile", "/app/preferences", "/app/security"]) {
+    for (const rsc of [false, true]) {
+      const response = await fetch(origin + path, {
+        redirect: "manual",
+        headers: rsc ? { cookie: signedIn, rsc: "1" } : { cookie: signedIn },
+      });
+      const body = await response.text();
+      assert.ok(!body.includes(TOKEN), `${path}${rsc ? " (RSC)" : ""} exposed the session token`);
+    }
+  }
 });
 
 test("a valid session renders the customer's own profile and is never cached", async () => {
