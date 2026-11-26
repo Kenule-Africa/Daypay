@@ -20,6 +20,7 @@ Rust workspace: [`backend/Cargo.toml`](../../backend/Cargo.toml)
 
 - API entry point and current health routes: `backend/crates/deypay-api/src/main.rs`
 - Worker entry point: `backend/crates/deypay-worker/src/main.rs`
+- Workstation-only verification outbox (Cargo example, local/test only): `backend/crates/deypay-worker/examples/local_verification_outbox.rs`; usage in [LOCAL-EMAIL-VERIFICATION.md](LOCAL-EMAIL-VERIFICATION.md).
 - Email verification routes and confirmation page live in `deypay-api/src/email_verification.rs` and `verify_email.html`. Worker claims, protected proofs and delivery adapters live in `deypay-infrastructure/src/email_verification.rs` and `email_delivery.rs`. Migration `202611190002_email_verification.sql` binds outbox intents, leases and single-use confirmation to PostgreSQL.
 - Domain root and accepted KYC case state machine: `backend/crates/deypay-domain/src/lib.rs` and `backend/crates/deypay-domain/src/kyc.rs`
 - Domain projections and exact units: `backend/crates/deypay-domain/src/`; repository contracts: `backend/crates/deypay-application/src/repositories.rs`; SQLx implementations: `backend/crates/deypay-infrastructure/src/repositories.rs`.

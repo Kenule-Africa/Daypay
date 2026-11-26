@@ -1,6 +1,31 @@
 # Engineering progress
 
-## 2026-11-26 · PR #14 Phase 3 authentication acceptance
+## 2026-11-26 · Local email verification and sign-in exercised (IMP-P3-002 workstation)
+
+**Scope.** This was a workstation-only check on the private local HTTPS environment (`https://127.0.0.2:8443`, PostgreSQL 18.7 on loopback, separate API, verifier and worker database roles). The running API and verifier binaries were built from the PR #14 backend source (`4fc5c03`), according to the environment's own record. The outbox example was built from this branch. **External email delivery was not exercised and remains unverified.** No email left the workstation. IMP-P3-002 stays In testing until a real Resend staging message is delivered and confirmed.
+
+**Mechanism.** Before this check, the local setup had no way to redeem a genuine token: the API had verification disabled (503), no worker ran, and the local `mock` adapter keeps links only in process memory. The new [workstation outbox example](LOCAL-EMAIL-VERIFICATION.md) runs the production `VerificationWorker` path with the sandbox scope, using the dedicated worker role, and writes each message to an operator-only directory. The local API was restarted with `EMAIL_VERIFICATION_ENABLED=true`. No verification or session row was edited by hand.
+
+**Results** (one sandbox account registered with an owner-supplied address; synthetic profile fields):
+
+- Registration over HTTPS returned 202 with no cookie, leaving the account `CONTACT_UNVERIFIED` with one pending sandbox intent. Login before verification returned 401.
+- The outbox processed 3 sandbox jobs (`ACCEPTED`): this account plus 2 earlier synthetic `example.invalid` registrations. The link targeted `https://127.0.0.2:8443/verify-email`, and its selector matched the message ID.
+- `GET /verify-email` returned 200 with `no-store`. The first `POST /api/v1/auth/verify-email` returned 200, and a replay returned 422. Neither response echoed the token or set a cookie. Afterwards the account was `CONTACT_VERIFIED`, with the email verified, the phone unverified, the challenge consumed, the job `SUCCEEDED` and no session created.
+- 22/22 HTTPS session checks passed:
+  - Wrong password returned 401. A missing or foreign Origin returned 403.
+  - Login returned 200 and set `__Host-deypay_session` with `Path=/; Secure; HttpOnly; SameSite=Lax` and no Domain.
+  - `GET /api/v1/me`, `/me/status`, `/me/preferences` and `/auth/sessions` returned 200 for this customer. Without the cookie they returned 401.
+  - Refresh without Origin returned 403. Refresh returned 200 and rotated the identifier; the earlier cookie then returned 401 and the new one 200.
+  - Logout returned 200 with the `Max-Age=0` cookie. Afterwards `/me`, `/auth/sessions` and refresh returned 401.
+- The API and verifier logs contained neither the password nor any cookie value.
+- With a real session sent directly to a Next.js dev server whose `API_BASE_URL` points at the general API, `/app`, `/app/profile` and `/app/security` returned 200 and rendered the account. Logout then revoked the session.
+- Example unit tests ran locally: 4/4 passed. Targeted `cargo fmt --check` and `cargo clippy -p deypay-worker --all-targets -D warnings` also passed. CI evidence is recorded on the pull request.
+
+**Open findings (not fixed here):**
+
+1. The private local ingress strips `Cookie` on its frontend fallback. The frontend middleware and account layout validate the session server-side, so through `https://127.0.0.2:8443` a signed-in browser is always sent to sign-in. The browser dashboard flow through the ingress therefore remains unverified until the environment owner decides whether to forward the session cookie to the web app.
+2. Under `next dev`, middleware redirects use the dev server's own origin (`http(s)://localhost:3000/login?...`) instead of the ingress origin. Consider relative `Location` redirects. Production behaviour was not checked.
+3. Under `next dev` only, React's server debug payload (`self.__next_f`) included the awaited `cookies()` value, including the session token. A production build was not checked.
 
 **Accepted `main` commit:** `4fc5c034385ebe34d3b4c9f10594664b923ecd50`, reported as the PR [#14](https://github.com/Kenule-Africa/Daypay/pull/14) merge commit.
 
