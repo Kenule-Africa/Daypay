@@ -1,0 +1,32 @@
+-- Cluster administrator prerequisite for migration 202611260001 (Phase 5 ledger).
+-- Creates the NOLOGIN ledger roles. Safe to rerun. Grant them to logins only
+-- once those processes are authorized:
+--   deypay_ledger_poster      financial workflows (postings, transfers, reservations)
+--   deypay_ledger_evidence    authenticated provider adapters (provider outcomes);
+--                             never to a login that also holds the poster role
+--   deypay_ledger_controller  finance-operations logins; each must also be bound
+--                             to its one operator in ledger.operator_logins
+--   deypay_ledger_reader      reporting
+-- deypay_ledger_owner owns the ledger functions and is granted to no runtime
+-- login; ledger-grants.psql is applied by a role that may act as it.
+DO $$
+DECLARE
+    wanted text;
+BEGIN
+    FOREACH wanted IN ARRAY ARRAY['deypay_ledger_owner','deypay_ledger_poster','deypay_ledger_evidence',
+                                  'deypay_ledger_controller','deypay_ledger_reader'] LOOP
+        IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = wanted) THEN
+            BEGIN
+                EXECUTE format('CREATE ROLE %I NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS', wanted);
+            EXCEPTION WHEN duplicate_object OR unique_violation THEN
+                NULL; -- created concurrently
+            END;
+        END IF;
+    END LOOP;
+    IF EXISTS (SELECT FROM pg_catalog.pg_roles
+               WHERE rolname IN ('deypay_ledger_owner','deypay_ledger_poster','deypay_ledger_evidence',
+                                 'deypay_ledger_controller','deypay_ledger_reader')
+                 AND (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls OR rolcanlogin)) THEN
+        RAISE EXCEPTION 'Unsafe pre-existing ledger role';
+    END IF;
+END $$;

@@ -176,23 +176,25 @@ IMP-P4-005–007 are Blocked by the repository owner's explicit hold on further 
 
 | Task ID | Roadmap task | Status |
 |---|---|---|
-| IMP-P5-001 | Define exact-money types. | Backlog |
-| IMP-P5-002 | Define asset identifiers and precision rules. | Backlog |
-| IMP-P5-003 | Implement ledger accounts. | Backlog |
-| IMP-P5-004 | Implement journal headers. | Backlog |
-| IMP-P5-005 | Implement journal entries. | Backlog |
-| IMP-P5-006 | Implement balanced journal validation. | Backlog |
-| IMP-P5-007 | Implement posting service. | Backlog |
-| IMP-P5-008 | Implement customer available accounts. | Backlog |
-| IMP-P5-009 | Implement customer reserved accounts. | Backlog |
-| IMP-P5-010 | Implement reservations. | Backlog |
-| IMP-P5-011 | Implement reservation release. | Backlog |
-| IMP-P5-012 | Implement balance projections. | Backlog |
-| IMP-P5-013 | Implement accounting event idempotency. | Backlog |
-| IMP-P5-014 | Implement compensating journals. | Backlog |
-| IMP-P5-015 | Implement reconciliation foundations. | Backlog |
-| IMP-P5-016 | Implement concurrency controls. | Backlog |
-| IMP-P5-017 | Implement financial invariant tests. | Backlog |
+| IMP-P5-001 | Define exact-money types. | In review |
+| IMP-P5-002 | Define asset identifiers and precision rules. | In review |
+| IMP-P5-003 | Implement ledger accounts. | In review |
+| IMP-P5-004 | Implement journal headers. | In review |
+| IMP-P5-005 | Implement journal entries. | In review |
+| IMP-P5-006 | Implement balanced journal validation. | In review |
+| IMP-P5-007 | Implement posting service. | In review |
+| IMP-P5-008 | Implement customer available accounts. | In review |
+| IMP-P5-009 | Implement customer reserved accounts. | In review |
+| IMP-P5-010 | Implement reservations. | In review |
+| IMP-P5-011 | Implement reservation release. | In review |
+| IMP-P5-012 | Implement balance projections. | In review |
+| IMP-P5-013 | Implement accounting event idempotency. | In review |
+| IMP-P5-014 | Implement compensating journals. | In review |
+| IMP-P5-015 | Implement reconciliation foundations. | In review |
+| IMP-P5-016 | Implement concurrency controls. | In review |
+| IMP-P5-017 | Implement financial invariant tests. | In review |
+
+IMP-P5-001–017 are implemented by Claude on `feat/claude-phase5-financial-ledger` under the owner's 2026-11-26 financial-architecture decisions and are In review pending owner review and merge of the pull request. The ledger is persisted by migration `202611260001_financial_ledger.sql` with grants in `infrastructure/postgres/ledger-roles.psql` and `ledger-grants.psql`; the PostgreSQL financial-invariant suite is `backend/crates/deypay-infrastructure/tests/ledger.rs`. No financial endpoint, provider execution or live customer activity is enabled; the shipped application gate refuses every customer-initiated movement until an approved eligibility policy exists. The independent review of the PR was remediated on the same branch ([PHASE5-LEDGER-SECURITY-REVIEW.md](PHASE5-LEDGER-SECURITY-REVIEW.md)). PostgreSQL also refuses customer movements until they are activated, binds operator identity to the authenticated database login, and requires authenticated provider outcomes for settlement and post-submission release. Status is unchanged.
 
 ## Phase 6 · WALLET AND ASSET MANAGEMENT (§19)
 
