@@ -65,7 +65,12 @@ impl Customer {
 }
 
 async fn user(pool: &PgPool, email: &str, status: &str) -> Uuid {
-    sqlx::query_scalar("INSERT INTO identity.users(email, status) VALUES ($1, $2) RETURNING id")
+    // Statuses beyond email confirmation carry the verification time, as real rows do.
+    sqlx::query_scalar(
+        "INSERT INTO identity.users(email, status, email_verified_at)
+         VALUES ($1, $2, CASE WHEN $2 IN ('REGISTERED', 'CONTACT_UNVERIFIED') THEN NULL ELSE now() END)
+         RETURNING id",
+    )
         .bind(email)
         .bind(status)
         .fetch_one(pool)
