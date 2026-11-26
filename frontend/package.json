@@ -11,20 +11,31 @@
     "test": "node --test tests/*.test.mjs"
   },
   "overrides": {
-    "next": { "postcss": "8.5.23" }
+    "next": {
+      "postcss": "8.5.23"
+    }
   },
   "dependencies": {
+    "@fontsource-variable/bricolage-grotesque": "5.3.0",
+    "@fontsource-variable/instrument-sans": "5.3.0",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "lucide-react": "1.81.0",
     "next": "15.5.29",
+    "radix-ui": "1.8.1",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "tailwind-merge": "3.7.1"
   },
   "devDependencies": {
     "@eslint/eslintrc": "3.3.7",
+    "@tailwindcss/postcss": "4.3.5",
     "@types/node": "20.19.43",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.7",
     "eslint": "9.39.5",
     "eslint-config-next": "15.5.29",
+    "tailwindcss": "4.3.5",
     "typescript": "5.9.3"
   }
 }
