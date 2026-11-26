@@ -16,6 +16,8 @@ use sqlx::PgPool;
 use std::sync::Arc;
 use tower::ServiceExt;
 
+#[path = "cases/email_verification_acceptance.rs"]
+mod email_verification_acceptance;
 #[path = "cases/login_sessions.rs"]
 mod login_sessions;
 #[path = "cases/password_recovery.rs"]
