@@ -1,11 +1,135 @@
-:root { color-scheme: light; font-family: "Inter", system-ui, sans-serif; color: #14352c; background: #f5f7f2; }
-* { box-sizing: border-box; }
-body { margin: 0; }
-main { max-width: 58rem; margin: auto; padding: 2rem clamp(1.25rem, 4vw, 3rem); }
-header { font-weight: 750; letter-spacing: .14em; padding-bottom: 1.5rem; border-bottom: 1px solid #baccc1; }
-section { margin: clamp(3rem, 10vw, 7rem) 0; }
-h1 { font-size: clamp(2.5rem, 7vw, 4rem); letter-spacing: -.055em; line-height: 1.1; margin: 0 0 2rem; }
-dl { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; justify-content: space-between; border-block: 1px solid #baccc1; padding: 1.5rem 0; }
-dt { font-weight: 600; }
-dd { margin: 0; color: #7d3926; }
-dd[data-ready="true"] { color: #12613b; }
+@import "tailwindcss";
+
+/* DEYPAY design tokens. Components use these names; page code never hardcodes
+   colours, radii, shadows or easing. */
+@theme inline {
+  --font-sans: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-heading), var(--font-body), ui-sans-serif, system-ui, sans-serif;
+}
+
+@theme static {
+  --color-ink-950: #0a0910;
+  --color-ink-900: #121019;
+  --color-ink-800: #1b1824;
+  --color-ink-700: #292533;
+  --color-ink-600: #423d4d;
+  --color-ink-500: #625d6c;
+  --color-ink-400: #8a8593;
+  --color-ink-300: #b6b2bd;
+  --color-ink-200: #d9d6dd;
+
+  --color-paper: #f6f4ef;
+  --color-paper-2: #efebe3;
+  --color-paper-3: #e5e0d6;
+  --color-surface: #ffffff;
+
+  --color-brand-50: #f5f2ff;
+  --color-brand-100: #ebe5ff;
+  --color-brand-200: #d7cbff;
+  --color-brand-300: #b8a1ff;
+  --color-brand-400: #9370ff;
+  --color-brand-500: #6c3cff;
+  --color-brand-600: #5a29ee;
+  --color-brand-700: #4a1fc7;
+  --color-brand-800: #3a1a96;
+  --color-brand-900: #231061;
+
+  --color-positive: #13734c;
+  --color-positive-soft: #e2f3ea;
+  --color-caution: #8f5a0b;
+  --color-caution-soft: #fbefd9;
+  --color-danger: #b1213a;
+  --color-danger-soft: #fbe5e9;
+
+  --radius-control: 0.75rem;
+  --radius-panel: 1.25rem;
+  --radius-feature: 1.75rem;
+  --radius-hero: 2.25rem;
+
+  --shadow-soft: 0 1px 2px rgb(18 16 25 / 0.04), 0 6px 20px -10px rgb(18 16 25 / 0.12);
+  --shadow-lift: 0 1px 2px rgb(18 16 25 / 0.05), 0 18px 40px -18px rgb(18 16 25 / 0.22);
+  --shadow-pop: 0 24px 60px -20px rgb(35 16 97 / 0.35);
+  --shadow-glow: 0 10px 30px -10px rgb(108 60 255 / 0.55);
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out-quint: cubic-bezier(0.83, 0, 0.17, 1);
+
+  --animate-rise: rise 0.7s var(--ease-out-expo) both;
+  --animate-fade: fade 0.45s var(--ease-out-expo) both;
+  --animate-flow: flow 2.6s linear infinite;
+  --animate-breathe: breathe 6s ease-in-out infinite;
+
+  --container-form: 27rem;
+  --container-reading: 44rem;
+  --container-app: 64rem;
+  --container-site: 76rem;
+
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(14px); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes flow {
+    to { stroke-dashoffset: -40; }
+  }
+  @keyframes breathe {
+    0%, 100% { opacity: 0.55; transform: scale(1); }
+    50% { opacity: 0.9; transform: scale(1.06); }
+  }
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+    scroll-behavior: smooth;
+  }
+  body {
+    background: var(--color-paper);
+    color: var(--color-ink-900);
+    font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+    font-feature-settings: "ss01", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  h1, h2, h3, h4 {
+    font-family: var(--font-heading), var(--font-body), ui-sans-serif, system-ui, sans-serif;
+    letter-spacing: -0.025em;
+    text-wrap: balance;
+  }
+  p { text-wrap: pretty; }
+  ::selection { background: var(--color-brand-200); color: var(--color-ink-950); }
+  :focus-visible {
+    outline: 2px solid var(--color-brand-500);
+    outline-offset: 3px;
+    border-radius: 6px;
+  }
+  [hidden] { display: none !important; }
+}
+
+/* Scroll reveal. Content renders visible; the client only hides elements that
+   start below the viewport, so nothing depends on JavaScript to be readable. */
+[data-reveal="pending"] {
+  opacity: 0;
+  transform: translateY(18px);
+}
+[data-reveal="shown"] {
+  opacity: 1;
+  transform: none;
+  transition: opacity 0.8s var(--ease-out-expo), transform 0.8s var(--ease-out-expo);
+  transition-delay: var(--reveal-delay, 0ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  [data-reveal="pending"] { opacity: 1; transform: none; }
+}

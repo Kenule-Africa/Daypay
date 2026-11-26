@@ -1,28 +1,43 @@
-export const dynamic = "force-dynamic";
-
-async function apiAvailable(): Promise<boolean> {
-  try {
-    const endpoint = new URL("/health/ready", process.env.API_BASE_URL ?? "http://127.0.0.1:8000");
-    const response = await fetch(endpoint, {
-      cache: "no-store",
-      redirect: "error",
-      signal: AbortSignal.timeout(2500),
-    });
-    return response.ok && (await response.json()).status === "ready";
-  } catch {
-    return false;
-  }
-}
+import { cookies } from "next/headers";
+import { Hero } from "@/components/marketing/hero";
+import {
+  Availability,
+  AutoSettlement,
+  ClosingCall,
+  MoveMoney,
+  PayAnyone,
+  Purpose,
+  Security,
+  Wallets,
+} from "@/components/marketing/sections";
+import { SiteFooter } from "@/components/marketing/site-footer";
+import { SiteHeader } from "@/components/marketing/site-header";
+import { SESSION_COOKIE } from "@/lib/server/session";
 
 export default async function Home() {
-  const ready = await apiAvailable();
+  // Only selects which call to action to show; /app validates the session itself.
+  const signedIn = (await cookies()).has(SESSION_COOKIE);
   return (
-    <main>
-      <header>DEYPAY</header>
-      <section aria-labelledby="status-title">
-        <h1 id="status-title">Service status</h1>
-        <dl><dt>Payments API</dt><dd data-ready={ready}>{ready ? "Available" : "Unavailable"}</dd></dl>
-      </section>
-    </main>
+    <>
+      <a
+        href="#main"
+        className="sr-only z-50 rounded-control bg-ink-900 px-4 py-2 text-paper focus:not-sr-only focus:fixed focus:left-4 focus:top-4"
+      >
+        Skip to content
+      </a>
+      <SiteHeader signedIn={signedIn} />
+      <main id="main">
+        <Hero signedIn={signedIn} />
+        <Purpose />
+        <Wallets />
+        <MoveMoney />
+        <PayAnyone />
+        <AutoSettlement />
+        <Security />
+        <Availability />
+        <ClosingCall signedIn={signedIn} />
+      </main>
+      <SiteFooter />
+    </>
   );
 }
