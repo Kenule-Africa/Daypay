@@ -1,7 +1,10 @@
--- Apply after migration 202611260001 and ledger-roles.psql, as a DBA or a
--- migration administrator allowed to assign ownership. Every ledger write runs
--- in a SECURITY DEFINER function owned by the NOLOGIN deypay_ledger_owner; no
--- runtime role receives INSERT, UPDATE, DELETE or TRUNCATE on ledger tables.
+-- Apply after migration 202611260001 and ledger-roles.psql, and again after any
+-- later migration that changes the ledger or operations schemas, as a DBA or a
+-- migration administrator that owns the ledger objects and may SET ROLE to
+-- deypay_ledger_owner. Every ledger write runs in a SECURITY DEFINER function
+-- owned by the NOLOGIN deypay_ledger_owner; no runtime role receives INSERT,
+-- UPDATE, DELETE or TRUNCATE on ledger tables. The verification at the end
+-- aborts the whole transaction if any rule below does not hold.
 BEGIN;
 GRANT USAGE ON SCHEMA ledger, operations, wallets, identity, compliance, audit, integrations, payments
     TO deypay_ledger_owner;
@@ -9,7 +12,9 @@ GRANT SELECT ON ledger.chart_accounts TO deypay_ledger_owner;
 GRANT SELECT, INSERT, UPDATE ON ledger.accounts, ledger.balances, ledger.reservations, ledger.correction_requests,
     ledger.recovery_cases, ledger.asset_holds TO deypay_ledger_owner;
 GRANT SELECT, INSERT ON ledger.accounting_events, ledger.journals, ledger.entries, ledger.reservation_movements,
-    ledger.reservation_execution_history TO deypay_ledger_owner;
+    ledger.reservation_execution_history, ledger.provider_outcomes TO deypay_ledger_owner;
+-- Trust anchors: the functions read them; only the database administrator writes them.
+GRANT SELECT ON ledger.capability_activations, ledger.operator_logins TO deypay_ledger_owner;
 GRANT USAGE ON SEQUENCE ledger.journal_sequence TO deypay_ledger_owner;
 GRANT SELECT, INSERT, UPDATE ON operations.reconciliation_runs, operations.reconciliation_cases TO deypay_ledger_owner;
 GRANT SELECT, INSERT ON operations.reconciliation_items, operations.reconciliation_case_events TO deypay_ledger_owner;
@@ -20,6 +25,7 @@ GRANT SELECT (user_id, active) ON compliance.account_restrictions TO deypay_ledg
 GRANT SELECT (user_id, role_id, revoked_at) ON audit.admin_assignments TO deypay_ledger_owner;
 GRANT SELECT (role_id, permission_id) ON audit.role_permissions TO deypay_ledger_owner;
 GRANT SELECT (id, permission_code) ON audit.admin_permissions TO deypay_ledger_owner;
+GRANT SELECT (id, transaction_id, is_financial) ON integrations.provider_operations TO deypay_ledger_owner;
 GRANT INSERT (actor_type, actor_id, action, resource_type, resource_id, reason, metadata) ON audit.audit_events
     TO deypay_ledger_owner;
 GRANT INSERT (aggregate_type, aggregate_id, event_type, payload) ON integrations.outbox_events TO deypay_ledger_owner;
@@ -36,7 +42,8 @@ BEGIN
 END $$;
 REVOKE CREATE ON SCHEMA ledger, operations FROM deypay_ledger_owner;
 
-GRANT USAGE ON SCHEMA ledger TO deypay_ledger_poster, deypay_ledger_controller, deypay_ledger_reader;
+GRANT USAGE ON SCHEMA ledger TO deypay_ledger_poster, deypay_ledger_evidence, deypay_ledger_controller,
+    deypay_ledger_reader;
 GRANT USAGE ON SCHEMA operations TO deypay_ledger_controller, deypay_ledger_reader;
 
 -- Financial workflows: postings, transfers and the reservation lifecycle.
@@ -50,6 +57,12 @@ GRANT EXECUTE ON FUNCTION
     ledger.release_reservation(uuid,text,text,text,text,text,text,uuid,uuid)
 TO deypay_ledger_poster;
 
+-- Authenticated provider adapters: definitive outcomes of reserved operations.
+GRANT EXECUTE ON FUNCTION
+    ledger.record_provider_outcome(uuid,text,uuid,text,bytea,timestamptz),
+    ledger.reservation_state(uuid)
+TO deypay_ledger_evidence;
+
 GRANT EXECUTE ON FUNCTION
     ledger.account_balance(uuid),
     ledger.customer_balance(uuid,uuid),
@@ -60,8 +73,9 @@ TO deypay_ledger_poster, deypay_ledger_controller, deypay_ledger_reader;
 GRANT EXECUTE ON FUNCTION ledger.reconstructed_balances(), ledger.integrity_violations()
 TO deypay_ledger_controller, deypay_ledger_reader;
 
--- Finance operations: accounts, maker-checker corrections, recovery and reconciliation.
--- Each function additionally checks the acting person's audit.admin_* permission.
+-- Finance operations: accounts, maker-checker corrections, recovery and
+-- reconciliation. Each function acts only for the operator bound to the
+-- session's authenticated login and checks that operator's permission.
 GRANT EXECUTE ON FUNCTION
     ledger.open_platform_account(text,uuid,text,uuid),
     ledger.set_account_status(uuid,text,text,uuid),
@@ -82,14 +96,21 @@ TO deypay_ledger_controller;
 GRANT SELECT ON ALL TABLES IN SCHEMA ledger, operations TO deypay_ledger_reader;
 
 DO $$
+DECLARE
+    runtime CONSTANT text[] := ARRAY['deypay_app','deypay_ledger_poster','deypay_ledger_evidence',
+        'deypay_ledger_controller','deypay_ledger_reader'];
+    offending text;
 BEGIN
     IF EXISTS (
-        SELECT 1 FROM pg_class c CROSS JOIN unnest(ARRAY['deypay_app','deypay_ledger_poster',
-            'deypay_ledger_controller','deypay_ledger_reader']) AS r(name)
+        SELECT 1 FROM pg_class c CROSS JOIN unnest(runtime) AS r(name)
         WHERE c.relnamespace IN ('ledger'::regnamespace, 'operations'::regnamespace) AND c.relkind IN ('r','p')
           AND EXISTS (SELECT FROM pg_roles WHERE rolname = r.name)
           AND has_table_privilege(r.name, c.oid, 'INSERT,UPDATE,DELETE,TRUNCATE')) THEN
         RAISE EXCEPTION 'A runtime role can write ledger tables directly';
+    END IF;
+    IF has_table_privilege('deypay_ledger_owner', 'ledger.capability_activations', 'INSERT,UPDATE,DELETE,TRUNCATE')
+       OR has_table_privilege('deypay_ledger_owner', 'ledger.operator_logins', 'INSERT,UPDATE,DELETE,TRUNCATE') THEN
+        RAISE EXCEPTION 'Ledger functions must not be able to write activations or operator bindings';
     END IF;
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'deypay_app')
        AND (has_schema_privilege('deypay_app', 'ledger', 'USAGE')
@@ -104,6 +125,94 @@ BEGIN
     IF EXISTS (SELECT 1 FROM pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
                WHERE p.pronamespace IN ('ledger'::regnamespace, 'operations'::regnamespace) AND a.grantee = 0) THEN
         RAISE EXCEPTION 'Ledger routines must not be executable by PUBLIC';
+    END IF;
+    SELECT string_agg(p.oid::regprocedure::text, ', ') INTO offending FROM pg_proc p
+    WHERE p.pronamespace IN ('ledger'::regnamespace, 'operations'::regnamespace)
+      AND NOT coalesce('search_path=pg_catalog, pg_temp' = ANY (p.proconfig), false);
+    IF offending IS NOT NULL THEN
+        RAISE EXCEPTION 'Ledger routines must pin search_path to pg_catalog, pg_temp: %', offending;
+    END IF;
+
+    -- Role membership: runtime roles and the logins holding them never act as
+    -- the function owner, the API role holds no ledger role, and no login both
+    -- moves reserved funds and records the provider evidence for it (the
+    -- functions also refuse such a session at run time).
+    SELECT string_agg(r.rolname, ', ') INTO offending FROM pg_roles r
+    WHERE NOT r.rolsuper AND r.rolname <> 'deypay_ledger_owner'
+      AND pg_has_role(r.oid, 'deypay_ledger_owner', 'MEMBER')
+      AND (r.rolname = ANY (runtime)
+           OR (r.rolcanlogin AND (pg_has_role(r.oid, 'deypay_ledger_poster', 'MEMBER')
+               OR pg_has_role(r.oid, 'deypay_ledger_evidence', 'MEMBER')
+               OR pg_has_role(r.oid, 'deypay_ledger_controller', 'MEMBER')
+               OR pg_has_role(r.oid, 'deypay_ledger_reader', 'MEMBER'))));
+    IF offending IS NOT NULL THEN
+        RAISE EXCEPTION 'Runtime ledger logins must not act as deypay_ledger_owner: %', offending;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'deypay_app')
+       AND (pg_has_role('deypay_app', 'deypay_ledger_poster', 'MEMBER')
+            OR pg_has_role('deypay_app', 'deypay_ledger_evidence', 'MEMBER')
+            OR pg_has_role('deypay_app', 'deypay_ledger_controller', 'MEMBER')
+            OR pg_has_role('deypay_app', 'deypay_ledger_reader', 'MEMBER')) THEN
+        RAISE EXCEPTION 'The general API role must not hold a ledger role';
+    END IF;
+    SELECT string_agg(r.rolname, ', ') INTO offending FROM pg_roles r
+    WHERE NOT r.rolsuper AND r.rolcanlogin
+      AND pg_has_role(r.oid, 'deypay_ledger_poster', 'MEMBER')
+      AND pg_has_role(r.oid, 'deypay_ledger_evidence', 'MEMBER');
+    IF offending IS NOT NULL THEN
+        RAISE EXCEPTION 'A login must not hold both the poster and evidence roles: %', offending;
+    END IF;
+
+    -- Every runtime role may execute exactly its public interface; internal
+    -- helpers (apply_journal, claim_event, record_item, ...) are never reachable.
+    WITH allowed(role_name, routine) AS (VALUES
+        ('deypay_ledger_poster', 'ledger.open_customer_accounts(uuid)'::regprocedure),
+        ('deypay_ledger_poster', 'ledger.post_journal(text,text,text,uuid,uuid[],uuid[],text[],text[],text,text,uuid,uuid)'),
+        ('deypay_ledger_poster', 'ledger.transfer_between_customers(text,uuid,uuid,uuid,text,uuid,text,uuid,uuid)'),
+        ('deypay_ledger_poster', 'ledger.reserve_funds(text,uuid,uuid,text,uuid,text,text,uuid,uuid)'),
+        ('deypay_ledger_poster', 'ledger.record_execution_state(uuid,text,text)'),
+        ('deypay_ledger_poster', 'ledger.consume_reservation(uuid,text,text,text,uuid[],text[],text,text,uuid,uuid)'),
+        ('deypay_ledger_poster', 'ledger.release_reservation(uuid,text,text,text,text,text,text,uuid,uuid)'),
+        ('deypay_ledger_poster', 'ledger.account_balance(uuid)'),
+        ('deypay_ledger_poster', 'ledger.customer_balance(uuid,uuid)'),
+        ('deypay_ledger_poster', 'ledger.reservation_state(uuid)'),
+        ('deypay_ledger_poster', 'ledger.outstanding_reservations(interval)'),
+        ('deypay_ledger_evidence', 'ledger.record_provider_outcome(uuid,text,uuid,text,bytea,timestamptz)'),
+        ('deypay_ledger_evidence', 'ledger.reservation_state(uuid)'),
+        ('deypay_ledger_reader', 'ledger.account_balance(uuid)'),
+        ('deypay_ledger_reader', 'ledger.customer_balance(uuid,uuid)'),
+        ('deypay_ledger_reader', 'ledger.reservation_state(uuid)'),
+        ('deypay_ledger_reader', 'ledger.outstanding_reservations(interval)'),
+        ('deypay_ledger_reader', 'ledger.reconstructed_balances()'),
+        ('deypay_ledger_reader', 'ledger.integrity_violations()'),
+        ('deypay_ledger_controller', 'ledger.account_balance(uuid)'),
+        ('deypay_ledger_controller', 'ledger.customer_balance(uuid,uuid)'),
+        ('deypay_ledger_controller', 'ledger.reservation_state(uuid)'),
+        ('deypay_ledger_controller', 'ledger.outstanding_reservations(interval)'),
+        ('deypay_ledger_controller', 'ledger.reconstructed_balances()'),
+        ('deypay_ledger_controller', 'ledger.integrity_violations()'),
+        ('deypay_ledger_controller', 'ledger.open_platform_account(text,uuid,text,uuid)'),
+        ('deypay_ledger_controller', 'ledger.set_account_status(uuid,text,text,uuid)'),
+        ('deypay_ledger_controller', 'ledger.request_correction(text,uuid,jsonb,text,text,uuid)'),
+        ('deypay_ledger_controller', 'ledger.decide_correction(uuid,uuid,boolean,text)'),
+        ('deypay_ledger_controller', 'ledger.execute_correction(uuid,uuid)'),
+        ('deypay_ledger_controller', 'ledger.resolve_recovery_case(uuid,uuid,text,uuid)'),
+        ('deypay_ledger_controller', 'ledger.lift_asset_hold(uuid,text,uuid)'),
+        ('deypay_ledger_controller', 'operations.start_reconciliation(text,uuid,timestamptz,timestamptz,uuid)'),
+        ('deypay_ledger_controller', 'operations.reconcile_ledger_integrity(uuid)'),
+        ('deypay_ledger_controller', 'operations.reconcile_customer_liabilities(uuid,uuid)'),
+        ('deypay_ledger_controller', 'operations.record_balance_evidence(uuid,uuid,text,text,bytea,timestamptz)'),
+        ('deypay_ledger_controller', 'operations.record_transaction_evidence(uuid,text,uuid,uuid,text,text,text,bytea,timestamptz)'),
+        ('deypay_ledger_controller', 'operations.complete_reconciliation(uuid,text[],uuid)'),
+        ('deypay_ledger_controller', 'operations.update_case(uuid,text,uuid,text,text,uuid)'))
+    SELECT string_agg(r.name || ' → ' || p.oid::regprocedure::text, ', ') INTO offending
+    FROM pg_proc p CROSS JOIN unnest(runtime) AS r(name)
+    WHERE p.pronamespace IN ('ledger'::regnamespace, 'operations'::regnamespace)
+      AND EXISTS (SELECT FROM pg_roles WHERE rolname = r.name)
+      AND has_function_privilege(r.name, p.oid, 'EXECUTE')
+      AND NOT EXISTS (SELECT 1 FROM allowed a WHERE a.role_name = r.name AND a.routine::oid = p.oid);
+    IF offending IS NOT NULL THEN
+        RAISE EXCEPTION 'Runtime roles may execute only their ledger interface: %', offending;
     END IF;
 END $$;
 COMMIT;

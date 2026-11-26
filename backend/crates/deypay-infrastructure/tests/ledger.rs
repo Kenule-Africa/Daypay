@@ -1,12 +1,18 @@
-//! Financial invariant tests for the Phase 5 ledger (IMP-P5-017), run against
-//! real PostgreSQL through the production grants: postings use the
-//! deypay_ledger_poster role and corrections/reconciliation use
-//! deypay_ledger_controller. Assets, customers and operators are test fixtures.
+//! Financial invariant and adversarial tests for the Phase 5 ledger
+//! (IMP-P5-017), run against real PostgreSQL through the production grants:
+//! postings use deypay_ledger_poster, provider outcomes deypay_ledger_evidence,
+//! and corrections/reconciliation deypay_ledger_controller from sessions whose
+//! login is bound to one operator. Assets, customers, operators, provider
+//! operations and capability activations are fixtures written as the database
+//! administrator; every rule under test runs in the real ledger functions.
 use deypay_application::ledger::*;
 use deypay_domain::ledger::{Direction, EventIdentity, JournalDraft, PostingLine};
 use deypay_domain::units::{MinorUnits, PostingAmount};
 use deypay_infrastructure::MIGRATOR;
-use deypay_infrastructure::ledger::{CorrectionOutcome, LedgerRole, PgLedger};
+use deypay_infrastructure::ledger::{
+    CorrectionOutcome, LedgerRole, PgLedger, ProviderEvidence, ProviderOutcome,
+};
+use sqlx::postgres::PgPoolOptions;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -14,6 +20,39 @@ const ROLES: &str = include_str!("../../../../infrastructure/postgres/ledger-rol
 const GRANTS: &str = include_str!("../../../../infrastructure/postgres/ledger-grants.psql");
 /// One whole USDC or USDT at the approved six decimal places.
 const UNIT: u128 = 1_000_000;
+/// Fixture activation ceiling, far above any amount used here.
+const CEILING: u128 = 1_000_000_000_000_000_000_000_000_000;
+const CAPABILITIES: [&str; 3] = [
+    "CUSTOMER_CREDIT",
+    "CUSTOMER_TRANSFER",
+    "CUSTOMER_RESERVATION",
+];
+/// Stand-ins for operator logins (roles are cluster-wide and shared by tests).
+const MAKER_LOGIN: &str = "deypay_test_operator_maker";
+const CHECKER_LOGIN: &str = "deypay_test_operator_checker";
+const OUTSIDER_LOGIN: &str = "deypay_test_operator_outsider";
+const DUAL_LOGIN: &str = "deypay_test_dual_duty";
+const MIGRATION_LOGIN: &str = "deypay_test_migration_admin";
+/// Records a denied operation must leave untouched.
+const RECORDS: [&str; 10] = [
+    "ledger.accounting_events",
+    "ledger.journals",
+    "ledger.entries",
+    "ledger.reservations",
+    "ledger.reservation_movements",
+    "ledger.provider_outcomes",
+    "ledger.correction_requests",
+    "ledger.recovery_cases",
+    "integrations.outbox_events",
+    "audit.audit_events",
+];
+const RUNTIME_ROLES: [&str; 5] = [
+    "deypay_ledger_poster",
+    "deypay_ledger_evidence",
+    "deypay_ledger_controller",
+    "deypay_ledger_reader",
+    "deypay_ledger_owner",
+];
 
 fn amount(value: u128) -> PostingAmount {
     PostingAmount::from_value(value).unwrap()
@@ -34,8 +73,15 @@ fn line(account: Uuid, asset: Uuid, direction: Direction, value: u128) -> Postin
 
 struct Books {
     pool: PgPool,
+    /// Workflow postings (deypay_ledger_poster).
     ledger: PgLedger,
+    /// Authenticated provider adapter (deypay_ledger_evidence).
+    evidence: PgLedger,
+    /// The maker's authenticated session (deypay_ledger_controller).
     control: PgLedger,
+    /// The checker's authenticated session (deypay_ledger_controller).
+    approve: PgLedger,
+    maker_session: PgPool,
     usdc: Uuid,
     usdt: Uuid,
     custody_usdc: Uuid,
@@ -45,6 +91,7 @@ struct Books {
     maker: Uuid,
     checker: Uuid,
     outsider: Uuid,
+    provider: Uuid,
 }
 
 #[derive(Clone, Copy)]
@@ -64,6 +111,38 @@ impl Customer {
     }
 }
 
+/// A role standing in for a login, created once per cluster.
+async fn test_role(pool: &PgPool, name: &str, member_of: &str) {
+    sqlx::raw_sql(&format!(
+        "DO $$ BEGIN
+             CREATE ROLE {name} NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
+                 IN ROLE {member_of};
+         EXCEPTION WHEN duplicate_object OR unique_violation THEN NULL;
+         END $$"
+    ))
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+/// Connections whose session user is `login`, exactly as if that login had
+/// authenticated. Only the test administrator can open such sessions.
+fn session_as(pool: &PgPool, login: &'static str) -> PgPool {
+    PgPoolOptions::new()
+        .max_connections(2)
+        .after_connect(move |conn, _| {
+            Box::pin(async move {
+                // The setting behind SET SESSION AUTHORIZATION, with the login bound as a value.
+                sqlx::query("SELECT set_config('session_authorization', $1, false)")
+                    .bind(login)
+                    .execute(conn)
+                    .await?;
+                Ok(())
+            })
+        })
+        .connect_lazy_with((*pool.connect_options()).clone())
+}
+
 async fn user(pool: &PgPool, email: &str, status: &str) -> Uuid {
     // Statuses beyond email confirmation carry the verification time, as real rows do.
     sqlx::query_scalar(
@@ -71,15 +150,46 @@ async fn user(pool: &PgPool, email: &str, status: &str) -> Uuid {
          VALUES ($1, $2, CASE WHEN $2 IN ('REGISTERED', 'CONTACT_UNVERIFIED') THEN NULL ELSE now() END)
          RETURNING id",
     )
-        .bind(email)
-        .bind(status)
-        .fetch_one(pool)
-        .await
-        .unwrap()
+    .bind(email)
+    .bind(status)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+/// The database administrator records an approved activation.
+async fn activate(pool: &PgPool, capability: &str, asset: Uuid, ceiling: u128) {
+    sqlx::query(
+        "INSERT INTO ledger.capability_activations(capability, asset_id, approval_reference, max_operation_minor)
+         VALUES ($1, $2, 'TEST-FIXTURE', $3::numeric)",
+    )
+    .bind(capability)
+    .bind(asset)
+    .bind(ceiling.to_string())
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+async fn deactivate(pool: &PgPool, capability: &str, asset: Uuid) {
+    let changed = sqlx::query(
+        "UPDATE ledger.capability_activations
+         SET deactivated_at = now(), deactivated_by = session_user, deactivation_reason = 'Test deactivation'
+         WHERE capability = $1 AND asset_id = $2 AND deactivated_at IS NULL",
+    )
+    .bind(capability)
+    .bind(asset)
+    .execute(pool)
+    .await
+    .unwrap();
+    assert_eq!(changed.rows_affected(), 1);
 }
 
 async fn setup(pool: PgPool) -> Books {
     sqlx::raw_sql(ROLES).execute(&pool).await.unwrap();
+    for login in [MAKER_LOGIN, CHECKER_LOGIN, OUTSIDER_LOGIN] {
+        test_role(&pool, login, "deypay_ledger_controller").await;
+    }
     sqlx::raw_sql(GRANTS).execute(&pool).await.unwrap();
     let asset = |symbol: &'static str, precision: i16| {
         let pool = pool.clone();
@@ -123,7 +233,23 @@ async fn setup(pool: PgPool) -> Books {
         .execute(&pool)
         .await
         .unwrap();
-    let control = PgLedger::acting_as(pool.clone(), LedgerRole::Controller);
+    for (login, operator) in [
+        (MAKER_LOGIN, maker),
+        (CHECKER_LOGIN, checker),
+        (OUTSIDER_LOGIN, outsider),
+    ] {
+        sqlx::query(
+            "INSERT INTO ledger.operator_logins(login_name, user_id, approval_reference)
+             VALUES ($1, $2, 'TEST-FIXTURE')",
+        )
+        .bind(login)
+        .bind(operator)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    let maker_session = session_as(&pool, MAKER_LOGIN);
+    let control = PgLedger::acting_as(maker_session.clone(), LedgerRole::Controller);
     let open = |code: &'static str, asset: Uuid| {
         let control = control.clone();
         async move {
@@ -137,9 +263,24 @@ async fn setup(pool: PgPool) -> Books {
     let custody_usdt = open("1110", usdt).await;
     let fee_usdt = open("4110", usdt).await;
     let suspense_usdc = open("6150", usdc).await;
+    for asset in [usdc, usdt] {
+        for capability in CAPABILITIES {
+            activate(&pool, capability, asset, CEILING).await;
+        }
+    }
+    let provider: Uuid = sqlx::query_scalar(
+        "INSERT INTO integrations.providers(provider_code, provider_name, provider_type)
+         VALUES ('TEST_PAYOUT', 'Payout provider fixture', 'TEST') RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
     Books {
         ledger: PgLedger::acting_as(pool.clone(), LedgerRole::Poster),
+        evidence: PgLedger::acting_as(pool.clone(), LedgerRole::Evidence),
+        approve: PgLedger::acting_as(session_as(&pool, CHECKER_LOGIN), LedgerRole::Controller),
         control,
+        maker_session,
         pool,
         usdc,
         usdt,
@@ -150,6 +291,7 @@ async fn setup(pool: PgPool) -> Books {
         maker,
         checker,
         outsider,
+        provider,
     }
 }
 
@@ -187,6 +329,10 @@ impl Books {
         } else {
             self.custody_usdt
         }
+    }
+
+    fn operator(&self, login: &'static str) -> PgLedger {
+        PgLedger::acting_as(session_as(&self.pool, login), LedgerRole::Controller)
     }
 
     async fn deposit(
@@ -255,6 +401,14 @@ impl Books {
             .unwrap()
     }
 
+    async fn records(&self) -> Vec<i64> {
+        let mut counts = Vec::new();
+        for table in RECORDS {
+            counts.push(self.count(table).await);
+        }
+        counts
+    }
+
     fn transfer(
         &self,
         key: &str,
@@ -286,6 +440,77 @@ impl Books {
             actor: Actor::Customer(customer.id),
             correlation_id: None,
         }
+    }
+
+    /// A withdrawal transaction and the provider operation submitted for it.
+    async fn withdrawal(&self, customer: &Customer, asset: Uuid, value: u128) -> (Uuid, Uuid) {
+        let transaction: Uuid = sqlx::query_scalar(
+            "INSERT INTO payments.transactions(public_reference, user_id, transaction_type, status,
+                 source_asset_id, source_amount_minor)
+             VALUES ('TX-' || gen_random_uuid(), $1, 'WITHDRAWAL', 'RESERVED', $2, $3::numeric) RETURNING id",
+        )
+        .bind(customer.id)
+        .bind(asset)
+        .bind(value.to_string())
+        .fetch_one(&self.pool)
+        .await
+        .unwrap();
+        let operation: Uuid = sqlx::query_scalar(
+            "INSERT INTO integrations.provider_operations(provider_id, provider_account_scope, transaction_id,
+                 is_financial, operation_type, leg, authorized_attempt, idempotency_reference, status)
+             VALUES ($1, 'fixture-account', $2, true, 'WITHDRAWAL', 'PAYOUT', 1, 'payout:' || $2::text, 'SUBMITTED')
+             RETURNING id",
+        )
+        .bind(self.provider)
+        .bind(transaction)
+        .fetch_one(&self.pool)
+        .await
+        .unwrap();
+        (transaction, operation)
+    }
+
+    /// Reserves funds for a withdrawal with a registered provider operation.
+    /// Returns the reservation, its transaction and the provider operation.
+    async fn hold(
+        &self,
+        key: &str,
+        customer: &Customer,
+        asset: Uuid,
+        value: u128,
+    ) -> Result<(ReservationReceipt, Uuid, Uuid), LedgerError> {
+        let (transaction, operation) = self.withdrawal(customer, asset, value).await;
+        let mut command = self.reserve(key, customer, asset, value);
+        command.transaction = Some(transaction);
+        let receipt = self.ledger.reserve(&command).await?;
+        Ok((receipt, transaction, operation))
+    }
+
+    fn provider_evidence(
+        &self,
+        reservation: Uuid,
+        operation: Uuid,
+        outcome: ProviderOutcome,
+    ) -> ProviderEvidence {
+        ProviderEvidence {
+            reservation,
+            outcome,
+            provider_operation: operation,
+            provider_reference: format!("provider:{operation}"),
+            sha256: [9; 32],
+            observed_at: "2026-11-26T12:00:00Z".into(),
+        }
+    }
+
+    /// The authenticated provider adapter records a definitive outcome.
+    async fn outcome(
+        &self,
+        reservation: Uuid,
+        operation: Uuid,
+        outcome: ProviderOutcome,
+    ) -> Result<(Uuid, bool), LedgerError> {
+        self.evidence
+            .record_provider_outcome(&self.provider_evidence(reservation, operation, outcome))
+            .await
     }
 
     fn release(
@@ -324,8 +549,8 @@ impl Books {
     }
 }
 
-/// Runs SQL as `role` (or the test administrator) and returns the SQLSTATE of
-/// any error, including one raised by a deferred check at commit.
+/// Runs SQL as `role` (or as the session's own user) and returns the SQLSTATE
+/// of any error, including one raised by a deferred check at commit.
 async fn sqlstate(pool: &PgPool, role: Option<&str>, sql: &str) -> Option<String> {
     let mut tx = pool.begin().await.unwrap();
     if let Some(role) = role {
@@ -712,12 +937,20 @@ async fn runtime_roles_cannot_bypass_the_posting_interface(pool: PgPool) {
         "SELECT ledger.request_correction('REVERSAL', (SELECT id FROM ledger.journals LIMIT 1), NULL, 'r', 'e', '{}')",
         books.maker
     );
+    let outcome = "SELECT * FROM ledger.record_provider_outcome(gen_random_uuid(), 'NOT_EXECUTED',
+         gen_random_uuid(), 'forged', sha256('forged'), now())"
+        .to_owned();
+    let capability = format!(
+        "SELECT ledger.require_capability('CUSTOMER_TRANSFER', '{}', 1)",
+        books.usdc
+    );
     for (role, sql) in [
         (
             "deypay_app",
             "SELECT count(*) FROM ledger.entries".to_owned(),
         ),
         ("deypay_app", post.clone()),
+        ("deypay_app", outcome.clone()),
         (
             "deypay_app",
             "SELECT * FROM ledger.customer_balance(gen_random_uuid(), gen_random_uuid())"
@@ -727,17 +960,55 @@ async fn runtime_roles_cannot_bypass_the_posting_interface(pool: PgPool) {
         ("deypay_ledger_poster", raise.clone()),
         ("deypay_ledger_poster", internal.clone()),
         ("deypay_ledger_poster", correction),
+        ("deypay_ledger_poster", outcome.clone()),
+        ("deypay_ledger_poster", capability),
+        ("deypay_ledger_evidence", post.clone()),
+        ("deypay_ledger_evidence", insert.clone()),
+        ("deypay_ledger_evidence", internal.clone()),
+        (
+            "deypay_ledger_evidence",
+            "SELECT count(*) FROM ledger.entries".to_owned(),
+        ),
         ("deypay_ledger_controller", post.clone()),
         ("deypay_ledger_controller", insert.clone()),
         ("deypay_ledger_controller", internal),
+        ("deypay_ledger_controller", outcome.clone()),
+        (
+            "deypay_ledger_controller",
+            "SELECT ledger.session_operator()".to_owned(),
+        ),
         ("deypay_ledger_reader", post),
         ("deypay_ledger_reader", raise),
+        ("deypay_ledger_reader", outcome),
     ] {
         assert_eq!(
             sqlstate(&books.pool, Some(role), &sql).await.as_deref(),
             Some("42501"),
             "{role}: {sql}"
         );
+    }
+    // No runtime role, and not even the ledger functions' owner, can write the
+    // activations or operator bindings that the ledger trusts.
+    for role in RUNTIME_ROLES {
+        for sql in [
+            format!(
+                "INSERT INTO ledger.capability_activations(capability, asset_id, approval_reference, max_operation_minor)
+                 VALUES ('CUSTOMER_TRANSFER', '{}', 'self-approved', 1)",
+                books.usdc
+            ),
+            format!(
+                "INSERT INTO ledger.operator_logins(login_name, user_id, approval_reference)
+                 VALUES ('{MAKER_LOGIN}', '{}', 'self-bound')",
+                books.checker
+            ),
+            "UPDATE ledger.capability_activations SET max_operation_minor = 1".to_owned(),
+        ] {
+            assert_eq!(
+                sqlstate(&books.pool, Some(role), &sql).await.as_deref(),
+                Some("42501"),
+                "{role}: {sql}"
+            );
+        }
     }
     assert_eq!(
         sqlstate(
@@ -818,10 +1089,19 @@ async fn customer_accounts_are_empty_stablecoin_liabilities(pool: PgPool) {
     );
     assert_eq!(
         books
+            .operator(OUTSIDER_LOGIN)
+            .open_platform_account("1130", ngn, "primary", books.outsider)
+            .await,
+        Err(LedgerError::ApprovalRequired),
+        "an authenticated operator without the permission"
+    );
+    assert_eq!(
+        books
             .control
             .open_platform_account("1130", ngn, "primary", books.outsider)
             .await,
-        Err(LedgerError::ApprovalRequired)
+        Err(LedgerError::OperatorNotAuthenticated),
+        "a stated operator is only a claim"
     );
     // The approved precision is enforced by the asset registry.
     assert!(
@@ -909,6 +1189,177 @@ async fn spending_requires_financial_eligibility(pool: PgPool) {
         Err(LedgerError::NotEligible)
     );
     assert_eq!(books.balance(&alice, books.usdc).await, (5 * UNIT, 0));
+}
+
+/// Finding 1: customer spending and customer crediting stay refused inside
+/// PostgreSQL until the database administrator records an approved activation,
+/// even for a process that calls the functions directly with the poster role.
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn customer_movements_are_fail_closed_until_activated(pool: PgPool) {
+    let books = setup(pool).await;
+    let alice = books.customer("alice").await;
+    let bob = books.customer("bob").await;
+    books
+        .deposit("dep:alice", &alice, books.usdc, 50 * UNIT)
+        .await
+        .unwrap();
+    deactivate(&books.pool, "CUSTOMER_TRANSFER", books.usdc).await;
+    deactivate(&books.pool, "CUSTOMER_RESERVATION", books.usdc).await;
+    deactivate(&books.pool, "CUSTOMER_CREDIT", books.usdt).await;
+    let before = books.records().await;
+
+    // There is no application gate to skip: direct calls are refused too.
+    let poster = Some("deypay_ledger_poster");
+    let direct = [
+        format!(
+            "SELECT * FROM ledger.transfer_between_customers('direct:1', '{a}', '{b}', '{u}', '1000000',
+             NULL, 'SERVICE', NULL, NULL)",
+            a = alice.id,
+            b = bob.id,
+            u = books.usdc
+        ),
+        format!(
+            "SELECT * FROM ledger.reserve_funds('direct:2', '{a}', '{u}', '1000000', NULL,
+             'WITHDRAWAL_RESERVED', 'SERVICE', NULL, NULL)",
+            a = alice.id,
+            u = books.usdc
+        ),
+        // A system posting that would create customer entitlement out of thin custody.
+        format!(
+            "SELECT * FROM ledger.post_journal('DEPOSIT_CONFIRMED', 'direct:3', 'RECOGNITION', NULL,
+             ARRAY['{c}','{a}']::uuid[], ARRAY['{u}','{u}']::uuid[], ARRAY['DEBIT','CREDIT'], ARRAY['5','5'],
+             NULL, 'SYSTEM', NULL, NULL)",
+            c = books.custody_usdt,
+            a = alice.usdt.available,
+            u = books.usdt
+        ),
+    ];
+    for sql in &direct {
+        assert_eq!(
+            sqlstate(&books.pool, poster, sql).await.as_deref(),
+            Some("LE014"),
+            "{sql}"
+        );
+    }
+    assert_eq!(
+        books
+            .ledger
+            .transfer(&books.transfer("tr:1", &alice, &bob, books.usdc, UNIT))
+            .await,
+        Err(LedgerError::NotActivated)
+    );
+    assert_eq!(
+        books
+            .ledger
+            .reserve(&books.reserve("res:1", &alice, books.usdc, UNIT))
+            .await,
+        Err(LedgerError::NotActivated)
+    );
+    assert_eq!(
+        books.deposit("dep:usdt", &alice, books.usdt, UNIT).await,
+        Err(LedgerError::NotActivated)
+    );
+    // Administrator attribution is reserved for approved corrections, and a
+    // customer actor can move only their own funds.
+    let attributed = format!(
+        "SELECT * FROM ledger.post_journal('FEE_RECOGNIZED', 'direct:4', 'RECOGNITION', NULL,
+         ARRAY['{c}','{f}']::uuid[], ARRAY['{u}','{u}']::uuid[], ARRAY['DEBIT','CREDIT'], ARRAY['5','5'],
+         NULL, 'ADMIN', '{m}', NULL)",
+        c = books.custody_usdt,
+        f = books.fee_usdt,
+        u = books.usdt,
+        m = books.maker
+    );
+    assert_eq!(
+        sqlstate(&books.pool, poster, &attributed).await.as_deref(),
+        Some("LE012")
+    );
+    let mut impersonated = books.transfer("tr:2", &alice, &bob, books.usdc, UNIT);
+    impersonated.actor = Actor::Customer(bob.id);
+    assert_eq!(
+        books.ledger.transfer(&impersonated).await,
+        Err(LedgerError::InvalidRequest)
+    );
+    assert_eq!(
+        books.records().await,
+        before,
+        "denied operations write nothing"
+    );
+
+    // Postings between platform accounts need no customer activation.
+    books
+        .ledger
+        .post(&PostingCommand {
+            identity: EventIdentity::new("FEE_RECOGNIZED", "platform:1", "RECOGNITION").unwrap(),
+            source_transaction: None,
+            journal: JournalDraft::new(vec![
+                line(books.custody_usdt, books.usdt, Direction::Debit, UNIT),
+                line(books.fee_usdt, books.usdt, Direction::Credit, UNIT),
+            ])
+            .unwrap(),
+            description: None,
+            actor: Actor::System,
+            correlation_id: None,
+        })
+        .await
+        .unwrap();
+
+    // A new activation applies its approved per-operation ceiling.
+    activate(&books.pool, "CUSTOMER_TRANSFER", books.usdc, 5 * UNIT).await;
+    assert_eq!(
+        books
+            .ledger
+            .transfer(&books.transfer("tr:3", &alice, &bob, books.usdc, 5 * UNIT + 1))
+            .await,
+        Err(LedgerError::NotActivated),
+        "above the activated ceiling"
+    );
+    books
+        .ledger
+        .transfer(&books.transfer("tr:4", &alice, &bob, books.usdc, 5 * UNIT))
+        .await
+        .unwrap();
+    assert_eq!(books.balance(&alice, books.usdc).await, (45 * UNIT, 0));
+    assert_eq!(books.balance(&bob, books.usdc).await, (5 * UNIT, 0));
+    assert_eq!(
+        books
+            .ledger
+            .reserve(&books.reserve("res:2", &alice, books.usdc, UNIT))
+            .await,
+        Err(LedgerError::NotActivated),
+        "each capability is activated separately"
+    );
+
+    // Activation history cannot be rewritten, only extended.
+    let admin = None;
+    for sql in [
+        format!(
+            "UPDATE ledger.capability_activations SET deactivated_at = NULL, deactivated_by = NULL,
+             deactivation_reason = NULL WHERE capability = 'CUSTOMER_RESERVATION' AND asset_id = '{}'",
+            books.usdc
+        ),
+        format!(
+            "UPDATE ledger.capability_activations SET max_operation_minor = 1000000000000
+             WHERE capability = 'CUSTOMER_TRANSFER' AND asset_id = '{}' AND deactivated_at IS NULL",
+            books.usdc
+        ),
+        "DELETE FROM ledger.capability_activations".to_owned(),
+    ] {
+        assert_eq!(
+            sqlstate(&books.pool, admin, &sql).await.as_deref(),
+            Some("55000"),
+            "{sql}"
+        );
+    }
+    // The shipped application gate refuses on its own as well.
+    let service = LedgerService::new(books.ledger.clone(), NoApprovedPolicy);
+    assert_eq!(
+        service
+            .transfer(&books.transfer("tr:5", &alice, &bob, books.usdc, UNIT))
+            .await,
+        Err(LedgerError::NotEligible)
+    );
+    assert!(books.violations().await.is_empty());
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
@@ -1082,23 +1533,16 @@ async fn reservations_follow_evidence_not_timeouts(pool: PgPool) {
         .unwrap();
 
     // Withdraw 50 USDT with a 2 USDT fee (ledger spec §15.5): reserve 52.
-    let held = books
-        .ledger
-        .reserve(&books.reserve("withdrawal:1", &alice, usdt, 52 * UNIT))
-        .await
-        .unwrap();
+    let (transaction, operation) = books.withdrawal(&alice, usdt, 52 * UNIT).await;
+    let mut command = books.reserve("withdrawal:1", &alice, usdt, 52 * UNIT);
+    command.transaction = Some(transaction);
+    let held = books.ledger.reserve(&command).await.unwrap();
     assert_eq!(books.balance(&alice, usdt).await, (48 * UNIT, 52 * UNIT));
-    let again = books
-        .ledger
-        .reserve(&books.reserve("withdrawal:1", &alice, usdt, 52 * UNIT))
-        .await
-        .unwrap();
+    let again = books.ledger.reserve(&command).await.unwrap();
     assert!(again.replayed && again.reservation_id == held.reservation_id);
+    command.amount = amount(53 * UNIT);
     assert_eq!(
-        books
-            .ledger
-            .reserve(&books.reserve("withdrawal:1", &alice, usdt, 53 * UNIT))
-            .await,
+        books.ledger.reserve(&command).await,
         Err(LedgerError::DuplicateAccountingEvent),
         "one operation, one reservation"
     );
@@ -1114,29 +1558,51 @@ async fn reservations_follow_evidence_not_timeouts(pool: PgPool) {
         .record_execution(id, ExecutionState::Unknown, "provider:op:1:timeout")
         .await
         .unwrap();
+    for (key, evidence, expected) in [
+        (
+            "cancel:1",
+            ReleaseEvidence::PermittedCancellation,
+            LedgerError::ReservationState,
+        ),
+        (
+            "remainder:1",
+            ReleaseEvidence::SettlementRemainder,
+            LedgerError::ReservationState,
+        ),
+        (
+            "rejected:1",
+            ReleaseEvidence::DefinitiveNonExecution,
+            LedgerError::EvidenceRequired,
+        ),
+    ] {
+        assert_eq!(
+            books
+                .ledger
+                .release(&books.release(id, key, 52 * UNIT, evidence))
+                .await,
+            Err(expected),
+            "{key}"
+        );
+    }
+    // The workflow cannot declare the outcome itself.
     assert_eq!(
         books
             .ledger
-            .release(&books.release(
-                id,
-                "cancel:1",
-                52 * UNIT,
-                ReleaseEvidence::PermittedCancellation
-            ))
+            .record_execution(id, ExecutionState::Executed, "provider:op:1:paid")
             .await,
-        Err(LedgerError::ReservationState)
+        Err(LedgerError::EvidenceRequired)
+    );
+    let settle = books.consume(
+        id,
+        "chain:tx:1",
+        vec![
+            (books.custody_usdt, amount(50 * UNIT)),
+            (books.fee_usdt, amount(2 * UNIT)),
+        ],
     );
     assert_eq!(
-        books
-            .ledger
-            .release(&books.release(
-                id,
-                "remainder:1",
-                52 * UNIT,
-                ReleaseEvidence::SettlementRemainder
-            ))
-            .await,
-        Err(LedgerError::ReservationState)
+        books.ledger.consume(&settle).await,
+        Err(LedgerError::EvidenceRequired)
     );
     assert_eq!(books.balance(&alice, usdt).await, (48 * UNIT, 52 * UNIT));
     assert_eq!(
@@ -1146,15 +1612,12 @@ async fn reservations_follow_evidence_not_timeouts(pool: PgPool) {
             .await,
         Err(LedgerError::ReservationState)
     );
-    // Verified settlement consumes the reservation: custody and fee revenue.
-    let settle = books.consume(
-        id,
-        "chain:tx:1",
-        vec![
-            (books.custody_usdt, amount(50 * UNIT)),
-            (books.fee_usdt, amount(2 * UNIT)),
-        ],
-    );
+    // The authenticated provider adapter records execution; settlement then
+    // consumes the reservation: custody and fee revenue.
+    books
+        .outcome(id, operation, ProviderOutcome::Executed)
+        .await
+        .unwrap();
     let settled = books.ledger.consume(&settle).await.unwrap();
     assert!(books.ledger.consume(&settle).await.unwrap().replayed);
     assert_eq!(
@@ -1179,7 +1642,7 @@ async fn reservations_follow_evidence_not_timeouts(pool: PgPool) {
         "a reservation is consumed once"
     );
 
-    // Cancelled before submission: released in full.
+    // Cancelled before submission: released in full without provider evidence.
     let cancel = books
         .ledger
         .reserve(&books.reserve("withdrawal:2", &alice, usdt, 20 * UNIT))
@@ -1195,10 +1658,9 @@ async fn reservations_follow_evidence_not_timeouts(pool: PgPool) {
         ))
         .await
         .unwrap();
-    // Submitted, then definitively not executed: released.
-    let failed = books
-        .ledger
-        .reserve(&books.reserve("withdrawal:3", &alice, usdt, 30 * UNIT))
+    // Submitted, then the provider confirms non-execution: released.
+    let (failed, _, failed_operation) = books
+        .hold("withdrawal:3", &alice, usdt, 30 * UNIT)
         .await
         .unwrap();
     books
@@ -1207,6 +1669,14 @@ async fn reservations_follow_evidence_not_timeouts(pool: PgPool) {
             failed.reservation_id,
             ExecutionState::Submitted,
             "provider:op:3",
+        )
+        .await
+        .unwrap();
+    books
+        .outcome(
+            failed.reservation_id,
+            failed_operation,
+            ProviderOutcome::NotExecuted,
         )
         .await
         .unwrap();
@@ -1230,12 +1700,15 @@ async fn reservations_follow_evidence_not_timeouts(pool: PgPool) {
     assert_eq!(failed_view.status, "RELEASED");
 
     // Partial settlement, then the unneeded remainder is released.
-    let partial = books
-        .ledger
-        .reserve(&books.reserve("withdrawal:4", &alice, usdt, 10 * UNIT))
+    let (partial, _, partial_operation) = books
+        .hold("withdrawal:4", &alice, usdt, 10 * UNIT)
         .await
         .unwrap();
     let rid = partial.reservation_id;
+    books
+        .outcome(rid, partial_operation, ProviderOutcome::Executed)
+        .await
+        .unwrap();
     assert_eq!(
         books
             .ledger
@@ -1296,8 +1769,266 @@ async fn reservations_follow_evidence_not_timeouts(pool: PgPool) {
     );
     assert_eq!(books.balance(&alice, usdt).await, (40 * UNIT, 0));
     assert!(books.violations().await.is_empty());
-    let movements: i64 = books.count("ledger.reservation_movements").await;
-    assert_eq!(movements, 9);
+    assert_eq!(books.count("ledger.reservation_movements").await, 9);
+    let cited: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM ledger.reservation_movements WHERE provider_outcome_id IS NOT NULL",
+    )
+    .fetch_one(&books.pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        cited, 4,
+        "both settlements, the confirmed non-execution and the remainder cite provider evidence"
+    );
+}
+
+/// Finding 3: a workflow cannot turn an uncertain outcome into a refund or a
+/// settlement, whatever evidence label or reference it supplies. Only the
+/// authenticated provider adapter records the outcome, bound to the provider
+/// operation of the reservation's own transaction.
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn settlement_and_release_need_authenticated_provider_evidence(pool: PgPool) {
+    let books = setup(pool).await;
+    let alice = books.customer("alice").await;
+    let usdc = books.usdc;
+    books
+        .deposit("dep", &alice, usdc, 100 * UNIT)
+        .await
+        .unwrap();
+    let (held, transaction, operation) = books
+        .hold("withdrawal:1", &alice, usdc, 40 * UNIT)
+        .await
+        .unwrap();
+    let id = held.reservation_id;
+    for state in [ExecutionState::Submitted, ExecutionState::Unknown] {
+        books
+            .ledger
+            .record_execution(id, state, "provider:op:1")
+            .await
+            .unwrap();
+    }
+    let before = books.records().await;
+
+    for (key, evidence, expected) in [
+        (
+            "forged:1",
+            ReleaseEvidence::DefinitiveNonExecution,
+            LedgerError::EvidenceRequired,
+        ),
+        (
+            "forged:2",
+            ReleaseEvidence::PermittedCancellation,
+            LedgerError::ReservationState,
+        ),
+        (
+            "forged:3",
+            ReleaseEvidence::SettlementRemainder,
+            LedgerError::ReservationState,
+        ),
+    ] {
+        assert_eq!(
+            books
+                .ledger
+                .release(&books.release(id, key, 40 * UNIT, evidence))
+                .await,
+            Err(expected),
+            "{key}"
+        );
+    }
+    assert_eq!(
+        books
+            .ledger
+            .consume(&books.consume(
+                id,
+                "chain:forged",
+                vec![(books.custody_usdc, amount(40 * UNIT))]
+            ))
+            .await,
+        Err(LedgerError::EvidenceRequired)
+    );
+    let poster = Some("deypay_ledger_poster");
+    for (sql, expected) in [
+        (
+            format!(
+                "SELECT ledger.record_execution_state('{id}', 'EXECUTED', 'provider says paid')"
+            ),
+            "LE015",
+        ),
+        (
+            format!(
+                "SELECT * FROM ledger.release_reservation('{id}', 'forged:4', 'RELEASE', '40000000',
+                 'DEFINITIVE_NON_EXECUTION', 'signed-looking-receipt', 'SYSTEM', NULL, NULL)"
+            ),
+            "LE015",
+        ),
+        (
+            format!(
+                "SELECT * FROM ledger.record_provider_outcome('{id}', 'NOT_EXECUTED', '{operation}',
+                 'forged', sha256('forged'), now())"
+            ),
+            "42501",
+        ),
+    ] {
+        assert_eq!(
+            sqlstate(&books.pool, poster, &sql).await.as_deref(),
+            Some(expected),
+            "{sql}"
+        );
+    }
+    assert_eq!(
+        books.records().await,
+        before,
+        "denied operations write nothing"
+    );
+    assert_eq!(books.balance(&alice, usdc).await, (60 * UNIT, 40 * UNIT));
+
+    // Evidence must name the provider operation of this reservation's transaction.
+    let (other, _, other_operation) = books
+        .hold("withdrawal:2", &alice, usdc, 10 * UNIT)
+        .await
+        .unwrap();
+    assert_eq!(
+        books
+            .outcome(id, other_operation, ProviderOutcome::NotExecuted)
+            .await,
+        Err(LedgerError::EvidenceRequired)
+    );
+    let untracked = books
+        .ledger
+        .reserve(&books.reserve("withdrawal:3", &alice, usdc, 5 * UNIT))
+        .await
+        .unwrap();
+    assert_eq!(
+        books
+            .outcome(
+                untracked.reservation_id,
+                operation,
+                ProviderOutcome::NotExecuted
+            )
+            .await,
+        Err(LedgerError::EvidenceRequired),
+        "a reservation without a transaction cannot be evidenced"
+    );
+
+    // One login may not both record provider evidence and move reserved funds.
+    test_role(
+        &books.pool,
+        DUAL_LOGIN,
+        "deypay_ledger_poster, deypay_ledger_evidence",
+    )
+    .await;
+    let dual = session_as(&books.pool, DUAL_LOGIN);
+    let dual_evidence = PgLedger::acting_as(dual.clone(), LedgerRole::Evidence);
+    assert_eq!(
+        dual_evidence
+            .record_provider_outcome(&books.provider_evidence(
+                id,
+                operation,
+                ProviderOutcome::NotExecuted
+            ))
+            .await,
+        Err(LedgerError::NotPermitted)
+    );
+
+    // The adapter records non-execution; identical replays are idempotent and
+    // a contradicting outcome is refused for investigation.
+    let (outcome_id, replayed) = books
+        .outcome(id, operation, ProviderOutcome::NotExecuted)
+        .await
+        .unwrap();
+    assert!(!replayed);
+    assert_eq!(
+        books
+            .outcome(id, operation, ProviderOutcome::NotExecuted)
+            .await
+            .unwrap(),
+        (outcome_id, true)
+    );
+    assert_eq!(
+        books
+            .outcome(id, operation, ProviderOutcome::Executed)
+            .await,
+        Err(LedgerError::DuplicateAccountingEvent)
+    );
+    // One provider operation evidences one reservation.
+    let mut sibling = books.reserve("withdrawal:4", &alice, usdc, 5 * UNIT);
+    sibling.transaction = Some(transaction);
+    let sibling = books.ledger.reserve(&sibling).await.unwrap();
+    assert_eq!(
+        books
+            .outcome(sibling.reservation_id, operation, ProviderOutcome::Executed)
+            .await,
+        Err(LedgerError::DuplicateAccountingEvent)
+    );
+    // The outcome is definitive: no more workflow states, and no settlement.
+    assert_eq!(
+        books
+            .ledger
+            .record_execution(id, ExecutionState::Submitted, "provider:op:1:retry")
+            .await,
+        Err(LedgerError::ReservationState)
+    );
+    assert_eq!(
+        books
+            .ledger
+            .consume(&books.consume(
+                id,
+                "chain:late",
+                vec![(books.custody_usdc, amount(40 * UNIT))]
+            ))
+            .await,
+        Err(LedgerError::EvidenceRequired)
+    );
+    assert_eq!(
+        PgLedger::acting_as(dual, LedgerRole::Poster)
+            .release(&books.release(
+                id,
+                "dual:1",
+                40 * UNIT,
+                ReleaseEvidence::DefinitiveNonExecution
+            ))
+            .await,
+        Err(LedgerError::NotPermitted)
+    );
+    // The workflow releases against it, once.
+    let release = books.release(
+        id,
+        "rejected:1",
+        40 * UNIT,
+        ReleaseEvidence::DefinitiveNonExecution,
+    );
+    let released = books.ledger.release(&release).await.unwrap();
+    assert!(books.ledger.release(&release).await.unwrap().replayed);
+    let cited: Option<Uuid> = sqlx::query_scalar(
+        "SELECT provider_outcome_id FROM ledger.reservation_movements WHERE journal_id = $1",
+    )
+    .bind(released.journal_id)
+    .fetch_one(&books.pool)
+    .await
+    .unwrap();
+    assert_eq!(cited, Some(outcome_id));
+    assert_eq!(books.balance(&alice, usdc).await, (80 * UNIT, 20 * UNIT));
+    assert_eq!(
+        books
+            .ledger
+            .reservation(other.reservation_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .status,
+        "ACTIVE"
+    );
+    for sql in [
+        "UPDATE ledger.provider_outcomes SET outcome = 'EXECUTED'",
+        "DELETE FROM ledger.provider_outcomes",
+    ] {
+        assert_eq!(
+            sqlstate(&books.pool, None, sql).await.as_deref(),
+            Some("55000"),
+            "{sql}"
+        );
+    }
+    assert!(books.violations().await.is_empty());
 }
 
 #[sqlx::test(migrator = "MIGRATOR")]
@@ -1324,8 +2055,10 @@ async fn reversals_compensate_with_maker_checker_approval(pool: PgPool) {
     .unwrap();
 
     let control = &books.control;
+    let approve = &books.approve;
+    let outsider = books.operator(OUTSIDER_LOGIN);
     assert_eq!(
-        control
+        outsider
             .request_reversal(
                 mistaken.journal_id,
                 "Sent in error",
@@ -1340,7 +2073,7 @@ async fn reversals_compensate_with_maker_checker_approval(pool: PgPool) {
         .await
         .unwrap();
     assert_eq!(
-        control.execute_correction(request, books.checker).await,
+        approve.execute_correction(request, books.checker).await,
         Err(LedgerError::ApprovalRequired)
     );
     assert_eq!(
@@ -1351,19 +2084,19 @@ async fn reversals_compensate_with_maker_checker_approval(pool: PgPool) {
         "nobody approves their own correction"
     );
     assert_eq!(
-        control
+        outsider
             .decide_correction(request, books.outsider, true, "No permission")
             .await,
         Err(LedgerError::ApprovalRequired)
     );
     assert_eq!(
-        control
+        approve
             .decide_correction(request, books.checker, true, "Evidence reviewed")
             .await
             .unwrap(),
         "APPROVED"
     );
-    let outcome = control
+    let outcome = approve
         .execute_correction(request, books.checker)
         .await
         .unwrap();
@@ -1427,11 +2160,11 @@ async fn reversals_compensate_with_maker_checker_approval(pool: PgPool) {
         .request_reversal(second.journal_id, "Disputed", "case:2", books.maker)
         .await
         .unwrap();
-    control
+    approve
         .decide_correction(request, books.checker, true, "Investigated")
         .await
         .unwrap();
-    let CorrectionOutcome::RecoveryRequired { recovery_case_id } = control
+    let CorrectionOutcome::RecoveryRequired { recovery_case_id } = approve
         .execute_correction(request, books.checker)
         .await
         .unwrap()
@@ -1496,7 +2229,7 @@ async fn reversals_compensate_with_maker_checker_approval(pool: PgPool) {
         (25 * UNIT, 0),
         "nothing posts before approval"
     );
-    control
+    approve
         .decide_correction(adjustment, books.checker, true, "Approved by finance")
         .await
         .unwrap();
@@ -1542,6 +2275,230 @@ async fn reversals_compensate_with_maker_checker_approval(pool: PgPool) {
     assert!(books.violations().await.is_empty());
 }
 
+/// Finding 2: maker-checker rests on the authenticated database login, not
+/// on operator UUIDs supplied by the caller.
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn operator_identity_is_bound_to_the_authenticated_session(pool: PgPool) {
+    let books = setup(pool).await;
+    let alice = books.customer("alice").await;
+    let bob = books.customer("bob").await;
+    books
+        .deposit("dep", &alice, books.usdc, 10 * UNIT)
+        .await
+        .unwrap();
+    let sent = books
+        .ledger
+        .transfer(&books.transfer("tr:1", &alice, &bob, books.usdc, 4 * UNIT))
+        .await
+        .unwrap();
+    let period = ("2000-01-01T00:00:00Z", "2100-01-01T00:00:00Z");
+    let before = books.records().await;
+
+    // A controller login bound to nobody cannot act for anyone, whatever UUID it states.
+    let service = PgLedger::acting_as(books.pool.clone(), LedgerRole::Controller);
+    assert_eq!(
+        service
+            .request_reversal(sent.journal_id, "Impersonated", "case:1", books.maker)
+            .await,
+        Err(LedgerError::OperatorNotAuthenticated)
+    );
+    assert_eq!(
+        service
+            .open_platform_account("1150", books.usdc, "primary", books.maker)
+            .await,
+        Err(LedgerError::OperatorNotAuthenticated)
+    );
+    assert_eq!(
+        service
+            .start_reconciliation("LEDGER_INTEGRITY", None, period, books.maker)
+            .await,
+        Err(LedgerError::OperatorNotAuthenticated)
+    );
+    assert_eq!(books.records().await, before, "nothing was recorded");
+
+    let request = books
+        .control
+        .request_reversal(sent.journal_id, "Sent in error", "case:1", books.maker)
+        .await
+        .unwrap();
+    // The maker cannot approve or execute by naming the checker.
+    assert_eq!(
+        books
+            .control
+            .decide_correction(request, books.checker, true, "Forged approval")
+            .await,
+        Err(LedgerError::OperatorNotAuthenticated)
+    );
+    assert_eq!(
+        books
+            .control
+            .execute_correction(request, books.checker)
+            .await,
+        Err(LedgerError::OperatorNotAuthenticated)
+    );
+    // Nor become the checker: role membership does not change the session user,
+    // and the maker's login is not a member of the checker's.
+    assert_eq!(
+        sqlstate(
+            &books.maker_session,
+            None,
+            &format!("SET ROLE {CHECKER_LOGIN}")
+        )
+        .await
+        .as_deref(),
+        Some("42501")
+    );
+    // Nor rebind its login to the checker.
+    assert_eq!(
+        sqlstate(
+            &books.maker_session,
+            Some("deypay_ledger_controller"),
+            &format!(
+                "INSERT INTO ledger.operator_logins(login_name, user_id, approval_reference)
+                 VALUES ('{MAKER_LOGIN}', '{}', 'self-bound')",
+                books.checker
+            )
+        )
+        .await
+        .as_deref(),
+        Some("42501")
+    );
+    assert_eq!(
+        books
+            .control
+            .decide_correction(request, books.maker, true, "Self approval")
+            .await,
+        Err(LedgerError::ApprovalRequired)
+    );
+
+    // A reconciliation run stays with the operator who started it.
+    let run = books
+        .control
+        .start_reconciliation("LEDGER_INTEGRITY", None, period, books.maker)
+        .await
+        .unwrap();
+    assert_eq!(
+        books.approve.reconcile_ledger_integrity(run).await,
+        Err(LedgerError::ApprovalRequired)
+    );
+    assert_eq!(
+        service.reconcile_ledger_integrity(run).await,
+        Err(LedgerError::OperatorNotAuthenticated)
+    );
+    assert_eq!(books.control.reconcile_ledger_integrity(run).await, Ok(0));
+
+    // Revoked permission: the checker's assignment is withdrawn.
+    sqlx::query("UPDATE audit.admin_assignments SET revoked_at = now() WHERE user_id = $1")
+        .bind(books.checker)
+        .execute(&books.pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        books
+            .approve
+            .decide_correction(request, books.checker, true, "Revoked")
+            .await,
+        Err(LedgerError::ApprovalRequired)
+    );
+    sqlx::query(
+        "INSERT INTO audit.admin_assignments(user_id, role_id)
+         SELECT user_id, role_id FROM audit.admin_assignments WHERE user_id = $1 LIMIT 1",
+    )
+    .bind(books.checker)
+    .execute(&books.pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        books
+            .approve
+            .decide_correction(request, books.checker, true, "Evidence reviewed")
+            .await
+            .unwrap(),
+        "APPROVED"
+    );
+    // Unauthorized execution: an authenticated operator without correction permissions.
+    assert_eq!(
+        books
+            .operator(OUTSIDER_LOGIN)
+            .execute_correction(request, books.outsider)
+            .await,
+        Err(LedgerError::ApprovalRequired)
+    );
+    // A revoked login binding ends the operator's authority at once, and the
+    // binding history cannot be rewritten.
+    sqlx::query(
+        "UPDATE ledger.operator_logins SET revoked_at = now(), revoked_by = session_user WHERE login_name = $1",
+    )
+    .bind(CHECKER_LOGIN)
+    .execute(&books.pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        books
+            .approve
+            .execute_correction(request, books.checker)
+            .await,
+        Err(LedgerError::OperatorNotAuthenticated)
+    );
+    for sql in [
+        format!(
+            "UPDATE ledger.operator_logins SET revoked_at = NULL, revoked_by = NULL WHERE login_name = '{CHECKER_LOGIN}'"
+        ),
+        format!(
+            "UPDATE ledger.operator_logins SET user_id = '{}' WHERE login_name = '{MAKER_LOGIN}'",
+            books.checker
+        ),
+        "DELETE FROM ledger.operator_logins".to_owned(),
+    ] {
+        assert_eq!(
+            sqlstate(&books.pool, None, &sql).await.as_deref(),
+            Some("55000"),
+            "{sql}"
+        );
+    }
+
+    // The authorized path still works, attributed to the authenticated logins.
+    assert!(matches!(
+        books
+            .control
+            .execute_correction(request, books.maker)
+            .await
+            .unwrap(),
+        CorrectionOutcome::Executed { .. }
+    ));
+    assert_eq!(books.balance(&alice, books.usdc).await, (10 * UNIT, 0));
+    let trail: Vec<(String, Uuid, String)> = sqlx::query_as(
+        "SELECT action, actor_id, metadata->>'database_login' FROM audit.audit_events
+         WHERE resource_id = $1 ORDER BY created_at, id",
+    )
+    .bind(request)
+    .fetch_all(&books.pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        trail,
+        vec![
+            (
+                "LEDGER_CORRECTION_REQUESTED".to_owned(),
+                books.maker,
+                MAKER_LOGIN.to_owned()
+            ),
+            (
+                "LEDGER_CORRECTION_APPROVED".to_owned(),
+                books.checker,
+                CHECKER_LOGIN.to_owned()
+            ),
+            (
+                "LEDGER_CORRECTION_EXECUTED".to_owned(),
+                books.maker,
+                MAKER_LOGIN.to_owned()
+            ),
+        ]
+    );
+    assert_eq!(books.count("ledger.correction_requests").await, 1);
+    assert!(books.violations().await.is_empty());
+}
+
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn failures_and_crashes_leave_no_partial_posting(pool: PgPool) {
     let books = setup(pool).await;
@@ -1551,17 +2508,7 @@ async fn failures_and_crashes_leave_no_partial_posting(pool: PgPool) {
         .deposit("dep", &alice, books.usdc, 10 * UNIT)
         .await
         .unwrap();
-    let tables = [
-        "ledger.journals",
-        "ledger.entries",
-        "ledger.accounting_events",
-        "integrations.outbox_events",
-        "ledger.reservations",
-    ];
-    let mut before = Vec::new();
-    for table in tables {
-        before.push(books.count(table).await);
-    }
+    let before = books.records().await;
     // A failing transfer writes nothing.
     assert_eq!(
         books
@@ -1601,9 +2548,7 @@ async fn failures_and_crashes_leave_no_partial_posting(pool: PgPool) {
         .unwrap();
     assert!(killed);
     drop(victim.detach());
-    for (table, count) in tables.iter().zip(&before) {
-        assert_eq!(books.count(table).await, *count, "{table}");
-    }
+    assert_eq!(books.records().await, before);
     assert_eq!(books.balance(&alice, books.usdc).await, (10 * UNIT, 0));
     // The interrupted event posts exactly once when retried.
     let mut tx = books.pool.begin().await.unwrap();
@@ -1722,6 +2667,21 @@ async fn reconciliation_records_every_discrepancy(pool: PgPool) {
         "AMOUNT_MISMATCH"
     );
     assert_eq!(
+        books
+            .approve
+            .record_balance_evidence(
+                run,
+                books.custody_usdc,
+                units(120 * UNIT),
+                "custody:report:3",
+                evidence,
+                observed
+            )
+            .await,
+        Err(LedgerError::ApprovalRequired),
+        "only the operator running the reconciliation adds evidence to it"
+    );
+    assert_eq!(
         control
             .complete_reconciliation(run, &["DEPOSIT_CONFIRMED"], Some(books.custody_usdc))
             .await
@@ -1798,28 +2758,30 @@ async fn reconciliation_records_every_discrepancy(pool: PgPool) {
     .fetch_one(&books.pool)
     .await
     .unwrap();
+    let controller = Some("deypay_ledger_controller");
     let lift = format!(
         "SELECT ledger.lift_asset_hold('{hold}', 'Investigated', '{}')",
         books.maker
     );
     assert_eq!(
-        sqlstate(&books.pool, Some("deypay_ledger_controller"), &lift)
+        sqlstate(&books.maker_session, controller, &lift)
             .await
             .as_deref(),
         Some("LE007")
+    );
+    assert_eq!(
+        sqlstate(&books.pool, controller, &lift).await.as_deref(),
+        Some("LE016"),
+        "an unbound login cannot lift a hold by naming an operator"
     );
     let resolve_without_evidence = format!(
         "SELECT operations.update_case('{case}', 'RESOLVED', NULL, 'Explained', NULL, '{}')",
         books.maker
     );
     assert_eq!(
-        sqlstate(
-            &books.pool,
-            Some("deypay_ledger_controller"),
-            &resolve_without_evidence
-        )
-        .await
-        .as_deref(),
+        sqlstate(&books.maker_session, controller, &resolve_without_evidence)
+            .await
+            .as_deref(),
         Some("LE006")
     );
     let resolve = format!(
@@ -1827,11 +2789,11 @@ async fn reconciliation_records_every_discrepancy(pool: PgPool) {
         books.maker
     );
     assert_eq!(
-        sqlstate(&books.pool, Some("deypay_ledger_controller"), &resolve).await,
+        sqlstate(&books.maker_session, controller, &resolve).await,
         None
     );
     assert_eq!(
-        sqlstate(&books.pool, Some("deypay_ledger_controller"), &lift).await,
+        sqlstate(&books.maker_session, controller, &lift).await,
         None
     );
     books
@@ -1873,8 +2835,8 @@ async fn reconciliation_records_every_discrepancy(pool: PgPool) {
 }
 
 /// Model-based randomized test (ledger spec §39.11): a random mix of deposits,
-/// transfers, reservations, settlements and releases always agrees with an
-/// independent in-memory model, and every ledger invariant holds afterwards.
+/// transfers, reservations, evidenced settlements and releases always agrees
+/// with an independent in-memory model, and every ledger invariant holds.
 #[sqlx::test(migrator = "MIGRATOR")]
 async fn randomized_operations_preserve_every_invariant(pool: PgPool) {
     let books = setup(pool).await;
@@ -1885,7 +2847,7 @@ async fn randomized_operations_preserve_every_invariant(pool: PgPool) {
     let assets = [books.usdc, books.usdt];
     let mut available = [[0_u128; 2]; 3];
     let mut reserved = [[0_u128; 2]; 3];
-    let mut open: Vec<(Uuid, usize, usize, u128)> = Vec::new();
+    let mut open: Vec<(Uuid, Uuid, usize, usize, u128)> = Vec::new();
     let mut seed = 0x2545_f491_4f6c_dd1d_u64;
     let mut next = |bound: u64| {
         seed ^= seed << 13;
@@ -1928,20 +2890,25 @@ async fn randomized_operations_preserve_every_invariant(pool: PgPool) {
             }
             2 => {
                 let result = books
-                    .ledger
-                    .reserve(&books.reserve(&format!("res:{step}"), &customers[who], asset, value))
+                    .hold(&format!("res:{step}"), &customers[who], asset, value)
                     .await;
                 if available[who][which] >= value {
-                    open.push((result.unwrap().reservation_id, who, which, value));
+                    let (receipt, _, operation) = result.unwrap();
+                    open.push((receipt.reservation_id, operation, who, which, value));
                     available[who][which] -= value;
                     reserved[who][which] += value;
                 } else {
-                    assert_eq!(result, Err(LedgerError::InsufficientFunds));
+                    assert_eq!(result.err(), Some(LedgerError::InsufficientFunds));
                 }
             }
             3 if !open.is_empty() => {
-                let (id, owner, index, held) = open.swap_remove(next(open.len() as u64) as usize);
+                let (id, operation, owner, index, held) =
+                    open.swap_remove(next(open.len() as u64) as usize);
                 let custody = books.custody(assets[index]);
+                books
+                    .outcome(id, operation, ProviderOutcome::Executed)
+                    .await
+                    .unwrap();
                 books
                     .ledger
                     .consume(&books.consume(
@@ -1954,7 +2921,8 @@ async fn randomized_operations_preserve_every_invariant(pool: PgPool) {
                 reserved[owner][index] -= held;
             }
             4 if !open.is_empty() => {
-                let (id, owner, index, held) = open.swap_remove(next(open.len() as u64) as usize);
+                let (id, _, owner, index, held) =
+                    open.swap_remove(next(open.len() as u64) as usize);
                 books
                     .ledger
                     .release(&books.release(
@@ -1999,4 +2967,70 @@ async fn randomized_operations_preserve_every_invariant(pool: PgPool) {
     .await
     .unwrap();
     assert_eq!(drift, 0);
+}
+
+/// Finding 4: the documented restricted roles install the ledger. A
+/// non-superuser migration administrator runs every migration and the grants
+/// (whose verification must pass), and the result starts fail-closed.
+#[sqlx::test(migrations = false)]
+async fn restricted_roles_install_the_ledger(pool: PgPool) {
+    sqlx::raw_sql(ROLES).execute(&pool).await.unwrap();
+    test_role(&pool, MIGRATION_LOGIN, "deypay_ledger_owner").await;
+    let database: String = sqlx::query_scalar("SELECT current_database()")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    sqlx::raw_sql(&format!(
+        "GRANT CREATE ON DATABASE \"{database}\" TO {MIGRATION_LOGIN};
+         GRANT CREATE ON SCHEMA public TO {MIGRATION_LOGIN};"
+    ))
+    .execute(&pool)
+    .await
+    .unwrap();
+    let migration = session_as(&pool, MIGRATION_LOGIN);
+    let mut conn = migration.acquire().await.unwrap();
+    let (login, superuser): (String, bool) = sqlx::query_as(
+        "SELECT session_user::text, rolsuper FROM pg_roles WHERE rolname = session_user",
+    )
+    .fetch_one(&mut *conn)
+    .await
+    .unwrap();
+    assert_eq!((login.as_str(), superuser), (MIGRATION_LOGIN, false));
+    MIGRATOR.run(&mut *conn).await.unwrap();
+    sqlx::raw_sql(GRANTS).execute(&mut *conn).await.unwrap();
+    drop(conn);
+    migration.close().await;
+
+    let owner: String = sqlx::query_scalar(
+        "SELECT tableowner::text FROM pg_tables WHERE schemaname = 'ledger' AND tablename = 'entries'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(owner, MIGRATION_LOGIN);
+    let foreign: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM pg_proc WHERE pronamespace IN ('ledger'::regnamespace, 'operations'::regnamespace)
+           AND proowner <> 'deypay_ledger_owner'::regrole",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        foreign, 0,
+        "every ledger routine runs as deypay_ledger_owner"
+    );
+    for table in [
+        "ledger.capability_activations",
+        "ledger.operator_logins",
+        "ledger.journals",
+    ] {
+        let rows: i64 = sqlx::query_scalar(&format!("SELECT count(*) FROM {table}"))
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            rows, 0,
+            "{table}: a new installation is empty and fail-closed"
+        );
+    }
 }

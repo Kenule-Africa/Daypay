@@ -38,6 +38,15 @@ pub enum LedgerError {
     NotPermitted,
     /// Missing permission, self-approval or an undecided correction.
     ApprovalRequired,
+    /// The customer capability (crediting, transfers or reservations) is not
+    /// activated for the asset, or the amount exceeds its activated ceiling.
+    NotActivated,
+    /// Settlement, provider-confirmed non-execution or EXECUTED state needs the
+    /// outcome recorded by an authenticated provider adapter.
+    EvidenceRequired,
+    /// No operator is bound to the database login, or the stated operator is
+    /// not the one bound to it.
+    OperatorNotAuthenticated,
     /// Lock timeout or repeated serialization failure; safe to retry with the same identity.
     ConcurrentModification,
     /// The ledger database could not be reached or failed unexpectedly. The
@@ -154,7 +163,9 @@ pub struct ReleaseCommand {
 }
 
 /// External execution state of a reserved operation. SUBMITTED and UNKNOWN
-/// hold the reservation until definitive evidence arrives.
+/// hold the reservation until definitive evidence arrives. Workflows record
+/// only SUBMITTED and UNKNOWN; EXECUTED follows solely from the outcome an
+/// authenticated provider adapter records.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExecutionState {
     NotSubmitted,
@@ -284,7 +295,9 @@ pub trait FinancialGate: Sync {
 /// The only gate shipped until the eligibility policy, limits and their
 /// persistence are approved and implemented (BLOCKERS: KYC eligibility and
 /// restrictions). It refuses every customer-initiated movement, so the ledger
-/// stays fail-closed in every environment.
+/// stays fail-closed in every environment. The database refuses the same
+/// movements independently, even when called directly with the poster role,
+/// until the approved policy is activated in `ledger.capability_activations`.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct NoApprovedPolicy;
 
@@ -376,6 +389,9 @@ impl<S: LedgerStore, G: FinancialGate> LedgerService<S, G> {
         evidence_reference: &str,
     ) -> Result<ExecutionState, LedgerError> {
         require_evidence(evidence_reference)?;
+        if state == ExecutionState::Executed {
+            return Err(LedgerError::EvidenceRequired);
+        }
         self.store
             .record_execution(reservation, state, evidence_reference)
             .await
@@ -559,6 +575,11 @@ mod tests {
         assert_eq!(
             run(service.record_execution(Uuid::nil(), ExecutionState::Unknown, "")),
             Err(LedgerError::InvalidRequest)
+        );
+        assert_eq!(
+            run(service.record_execution(Uuid::nil(), ExecutionState::Executed, "provider:op:1")),
+            Err(LedgerError::EvidenceRequired),
+            "a workflow cannot declare execution"
         );
         let release = ReleaseCommand {
             reservation: Uuid::nil(),

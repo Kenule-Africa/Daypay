@@ -16,10 +16,14 @@ const MAX_ATTEMPTS: usize = 3;
 const POSTED_AT: &str = r#"to_char(posted_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')"#;
 
 /// The ledger role a connection acts as. Production logins are granted one
-/// role; `acting_as` additionally narrows a login that holds several.
+/// role; `acting_as` additionally narrows a login that holds several. Roles
+/// never change who the session is: controller functions act for the operator
+/// bound to the pool's authenticated login (`ledger.operator_logins`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LedgerRole {
     Poster,
+    /// Authenticated provider adapters recording definitive outcomes.
+    Evidence,
     Controller,
     Reader,
 }
@@ -28,10 +32,41 @@ impl LedgerRole {
     const fn set_role(self) -> &'static str {
         match self {
             Self::Poster => "SET LOCAL ROLE deypay_ledger_poster",
+            Self::Evidence => "SET LOCAL ROLE deypay_ledger_evidence",
             Self::Controller => "SET LOCAL ROLE deypay_ledger_controller",
             Self::Reader => "SET LOCAL ROLE deypay_ledger_reader",
         }
     }
+}
+
+/// The definitive external outcome of a reserved operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProviderOutcome {
+    Executed,
+    NotExecuted,
+}
+
+impl ProviderOutcome {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Executed => "EXECUTED",
+            Self::NotExecuted => "NOT_EXECUTED",
+        }
+    }
+}
+
+/// Provider evidence an adapter has already authenticated (provider signature
+/// or status query) and matched to the operation it submitted. The ledger
+/// keeps the digest of the verified message, not the message itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderEvidence {
+    pub reservation: Uuid,
+    pub outcome: ProviderOutcome,
+    pub provider_operation: Uuid,
+    pub provider_reference: String,
+    pub sha256: [u8; 32],
+    /// RFC 3339 time the provider reported the outcome.
+    pub observed_at: String,
 }
 
 #[derive(Clone)]
@@ -67,6 +102,9 @@ fn map_error(error: &sqlx::Error) -> LedgerError {
         Some("LE011") => LedgerError::AssetMismatch,
         Some("LE012") => LedgerError::NotPermitted,
         Some("LE013") => LedgerError::ApprovalRequired,
+        Some("LE014") => LedgerError::NotActivated,
+        Some("LE015") => LedgerError::EvidenceRequired,
+        Some("LE016") => LedgerError::OperatorNotAuthenticated,
         // Deadlock, serialization failure, lock timeout or an exhausted unique race.
         Some("40P01" | "40001" | "55P03" | "23505") => LedgerError::ConcurrentModification,
         // Invalid text representation (for example a malformed identifier) or a
@@ -219,6 +257,33 @@ impl PgLedger {
                 })
             })
             .transpose()
+    }
+
+    /// Evidence boundary for provider adapters (`LedgerRole::Evidence`).
+    /// Returns the outcome record and whether an identical outcome had already
+    /// been recorded. Recording moves no funds; the reservation's workflow then
+    /// settles or releases against it.
+    pub async fn record_provider_outcome(
+        &self,
+        evidence: &ProviderEvidence,
+    ) -> Result<(Uuid, bool), LedgerError> {
+        let row = self
+            .one(
+                "SELECT outcome_id, replayed FROM ledger.record_provider_outcome($1,$2,$3,$4,$5,$6::timestamptz)",
+                vec![
+                    Arg::Id(Some(evidence.reservation)),
+                    Arg::Text(Some(evidence.outcome.as_str().to_owned())),
+                    Arg::Id(Some(evidence.provider_operation)),
+                    Arg::Text(Some(evidence.provider_reference.clone())),
+                    Arg::Bytes(evidence.sha256.to_vec()),
+                    Arg::Text(Some(evidence.observed_at.clone())),
+                ],
+            )
+            .await?;
+        Ok((
+            row.try_get("outcome_id").map_err(decode)?,
+            row.try_get("replayed").map_err(decode)?,
+        ))
     }
 }
 
@@ -435,8 +500,9 @@ pub enum CorrectionOutcome {
 }
 
 /// Finance-operations interface: platform accounts, maker-checker
-/// corrections, recovery cases and reconciliation. Each function also checks
-/// the acting person's administrative permission inside PostgreSQL.
+/// corrections, recovery cases and reconciliation. The operator arguments are
+/// claims: PostgreSQL accepts them only when they name the operator bound to
+/// this pool's authenticated login, then checks that operator's permission.
 impl PgLedger {
     pub async fn open_platform_account(
         &self,

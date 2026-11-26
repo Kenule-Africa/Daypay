@@ -12,8 +12,20 @@
 --   * Every write runs inside a SECURITY DEFINER function owned by the NOLOGIN
 --     role deypay_ledger_owner.
 --   * deypay_ledger_poster (workflows), deypay_ledger_controller (finance
---     operations) and deypay_ledger_reader (reporting) receive EXECUTE only on
---     their functions. deypay_app receives nothing.
+--     operations), deypay_ledger_evidence (authenticated provider adapters)
+--     and deypay_ledger_reader (reporting) receive EXECUTE only on their
+--     functions. deypay_app receives nothing.
+--
+-- Trust anchors that no runtime role and no ledger function can write; only
+-- the database administrator changes them, under change control:
+--   * ledger.capability_activations: customer crediting, transfers and
+--     reservations stay refused for an asset until an approved activation with
+--     a per-operation ceiling is recorded. None is seeded.
+--   * ledger.operator_logins: binds an authenticated database login
+--     (session_user) to the operator it belongs to. Operator UUIDs passed to
+--     controller functions are claims that must match this binding.
+-- Provider outcomes (ledger.provider_outcomes) are recorded only by the
+-- evidence role and are what settlement and post-submission release rely on.
 --
 -- Error codes raised by ledger functions (mapped in deypay-infrastructure):
 --   LE001 unbalanced journal        LE002 insufficient funds
@@ -22,7 +34,8 @@
 --   LE007 reservation state         LE008 unknown account/record
 --   LE009 customer not eligible     LE010 asset on hold
 --   LE011 asset mismatch            LE012 posting not permitted
---   LE013 approval required/denied
+--   LE013 approval required/denied  LE014 capability not activated
+--   LE015 provider evidence missing LE016 operator not authenticated
 
 CREATE SCHEMA ledger;
 CREATE SCHEMA operations;
@@ -344,6 +357,28 @@ CREATE INDEX reservations_transaction ON ledger.reservations(transaction_id) WHE
 CREATE TRIGGER no_reservation_delete BEFORE DELETE OR TRUNCATE ON ledger.reservations
     FOR EACH STATEMENT EXECUTE FUNCTION audit.reject_mutation();
 
+-- IMP-P5-011: the definitive external outcome of a reserved operation, as
+-- recorded by an authenticated provider adapter (deypay_ledger_evidence) after
+-- it verified the provider's message (security spec SEC-PRV-006, SEC-WHK-001–005).
+-- Each outcome is bound to the provider operation registered for the
+-- reservation's transaction. Workflows cannot write it, so they cannot turn an
+-- uncertain outcome into a refund or a settlement on their own word.
+CREATE TABLE ledger.provider_outcomes (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    reservation_id uuid NOT NULL UNIQUE REFERENCES ledger.reservations,
+    outcome text NOT NULL CHECK (outcome IN ('EXECUTED','NOT_EXECUTED')),
+    provider_operation_id uuid NOT NULL UNIQUE REFERENCES integrations.provider_operations,
+    provider_reference text NOT NULL CHECK (length(provider_reference) BETWEEN 1 AND 512
+        AND provider_reference !~ '[[:cntrl:]]'),
+    evidence_sha256 bytea NOT NULL CHECK (length(evidence_sha256) = 32),
+    observed_at timestamptz NOT NULL,
+    recorded_by text NOT NULL DEFAULT session_user,
+    recorded_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (id, reservation_id)
+);
+CREATE TRIGGER immutable_provider_outcomes BEFORE UPDATE OR DELETE OR TRUNCATE ON ledger.provider_outcomes
+    FOR EACH STATEMENT EXECUTE FUNCTION audit.reject_mutation();
+
 CREATE TABLE ledger.reservation_movements (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     reservation_id uuid NOT NULL REFERENCES ledger.reservations,
@@ -354,11 +389,17 @@ CREATE TABLE ledger.reservation_movements (
         ('VERIFIED_SETTLEMENT','DEFINITIVE_NON_EXECUTION','PERMITTED_CANCELLATION','SETTLEMENT_REMAINDER')),
     evidence_reference text CHECK (evidence_reference IS NULL OR (length(evidence_reference) BETWEEN 1 AND 512
         AND evidence_reference !~ '[[:cntrl:]]')),
+    provider_outcome_id uuid,
     created_at timestamptz NOT NULL DEFAULT now(),
+    FOREIGN KEY (provider_outcome_id, reservation_id) REFERENCES ledger.provider_outcomes(id, reservation_id),
     CHECK ((movement = 'RESERVE') = (evidence_type IS NULL)),
     CHECK ((movement = 'RESERVE') = (evidence_reference IS NULL)),
     CHECK (movement <> 'CONSUME' OR evidence_type = 'VERIFIED_SETTLEMENT'),
-    CHECK (movement <> 'RELEASE' OR evidence_type <> 'VERIFIED_SETTLEMENT')
+    CHECK (movement <> 'RELEASE' OR evidence_type <> 'VERIFIED_SETTLEMENT'),
+    -- Settlement, provider-confirmed non-execution and the remainder after
+    -- settlement always cite the authenticated provider outcome.
+    CHECK ((movement = 'CONSUME' OR coalesce(evidence_type, '') IN ('DEFINITIVE_NON_EXECUTION','SETTLEMENT_REMAINDER'))
+        = (provider_outcome_id IS NOT NULL))
 );
 CREATE INDEX reservation_movements_reservation ON ledger.reservation_movements(reservation_id, created_at);
 CREATE TRIGGER immutable_reservation_movements BEFORE UPDATE OR DELETE OR TRUNCATE ON ledger.reservation_movements
@@ -450,6 +491,74 @@ CREATE TABLE ledger.asset_holds (
 CREATE INDEX asset_holds_active ON ledger.asset_holds(asset_id) WHERE active;
 CREATE TRIGGER no_hold_delete BEFORE DELETE OR TRUNCATE ON ledger.asset_holds
     FOR EACH STATEMENT EXECUTE FUNCTION audit.reject_mutation();
+
+---------------------------------------------------------------------------
+-- Trust anchors written only by the database administrator
+---------------------------------------------------------------------------
+-- Customer crediting, transfers and reservations are refused for an asset
+-- until the approved eligibility policy and limits are recorded here (with the
+-- approval's reference and a per-operation ceiling). No row is seeded, so every
+-- environment starts fail-closed even for a caller holding the poster role.
+-- Rows are history: a capability is switched off by deactivating its row and
+-- switched on again by inserting a new one.
+CREATE TABLE ledger.capability_activations (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    capability text NOT NULL CHECK (capability IN ('CUSTOMER_CREDIT','CUSTOMER_TRANSFER','CUSTOMER_RESERVATION')),
+    asset_id uuid NOT NULL REFERENCES wallets.assets,
+    approval_reference text NOT NULL CHECK (length(approval_reference) BETWEEN 1 AND 256
+        AND approval_reference !~ '[[:cntrl:]]'),
+    max_operation_minor numeric NOT NULL CHECK (max_operation_minor > 0
+        AND max_operation_minor = trunc(max_operation_minor) AND max_operation_minor < 1e38),
+    activated_by text NOT NULL DEFAULT session_user,
+    activated_at timestamptz NOT NULL DEFAULT now(),
+    deactivated_by text,
+    deactivated_at timestamptz,
+    deactivation_reason text,
+    CHECK ((deactivated_at IS NULL) = (deactivated_by IS NULL)),
+    CHECK ((deactivated_at IS NULL) = (deactivation_reason IS NULL)),
+    CHECK (deactivation_reason IS NULL OR btrim(deactivation_reason) <> '')
+);
+CREATE UNIQUE INDEX one_active_capability ON ledger.capability_activations(capability, asset_id)
+    WHERE deactivated_at IS NULL;
+CREATE TRIGGER no_activation_delete BEFORE DELETE OR TRUNCATE ON ledger.capability_activations
+    FOR EACH STATEMENT EXECUTE FUNCTION audit.reject_mutation();
+CREATE TRIGGER activation_history BEFORE UPDATE ON ledger.capability_activations FOR EACH ROW
+    WHEN (OLD.deactivated_at IS NOT NULL
+          OR (OLD.id, OLD.capability, OLD.asset_id, OLD.approval_reference, OLD.max_operation_minor,
+              OLD.activated_by, OLD.activated_at)
+             IS DISTINCT FROM
+             (NEW.id, NEW.capability, NEW.asset_id, NEW.approval_reference, NEW.max_operation_minor,
+              NEW.activated_by, NEW.activated_at))
+    EXECUTE FUNCTION audit.reject_mutation();
+
+-- Maker-checker identity (security spec SEC-ADM-004). Controller functions act
+-- for the operator bound to the authenticated database login (session_user),
+-- which neither SET ROLE nor SECURITY DEFINER can change. Bind only logins whose
+-- credentials are issued to that one person through the approved privileged-
+-- access process (SEC-ADM-002, SEC-ADM-010). Until a login is bound, every
+-- operator action fails closed.
+CREATE TABLE ledger.operator_logins (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    login_name text NOT NULL CHECK (login_name ~ '^[a-z_][a-z0-9_$]{0,62}$'),
+    user_id uuid NOT NULL REFERENCES identity.users,
+    approval_reference text NOT NULL CHECK (length(approval_reference) BETWEEN 1 AND 256
+        AND approval_reference !~ '[[:cntrl:]]'),
+    bound_by text NOT NULL DEFAULT session_user,
+    bound_at timestamptz NOT NULL DEFAULT now(),
+    revoked_by text,
+    revoked_at timestamptz,
+    CHECK ((revoked_at IS NULL) = (revoked_by IS NULL))
+);
+CREATE UNIQUE INDEX one_binding_per_login ON ledger.operator_logins(login_name) WHERE revoked_at IS NULL;
+CREATE UNIQUE INDEX one_login_per_operator ON ledger.operator_logins(user_id) WHERE revoked_at IS NULL;
+CREATE TRIGGER no_binding_delete BEFORE DELETE OR TRUNCATE ON ledger.operator_logins
+    FOR EACH STATEMENT EXECUTE FUNCTION audit.reject_mutation();
+CREATE TRIGGER binding_history BEFORE UPDATE ON ledger.operator_logins FOR EACH ROW
+    WHEN (OLD.revoked_at IS NOT NULL
+          OR (OLD.id, OLD.login_name, OLD.user_id, OLD.approval_reference, OLD.bound_by, OLD.bound_at)
+             IS DISTINCT FROM
+             (NEW.id, NEW.login_name, NEW.user_id, NEW.approval_reference, NEW.bound_by, NEW.bound_at))
+    EXECUTE FUNCTION audit.reject_mutation();
 
 ---------------------------------------------------------------------------
 -- IMP-P5-015: reconciliation foundations
@@ -573,6 +682,50 @@ BEGIN
 END;
 $$;
 
+-- Reservation, transfer and correction postings use these purposes; workflow
+-- postings, settlements and releases may not borrow them.
+CREATE FUNCTION ledger.require_workflow_purpose(p_purpose text) RETURNS void
+LANGUAGE plpgsql IMMUTABLE SET search_path = pg_catalog, pg_temp AS $$
+BEGIN
+    IF p_purpose IN ('RESERVE','TRANSFER','REVERSAL','ADJUSTMENT') THEN
+        RAISE EXCEPTION 'posting purpose % is reserved', p_purpose USING ERRCODE = 'LE012';
+    END IF;
+END;
+$$;
+
+-- Finding-1 gate: refuses a customer capability that the database
+-- administrator has not activated for the asset, or an amount above the
+-- activated per-operation ceiling.
+CREATE FUNCTION ledger.require_capability(p_capability text, p_asset uuid, p_amount numeric) RETURNS void
+LANGUAGE plpgsql STABLE SET search_path = pg_catalog, pg_temp AS $$
+DECLARE
+    ceiling numeric;
+BEGIN
+    SELECT c.max_operation_minor INTO ceiling FROM ledger.capability_activations c
+    WHERE c.capability = p_capability AND c.asset_id = p_asset AND c.deactivated_at IS NULL;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION '% is not activated for this asset', p_capability USING ERRCODE = 'LE014';
+    END IF;
+    IF p_amount > ceiling THEN
+        RAISE EXCEPTION 'amount exceeds the activated % ceiling', p_capability USING ERRCODE = 'LE014';
+    END IF;
+END;
+$$;
+
+-- Separation of duties between moving reserved funds and recording the
+-- provider evidence that justifies it: an ordinary login holding both roles
+-- may do neither. (A superuser is outside every ledger control.)
+CREATE FUNCTION ledger.require_separated_duty(p_other_role text) RETURNS void
+LANGUAGE plpgsql STABLE SET search_path = pg_catalog, pg_temp AS $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles r WHERE r.rolname = session_user AND NOT r.rolsuper)
+       AND pg_catalog.pg_has_role(session_user, p_other_role, 'MEMBER') THEN
+        RAISE EXCEPTION 'one database login may not both move reserved funds and record provider evidence'
+            USING ERRCODE = 'LE012';
+    END IF;
+END;
+$$;
+
 -- IMP-P5-013: claims an accounting event identity. Waits for any concurrent
 -- claim of the same identity, then returns the journal already posted for an
 -- identical request, NULL when unclaimed, or raises on a conflicting reuse.
@@ -645,6 +798,10 @@ BEGIN
         RAISE EXCEPTION 'invalid accounting event type' USING ERRCODE = 'LE006';
     END IF;
     PERFORM ledger.require_actor(p_actor_type);
+    -- Only corrections executed by an authenticated operator are attributed to an administrator.
+    IF (p_actor_type = 'ADMIN') <> (p_mode = 'CORRECTION') THEN
+        RAISE EXCEPTION 'administrator attribution is reserved for approved corrections' USING ERRCODE = 'LE012';
+    END IF;
     IF p_description IS NOT NULL AND (length(p_description) > 500 OR p_description ~ '[[:cntrl:]]') THEN
         RAISE EXCEPTION 'description is too long or contains control characters' USING ERRCODE = 'LE006';
     END IF;
@@ -695,6 +852,12 @@ BEGIN
             END IF;
             IF decreases AND p_mode = 'SYSTEM' THEN
                 RAISE EXCEPTION 'system postings cannot reduce customer funds' USING ERRCODE = 'LE012';
+            END IF;
+            -- A system posting creates customer entitlement only once crediting
+            -- is activated for the asset (authenticated funding evidence comes
+            -- with the deposit workflows that will hold this activation).
+            IF NOT decreases AND p_mode = 'SYSTEM' THEN
+                PERFORM ledger.require_capability('CUSTOMER_CREDIT', line.asset, line.amount);
             END IF;
         END IF;
         projected := line.balance_minor + CASE WHEN decreases THEN -line.amount ELSE line.amount END;
@@ -804,12 +967,46 @@ BEGIN
 END;
 $$;
 
+-- Finding-2 identity binding: the operator of this session is the one bound to
+-- the authenticated login. session_user is fixed at authentication; SET ROLE
+-- and SECURITY DEFINER change only current_user.
+CREATE FUNCTION ledger.session_operator() RETURNS uuid
+LANGUAGE plpgsql STABLE SET search_path = pg_catalog, pg_temp AS $$
+DECLARE
+    bound uuid;
+BEGIN
+    SELECT o.user_id INTO bound FROM ledger.operator_logins o
+    WHERE o.login_name = session_user::text AND o.revoked_at IS NULL;
+    IF bound IS NULL THEN
+        RAISE EXCEPTION 'no operator is bound to this database login' USING ERRCODE = 'LE016';
+    END IF;
+    RETURN bound;
+END;
+$$;
+
+-- A stated operator is only a claim: it must be the session's bound operator,
+-- who must also hold the permission. Returns the authenticated operator.
+CREATE FUNCTION ledger.authorize_operator(p_claimed uuid, p_permission text) RETURNS uuid
+LANGUAGE plpgsql STABLE SET search_path = pg_catalog, pg_temp AS $$
+DECLARE
+    bound uuid := ledger.session_operator();
+BEGIN
+    IF p_claimed IS DISTINCT FROM bound THEN
+        RAISE EXCEPTION 'the stated operator is not the authenticated operator of this session'
+            USING ERRCODE = 'LE016';
+    END IF;
+    PERFORM ledger.require_permission(bound, p_permission);
+    RETURN bound;
+END;
+$$;
+
 CREATE FUNCTION ledger.audit(p_actor uuid, p_action text, p_resource_type text, p_resource uuid,
     p_reason text, p_metadata jsonb) RETURNS void
 LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
     INSERT INTO audit.audit_events(actor_type, actor_id, action, resource_type, resource_id, reason, metadata)
     VALUES (CASE WHEN p_actor IS NULL THEN 'SYSTEM' ELSE 'ADMIN' END, p_actor, p_action, p_resource_type,
-        p_resource, p_reason, coalesce(p_metadata, '{}'::jsonb));
+        p_resource, p_reason,
+        coalesce(p_metadata, '{}'::jsonb) || jsonb_build_object('database_login', session_user::text));
 $$;
 
 ---------------------------------------------------------------------------
@@ -863,10 +1060,7 @@ BEGIN
     IF p_amounts IS NULL OR cardinality(p_amounts) = 0 THEN
         RAISE EXCEPTION 'a journal needs 2–64 aligned lines' USING ERRCODE = 'LE006';
     END IF;
-    -- These purposes identify reservation, transfer and correction postings.
-    IF p_purpose IN ('RESERVE','TRANSFER','REVERSAL','ADJUSTMENT') THEN
-        RAISE EXCEPTION 'posting purpose % is reserved', p_purpose USING ERRCODE = 'LE012';
-    END IF;
+    PERFORM ledger.require_workflow_purpose(p_purpose);
     SELECT array_agg(ledger.parse_amount(t.a) ORDER BY t.n) INTO amounts
     FROM unnest(p_amounts) WITH ORDINALITY AS t(a, n);
     request := ledger.fingerprint('post_journal', p_event_type, coalesce(p_source_transaction::text, ''),
@@ -898,6 +1092,9 @@ BEGIN
     IF p_sender IS NULL OR p_recipient IS NULL OR p_asset IS NULL OR p_sender = p_recipient THEN
         RAISE EXCEPTION 'a transfer needs two different customers and an asset' USING ERRCODE = 'LE006';
     END IF;
+    IF p_actor_type = 'CUSTOMER' AND p_actor_id IS DISTINCT FROM p_sender THEN
+        RAISE EXCEPTION 'a customer can only move their own funds' USING ERRCODE = 'LE006';
+    END IF;
     request := ledger.fingerprint('transfer', p_sender::text, p_recipient::text, p_asset::text, amount::text,
         coalesce(p_source_transaction::text, ''));
     existing := ledger.claim_event(p_operation_key, 'TRANSFER', request);
@@ -905,6 +1102,7 @@ BEGIN
         RETURN QUERY SELECT j.id, j.accounting_event_id, j.posted_at, true FROM ledger.journals j WHERE j.id = existing;
         RETURN;
     END IF;
+    PERFORM ledger.require_capability('CUSTOMER_TRANSFER', p_asset, amount);
     SELECT * INTO sender FROM ledger.customer_accounts(p_sender, p_asset);
     SELECT * INTO recipient FROM ledger.customer_accounts(p_recipient, p_asset);
     PERFORM ledger.require_spend_eligibility(p_sender, sender.wallet_profile_id, p_asset);
@@ -940,6 +1138,9 @@ BEGIN
     IF p_user IS NULL OR p_asset IS NULL THEN
         RAISE EXCEPTION 'a reservation needs a customer and an asset' USING ERRCODE = 'LE006';
     END IF;
+    IF p_actor_type = 'CUSTOMER' AND p_actor_id IS DISTINCT FROM p_user THEN
+        RAISE EXCEPTION 'a customer can only reserve their own funds' USING ERRCODE = 'LE006';
+    END IF;
     request := ledger.fingerprint('reserve', p_operation_key, p_user::text, p_asset::text, amount::text,
         coalesce(p_transaction::text, ''), coalesce(p_event_type, ''));
     existing := ledger.claim_event(p_operation_key, 'RESERVE', request);
@@ -949,6 +1150,7 @@ BEGIN
             WHERE r.reserve_journal_id = existing;
         RETURN;
     END IF;
+    PERFORM ledger.require_capability('CUSTOMER_RESERVATION', p_asset, amount);
     SELECT * INTO accounts FROM ledger.customer_accounts(p_user, p_asset);
     PERFORM ledger.require_spend_eligibility(p_user, accounts.wallet_profile_id, p_asset);
     SELECT * INTO posted FROM ledger.apply_journal('RESERVATION', p_event_type, p_operation_key, 'RESERVE', request,
@@ -966,8 +1168,10 @@ BEGIN
 END;
 $$;
 
--- Records the external execution status of a reserved operation. Only
--- definitive evidence may later release funds once execution was attempted.
+-- Records the workflow's own view of a reserved operation: submitted, or
+-- uncertain after a timeout. Both only protect the reservation further. That
+-- the operation EXECUTED (or definitively did not) is established solely by an
+-- authenticated provider outcome (ledger.record_provider_outcome).
 CREATE FUNCTION ledger.record_execution_state(p_reservation uuid, p_state text, p_evidence_reference text)
 RETURNS text
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
@@ -979,6 +1183,9 @@ BEGIN
        OR p_evidence_reference ~ '[[:cntrl:]]' THEN
         RAISE EXCEPTION 'execution evidence reference is required' USING ERRCODE = 'LE006';
     END IF;
+    IF p_state = 'EXECUTED' THEN
+        RAISE EXCEPTION 'execution is established only by authenticated provider evidence' USING ERRCODE = 'LE015';
+    END IF;
     SELECT r.execution_state, r.status INTO current_state, current_status
     FROM ledger.reservations r WHERE r.id = p_reservation FOR UPDATE;
     IF NOT FOUND THEN
@@ -987,10 +1194,13 @@ BEGIN
     IF current_state = p_state THEN
         RETURN current_state;
     END IF;
+    IF EXISTS (SELECT 1 FROM ledger.provider_outcomes o WHERE o.reservation_id = p_reservation) THEN
+        RAISE EXCEPTION 'the provider outcome of this reservation is already definitive' USING ERRCODE = 'LE007';
+    END IF;
     IF current_status <> 'ACTIVE' OR NOT (
-        (current_state = 'NOT_SUBMITTED' AND p_state IN ('SUBMITTED','UNKNOWN','EXECUTED'))
-        OR (current_state = 'SUBMITTED' AND p_state IN ('UNKNOWN','EXECUTED'))
-        OR (current_state = 'UNKNOWN' AND p_state IN ('SUBMITTED','EXECUTED'))) THEN
+        (current_state = 'NOT_SUBMITTED' AND p_state IN ('SUBMITTED','UNKNOWN'))
+        OR (current_state = 'SUBMITTED' AND p_state = 'UNKNOWN')
+        OR (current_state = 'UNKNOWN' AND p_state = 'SUBMITTED')) THEN
         RAISE EXCEPTION 'execution state cannot change from % to %', current_state, p_state USING ERRCODE = 'LE007';
     END IF;
     UPDATE ledger.reservations r SET execution_state = p_state, updated_at = now() WHERE r.id = p_reservation;
@@ -1000,8 +1210,75 @@ BEGIN
 END;
 $$;
 
--- Settles reserved funds against verified external settlement: debits the
--- reserved liability and credits custody, revenue or clearing accounts.
+-- Evidence boundary for provider adapters (deypay_ledger_evidence only). The
+-- adapter calls this after authenticating the provider's message with the
+-- provider's verification method and matching it to the operation it
+-- submitted. The outcome must name the provider operation registered for the
+-- reservation's transaction; one outcome per reservation and per provider
+-- operation, identical replays return the stored outcome, and a contradicting
+-- outcome is refused for investigation. Recording moves no funds.
+CREATE FUNCTION ledger.record_provider_outcome(p_reservation uuid, p_outcome text, p_provider_operation uuid,
+    p_provider_reference text, p_evidence_sha256 bytea, p_observed_at timestamptz)
+RETURNS TABLE(outcome_id uuid, replayed boolean)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
+#variable_conflict use_column
+DECLARE
+    reservation record;
+    stored ledger.provider_outcomes%ROWTYPE;
+    created uuid;
+BEGIN
+    PERFORM ledger.require_separated_duty('deypay_ledger_poster');
+    IF p_outcome IS NULL OR p_outcome NOT IN ('EXECUTED','NOT_EXECUTED') THEN
+        RAISE EXCEPTION 'unknown provider outcome' USING ERRCODE = 'LE006';
+    END IF;
+    IF p_provider_reference IS NULL OR length(p_provider_reference) NOT BETWEEN 1 AND 512
+       OR p_provider_reference ~ '[[:cntrl:]]' OR p_evidence_sha256 IS NULL OR length(p_evidence_sha256) <> 32
+       OR p_observed_at IS NULL OR p_provider_operation IS NULL THEN
+        RAISE EXCEPTION 'provider evidence needs an operation, reference, SHA-256 digest and observation time'
+            USING ERRCODE = 'LE006';
+    END IF;
+    SELECT r.id, r.status, r.execution_state, r.transaction_id INTO reservation
+    FROM ledger.reservations r WHERE r.id = p_reservation FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'unknown reservation' USING ERRCODE = 'LE008';
+    END IF;
+    SELECT * INTO stored FROM ledger.provider_outcomes o WHERE o.reservation_id = p_reservation;
+    IF FOUND THEN
+        IF (stored.outcome, stored.provider_operation_id, stored.provider_reference, stored.evidence_sha256)
+           IS DISTINCT FROM (p_outcome, p_provider_operation, p_provider_reference, p_evidence_sha256) THEN
+            RAISE EXCEPTION 'a different provider outcome is already recorded for this reservation'
+                USING ERRCODE = 'LE004';
+        END IF;
+        RETURN QUERY SELECT stored.id, true;
+        RETURN;
+    END IF;
+    IF reservation.status <> 'ACTIVE' THEN
+        RAISE EXCEPTION 'reservation is %', lower(reservation.status) USING ERRCODE = 'LE007';
+    END IF;
+    IF reservation.transaction_id IS NULL OR NOT EXISTS (
+        SELECT 1 FROM integrations.provider_operations p
+        WHERE p.id = p_provider_operation AND p.is_financial AND p.transaction_id = reservation.transaction_id) THEN
+        RAISE EXCEPTION 'evidence does not match a provider operation of this reservation''s transaction'
+            USING ERRCODE = 'LE015';
+    END IF;
+    IF EXISTS (SELECT 1 FROM ledger.provider_outcomes o WHERE o.provider_operation_id = p_provider_operation) THEN
+        RAISE EXCEPTION 'this provider operation already evidences another reservation' USING ERRCODE = 'LE004';
+    END IF;
+    INSERT INTO ledger.provider_outcomes(reservation_id, outcome, provider_operation_id, provider_reference,
+        evidence_sha256, observed_at)
+    VALUES (p_reservation, p_outcome, p_provider_operation, p_provider_reference, p_evidence_sha256, p_observed_at)
+    RETURNING id INTO created;
+    IF p_outcome = 'EXECUTED' THEN
+        UPDATE ledger.reservations r SET execution_state = 'EXECUTED', updated_at = now() WHERE r.id = p_reservation;
+        INSERT INTO ledger.reservation_execution_history(reservation_id, previous_state, new_state, evidence_reference)
+        VALUES (p_reservation, reservation.execution_state, 'EXECUTED', p_provider_reference);
+    END IF;
+    RETURN QUERY SELECT created, false;
+END;
+$$;
+
+-- Settles reserved funds against the authenticated EXECUTED outcome: debits
+-- the reserved liability and credits custody, revenue or clearing accounts.
 CREATE FUNCTION ledger.consume_reservation(
     p_reservation uuid, p_economic_key text, p_purpose text, p_event_type text,
     p_accounts uuid[], p_amounts text[], p_evidence_reference text,
@@ -1017,7 +1294,10 @@ DECLARE
     request bytea;
     existing uuid;
     posted record;
+    evidence uuid;
 BEGIN
+    PERFORM ledger.require_separated_duty('deypay_ledger_evidence');
+    PERFORM ledger.require_workflow_purpose(p_purpose);
     IF credits IS NULL OR credits < 1 OR credits > 63 OR cardinality(p_amounts) IS DISTINCT FROM credits THEN
         RAISE EXCEPTION 'settlement needs 1–63 aligned credit lines' USING ERRCODE = 'LE006';
     END IF;
@@ -1042,6 +1322,11 @@ BEGIN
     IF reservation.status <> 'ACTIVE' THEN
         RAISE EXCEPTION 'reservation is %', lower(reservation.status) USING ERRCODE = 'LE007';
     END IF;
+    SELECT o.id INTO evidence FROM ledger.provider_outcomes o
+    WHERE o.reservation_id = p_reservation AND o.outcome = 'EXECUTED';
+    IF evidence IS NULL THEN
+        RAISE EXCEPTION 'settlement requires an authenticated EXECUTED provider outcome' USING ERRCODE = 'LE015';
+    END IF;
     IF total > reservation.remaining_minor THEN
         RAISE EXCEPTION 'settlement exceeds the remaining reservation' USING ERRCODE = 'LE007';
     END IF;
@@ -1057,24 +1342,21 @@ BEGIN
         consumed_minor = r.consumed_minor + total,
         remaining_minor = r.remaining_minor - total,
         status = CASE WHEN r.remaining_minor - total = 0 THEN 'SETTLED' ELSE 'ACTIVE' END,
-        execution_state = 'EXECUTED',
         settled_at = now(),
         updated_at = now()
     WHERE r.id = p_reservation;
-    IF reservation.execution_state <> 'EXECUTED' THEN
-        INSERT INTO ledger.reservation_execution_history(reservation_id, previous_state, new_state, evidence_reference)
-        VALUES (p_reservation, reservation.execution_state, 'EXECUTED', p_evidence_reference);
-    END IF;
-    INSERT INTO ledger.reservation_movements(reservation_id, journal_id, movement, amount_minor, evidence_type, evidence_reference)
-    VALUES (p_reservation, posted.journal_id, 'CONSUME', total, 'VERIFIED_SETTLEMENT', p_evidence_reference);
+    INSERT INTO ledger.reservation_movements(reservation_id, journal_id, movement, amount_minor, evidence_type,
+        evidence_reference, provider_outcome_id)
+    VALUES (p_reservation, posted.journal_id, 'CONSUME', total, 'VERIFIED_SETTLEMENT', p_evidence_reference, evidence);
     RETURN QUERY SELECT posted.journal_id, posted.accounting_event_id, posted.posted_at, false;
 END;
 $$;
 
--- IMP-P5-011: returns reserved funds to available only on evidence that the
--- external operation did not and will not execute, a cancellation before any
--- submission, or the unneeded remainder after verified settlement. An
--- uncertain outcome (SUBMITTED or UNKNOWN) never qualifies on its own.
+-- IMP-P5-011: returns reserved funds to available only on the authenticated
+-- NOT_EXECUTED provider outcome, a cancellation before any submission, or the
+-- unneeded remainder after settlement against the EXECUTED outcome. An
+-- uncertain outcome (SUBMITTED or UNKNOWN) never qualifies, whatever evidence
+-- label or reference a caller supplies.
 CREATE FUNCTION ledger.release_reservation(
     p_reservation uuid, p_economic_key text, p_purpose text, p_amount text,
     p_evidence_type text, p_evidence_reference text, p_actor_type text, p_actor_id uuid, p_correlation uuid)
@@ -1087,7 +1369,10 @@ DECLARE
     request bytea;
     existing uuid;
     posted record;
+    evidence uuid;
 BEGIN
+    PERFORM ledger.require_separated_duty('deypay_ledger_evidence');
+    PERFORM ledger.require_workflow_purpose(p_purpose);
     IF p_evidence_type IS NULL
        OR p_evidence_type NOT IN ('DEFINITIVE_NON_EXECUTION','PERMITTED_CANCELLATION','SETTLEMENT_REMAINDER') THEN
         RAISE EXCEPTION 'unknown release evidence type' USING ERRCODE = 'LE006';
@@ -1119,6 +1404,14 @@ BEGIN
         RAISE EXCEPTION 'release is not permitted while execution is %', lower(reservation.execution_state)
             USING ERRCODE = 'LE007';
     END IF;
+    IF p_evidence_type <> 'PERMITTED_CANCELLATION' THEN
+        SELECT o.id INTO evidence FROM ledger.provider_outcomes o
+        WHERE o.reservation_id = p_reservation
+          AND o.outcome = CASE p_evidence_type WHEN 'DEFINITIVE_NON_EXECUTION' THEN 'NOT_EXECUTED' ELSE 'EXECUTED' END;
+        IF evidence IS NULL THEN
+            RAISE EXCEPTION '% requires the authenticated provider outcome', p_evidence_type USING ERRCODE = 'LE015';
+        END IF;
+    END IF;
     SELECT * INTO posted FROM ledger.apply_journal('RESERVATION', 'RESERVATION_RELEASED', p_economic_key, p_purpose,
         request, reservation.transaction_id, NULL,
         ARRAY[reservation.reserved_account_id, reservation.available_account_id],
@@ -1132,8 +1425,9 @@ BEGIN
         released_at = now(),
         updated_at = now()
     WHERE r.id = p_reservation;
-    INSERT INTO ledger.reservation_movements(reservation_id, journal_id, movement, amount_minor, evidence_type, evidence_reference)
-    VALUES (p_reservation, posted.journal_id, 'RELEASE', amount, p_evidence_type, p_evidence_reference);
+    INSERT INTO ledger.reservation_movements(reservation_id, journal_id, movement, amount_minor, evidence_type,
+        evidence_reference, provider_outcome_id)
+    VALUES (p_reservation, posted.journal_id, 'RELEASE', amount, p_evidence_type, p_evidence_reference, evidence);
     RETURN QUERY SELECT posted.journal_id, posted.accounting_event_id, posted.posted_at, false;
 END;
 $$;
@@ -1246,7 +1540,7 @@ DECLARE
     chart ledger.chart_accounts%ROWTYPE;
     opened uuid;
 BEGIN
-    PERFORM ledger.require_permission(p_actor, 'LEDGER_ACCOUNT_CONTROL');
+    PERFORM ledger.authorize_operator(p_actor, 'LEDGER_ACCOUNT_CONTROL');
     SELECT * INTO chart FROM ledger.chart_accounts c WHERE c.code = p_chart_code;
     IF NOT FOUND OR chart.customer_role IS NOT NULL THEN
         RAISE EXCEPTION 'unknown platform chart account %', p_chart_code USING ERRCODE = 'LE008';
@@ -1276,7 +1570,7 @@ DECLARE
     current_status text;
     current_balance numeric;
 BEGIN
-    PERFORM ledger.require_permission(p_actor, 'LEDGER_ACCOUNT_CONTROL');
+    PERFORM ledger.authorize_operator(p_actor, 'LEDGER_ACCOUNT_CONTROL');
     IF p_status NOT IN ('OPEN','FROZEN','CLOSED') OR p_reason IS NULL OR btrim(p_reason) = '' THEN
         RAISE EXCEPTION 'a valid status and reason are required' USING ERRCODE = 'LE006';
     END IF;
@@ -1312,7 +1606,7 @@ DECLARE
     target record;
     created uuid;
 BEGIN
-    PERFORM ledger.require_permission(p_requested_by, 'LEDGER_CORRECTION_REQUEST');
+    PERFORM ledger.authorize_operator(p_requested_by, 'LEDGER_CORRECTION_REQUEST');
     IF p_type = 'REVERSAL' THEN
         IF p_lines IS NOT NULL THEN
             RAISE EXCEPTION 'a reversal mirrors the original journal and takes no lines' USING ERRCODE = 'LE006';
@@ -1374,6 +1668,8 @@ DECLARE
     request record;
     outcome text := CASE WHEN p_approve THEN 'APPROVED' ELSE 'REJECTED' END;
 BEGIN
+    -- The checker is the authenticated operator of this session, never just a stated UUID.
+    PERFORM ledger.authorize_operator(p_decided_by, 'LEDGER_CORRECTION_APPROVE');
     SELECT * INTO request FROM ledger.correction_requests c WHERE c.id = p_request FOR UPDATE;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'unknown correction request' USING ERRCODE = 'LE008';
@@ -1381,10 +1677,9 @@ BEGIN
     IF request.status <> 'PENDING' THEN
         RAISE EXCEPTION 'correction request is already %', lower(request.status) USING ERRCODE = 'LE013';
     END IF;
-    IF p_decided_by IS NULL OR p_decided_by = request.requested_by THEN
+    IF p_decided_by = request.requested_by THEN
         RAISE EXCEPTION 'the requester cannot decide their own correction' USING ERRCODE = 'LE013';
     END IF;
-    PERFORM ledger.require_permission(p_decided_by, 'LEDGER_CORRECTION_APPROVE');
     IF p_approve IS NULL OR p_reason IS NULL OR btrim(p_reason) = '' THEN
         RAISE EXCEPTION 'a decision and reason are required' USING ERRCODE = 'LE006';
     END IF;
@@ -1413,6 +1708,10 @@ DECLARE
     posted record;
     opened uuid;
 BEGIN
+    IF p_executed_by IS DISTINCT FROM ledger.session_operator() THEN
+        RAISE EXCEPTION 'the stated operator is not the authenticated operator of this session'
+            USING ERRCODE = 'LE016';
+    END IF;
     SELECT * INTO request FROM ledger.correction_requests c WHERE c.id = p_request FOR UPDATE;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'unknown correction request' USING ERRCODE = 'LE008';
@@ -1479,7 +1778,7 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
 DECLARE
     current_status text;
 BEGIN
-    PERFORM ledger.require_permission(p_actor, 'LEDGER_CORRECTION_APPROVE');
+    PERFORM ledger.authorize_operator(p_actor, 'LEDGER_CORRECTION_APPROVE');
     SELECT c.status INTO current_status FROM ledger.recovery_cases c WHERE c.id = p_case FOR UPDATE;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'unknown recovery case' USING ERRCODE = 'LE008';
@@ -1507,7 +1806,7 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
 DECLARE
     hold record;
 BEGIN
-    PERFORM ledger.require_permission(p_actor, 'LEDGER_ACCOUNT_CONTROL');
+    PERFORM ledger.authorize_operator(p_actor, 'LEDGER_ACCOUNT_CONTROL');
     SELECT * INTO hold FROM ledger.asset_holds h WHERE h.id = p_hold FOR UPDATE;
     IF NOT FOUND OR NOT hold.active THEN
         RAISE EXCEPTION 'no active hold' USING ERRCODE = 'LE008';
@@ -1536,7 +1835,7 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
 DECLARE
     started uuid;
 BEGIN
-    PERFORM ledger.require_permission(p_actor, 'RECONCILIATION_OPERATE');
+    PERFORM ledger.authorize_operator(p_actor, 'RECONCILIATION_OPERATE');
     INSERT INTO operations.reconciliation_runs(reconciliation_type, provider_id, period_start, period_end, started_by)
     VALUES (p_type, p_provider, p_period_start, p_period_end, p_actor)
     RETURNING id INTO started;
@@ -1544,14 +1843,21 @@ BEGIN
 END;
 $$;
 
+-- A run is continued only by the authenticated operator who started it, while
+-- they still hold the reconciliation permission.
 CREATE FUNCTION operations.running(p_run uuid) RETURNS operations.reconciliation_runs
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
 DECLARE
+    acting_operator uuid := ledger.session_operator();
     run operations.reconciliation_runs%ROWTYPE;
 BEGIN
+    PERFORM ledger.require_permission(acting_operator, 'RECONCILIATION_OPERATE');
     SELECT * INTO run FROM operations.reconciliation_runs r WHERE r.id = p_run FOR UPDATE;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'unknown reconciliation run' USING ERRCODE = 'LE008';
+    END IF;
+    IF run.started_by <> acting_operator THEN
+        RAISE EXCEPTION 'reconciliation run belongs to another operator' USING ERRCODE = 'LE013';
     END IF;
     IF run.status <> 'RUNNING' THEN
         RAISE EXCEPTION 'reconciliation run is complete' USING ERRCODE = 'LE007';
@@ -1763,7 +2069,7 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
 DECLARE
     current_status text;
 BEGIN
-    PERFORM ledger.require_permission(p_actor, 'RECONCILIATION_OPERATE');
+    PERFORM ledger.authorize_operator(p_actor, 'RECONCILIATION_OPERATE');
     IF p_status NOT IN ('OPEN','INVESTIGATING','RESOLVED') OR p_note IS NULL OR btrim(p_note) = '' THEN
         RAISE EXCEPTION 'a valid status and note are required' USING ERRCODE = 'LE006';
     END IF;
