@@ -53,6 +53,7 @@ PR #9's authentication paths are part of the accepted `main` baseline. Only PR #
 - Frontend: `frontend/app/`; frontend checks: `frontend/tests/`
 - Local PostgreSQL bootstrap and verification: `infrastructure/postgres/`
 - CI workflow: `.github/workflows/phase-one.yml`
+- CI/testing policy: all agents use GitHub Actions first for broad or expensive verification, verify the exact commit and required jobs, inspect failure logs, and keep local checks targeted. See [Test Strategy v1.1 §§41 and 51–54](../07-TEST-STRATEGY.md#41-automated-testing-and-cicd), especially [§51](../07-TEST-STRATEGY.md#51-mandatory-github-actions-execution-policy), [§52](../07-TEST-STRATEGY.md#52-agent-ci-monitoring-protocol), [§53](../07-TEST-STRATEGY.md#53-local-testing-and-environment-specific-acceptance), and [§54](../07-TEST-STRATEGY.md#54-ci-security-performance-and-maintenance-rules).
 
 ## Specification navigation
 
@@ -62,7 +63,7 @@ PR #9's authentication paths are part of the accepted `main` baseline. Only PR #
 - Public API contracts: [`docs/04-API-SPECIFICATION.md`](../04-API-SPECIFICATION.md)
 - Accounting and ledger invariants: [`docs/05-LEDGER-ACCOUNTING.md`](../05-LEDGER-ACCOUNTING.md)
 - Security and compliance: [`docs/06-SECURITY-COMPLIANCE.md`](../06-SECURITY-COMPLIANCE.md)
-- Verification strategy: [`docs/07-TEST-STRATEGY.md`](../07-TEST-STRATEGY.md)
+- Verification strategy: [Test Strategy v1.1 — Approved 26 November 2026](../07-TEST-STRATEGY.md), especially §§41 and 51–54 for GitHub Actions–first verification, exact-commit CI monitoring, failure-log handling and minimal local testing.
 - Delivery sequence and gates: [`docs/08-IMPLEMENTATION-PLAN.md`](../08-IMPLEMENTATION-PLAN.md)
 
 Engineering state and navigation are maintained in [`docs/engineering/`](.).

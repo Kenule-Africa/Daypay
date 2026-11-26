@@ -14,6 +14,12 @@
 - **KYC and financial eligibility:** application accounts and ordinary non-financial account management do not require KYC. KYC remains a separate eligibility gate for applicable financial services; no transaction may bypass KYC, account restrictions, limits, compliance or release approvals.
 - **Release boundary:** CI success is not PR acceptance, production deployment, provider capability evidence, legal/regulatory approval or authorization for live financial execution.
 
+## Owner-approved testing policy · 26 November 2026
+
+The approved baseline is Test Strategy v1.1 in [07-TEST-STRATEGY.md](../07-TEST-STRATEGY.md), especially §§41 and 51–54. GitHub Actions is the primary platform for expensive/broad builds and test suites, PostgreSQL/API integration, authentication regressions, financial invariants, frontend builds and broad static analysis wherever feasible. Keep local checks minimal and targeted; use them for quick formatting, focused debugging/tests, manual UI or private/environment-specific acceptance, and do not repeat full local suites when Actions covers the same revision.
+
+Claude, Codex and future engineering agents are responsible for monitoring CI on their own branches. Before reporting verification, confirm the repository, exact commit SHA, completed workflow, successful required jobs and absence of silently skipped mandatory checks. Inspect failure logs, diagnose and fix failures attributable to the change, then verify the corrected commit's run. Report actual results, skipped checks and any access limitation; inability to inspect CI is not evidence of success. Never expose production credentials, use production databases, or run live financial transfers in ordinary CI. The repository owner retains merge approval.
+
 ## Verified evidence
 
 - At baseline `d29fbfdea482c8ad7d3b4426a2440e0b6c95ccc3`, backend job `136317283655` and frontend job `136317283809` both succeeded. The backend run passed workspace formatting, locked Clippy/build/tests, disposable PostgreSQL, live HTTP/worker/outage and persistence checks. The frontend run passed npm install, lint, build, typecheck and Node tests.

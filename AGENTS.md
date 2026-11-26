@@ -22,7 +22,10 @@ Do not load all specifications or the whole repository by default. Use targeted 
 
 - Work only on the assigned task and preserve existing decisions, task IDs, statuses, and unresolved gates.
 - Make small, reviewable changes using existing patterns. Keep credentials and secrets out of Git.
-- Check dependencies and acceptance criteria first; run focused tests, then broader checks at integration boundaries.
+- Follow the owner-approved GitHub Actions–first policy in [the test strategy](docs/07-TEST-STRATEGY.md): Claude, Codex and all future engineering agents must use GitHub Actions for expensive or broad tests wherever feasible, including full builds/suites, PostgreSQL/API integration, authentication regressions, financial invariants, frontend builds and broad static analysis. Do not substitute repeated full local runs when Actions covers the same revision.
+- Keep local testing minimal and targeted: quick formatting checks, focused tests/debugging, manual UI review, private configuration checks, local hardware dependencies and explicitly authorized environment-specific acceptance are permitted where useful.
+- For any claimed CI verification, identify the exact commit SHA and verify the completed GitHub Actions run for that commit, including successful required jobs and no silently skipped mandatory checks. The implementing agent owns monitoring CI on its branch, inspecting failed-job logs, fixing attributable failures, pushing corrections, and verifying the final commit. Report access limitations, failed or skipped checks, and only tests that actually ran; lack of access is not evidence of success.
+- Check dependencies and acceptance criteria first; run targeted local checks as appropriate, then use Actions for broad or integration-boundary verification.
 - Do not claim completion or passing tests without executing and recording the relevant checks. Distinguish type checking, compilation, runtime tests, simulations, provider approval, and live activation.
 - Before completion, inspect the diff, update only directly related documentation and tracking evidence, and leave an actionable handoff. Keep final reports concise.
 
