@@ -1,0 +1,109 @@
+-- Apply after migration 202611260001 and ledger-roles.psql, as a DBA or a
+-- migration administrator allowed to assign ownership. Every ledger write runs
+-- in a SECURITY DEFINER function owned by the NOLOGIN deypay_ledger_owner; no
+-- runtime role receives INSERT, UPDATE, DELETE or TRUNCATE on ledger tables.
+BEGIN;
+GRANT USAGE ON SCHEMA ledger, operations, wallets, identity, compliance, audit, integrations, payments
+    TO deypay_ledger_owner;
+GRANT SELECT ON ledger.chart_accounts TO deypay_ledger_owner;
+GRANT SELECT, INSERT, UPDATE ON ledger.accounts, ledger.balances, ledger.reservations, ledger.correction_requests,
+    ledger.recovery_cases, ledger.asset_holds TO deypay_ledger_owner;
+GRANT SELECT, INSERT ON ledger.accounting_events, ledger.journals, ledger.entries, ledger.reservation_movements,
+    ledger.reservation_execution_history TO deypay_ledger_owner;
+GRANT USAGE ON SEQUENCE ledger.journal_sequence TO deypay_ledger_owner;
+GRANT SELECT, INSERT, UPDATE ON operations.reconciliation_runs, operations.reconciliation_cases TO deypay_ledger_owner;
+GRANT SELECT, INSERT ON operations.reconciliation_items, operations.reconciliation_case_events TO deypay_ledger_owner;
+GRANT SELECT (id, symbol) ON wallets.assets TO deypay_ledger_owner;
+GRANT SELECT (id, user_id, asset_id, asset_symbol, status) ON wallets.wallet_profiles TO deypay_ledger_owner;
+GRANT SELECT (id, status) ON identity.users TO deypay_ledger_owner;
+GRANT SELECT (user_id, active) ON compliance.account_restrictions TO deypay_ledger_owner;
+GRANT SELECT (user_id, role_id, revoked_at) ON audit.admin_assignments TO deypay_ledger_owner;
+GRANT SELECT (role_id, permission_id) ON audit.role_permissions TO deypay_ledger_owner;
+GRANT SELECT (id, permission_code) ON audit.admin_permissions TO deypay_ledger_owner;
+GRANT INSERT (actor_type, actor_id, action, resource_type, resource_id, reason, metadata) ON audit.audit_events
+    TO deypay_ledger_owner;
+GRANT INSERT (aggregate_type, aggregate_id, event_type, payload) ON integrations.outbox_events TO deypay_ledger_owner;
+
+GRANT CREATE ON SCHEMA ledger, operations TO deypay_ledger_owner;
+DO $$
+DECLARE
+    routine regprocedure;
+BEGIN
+    FOR routine IN SELECT p.oid::regprocedure FROM pg_proc p
+                   WHERE p.pronamespace IN ('ledger'::regnamespace, 'operations'::regnamespace) LOOP
+        EXECUTE format('ALTER FUNCTION %s OWNER TO deypay_ledger_owner', routine);
+    END LOOP;
+END $$;
+REVOKE CREATE ON SCHEMA ledger, operations FROM deypay_ledger_owner;
+
+GRANT USAGE ON SCHEMA ledger TO deypay_ledger_poster, deypay_ledger_controller, deypay_ledger_reader;
+GRANT USAGE ON SCHEMA operations TO deypay_ledger_controller, deypay_ledger_reader;
+
+-- Financial workflows: postings, transfers and the reservation lifecycle.
+GRANT EXECUTE ON FUNCTION
+    ledger.open_customer_accounts(uuid),
+    ledger.post_journal(text,text,text,uuid,uuid[],uuid[],text[],text[],text,text,uuid,uuid),
+    ledger.transfer_between_customers(text,uuid,uuid,uuid,text,uuid,text,uuid,uuid),
+    ledger.reserve_funds(text,uuid,uuid,text,uuid,text,text,uuid,uuid),
+    ledger.record_execution_state(uuid,text,text),
+    ledger.consume_reservation(uuid,text,text,text,uuid[],text[],text,text,uuid,uuid),
+    ledger.release_reservation(uuid,text,text,text,text,text,text,uuid,uuid)
+TO deypay_ledger_poster;
+
+GRANT EXECUTE ON FUNCTION
+    ledger.account_balance(uuid),
+    ledger.customer_balance(uuid,uuid),
+    ledger.reservation_state(uuid),
+    ledger.outstanding_reservations(interval)
+TO deypay_ledger_poster, deypay_ledger_controller, deypay_ledger_reader;
+
+GRANT EXECUTE ON FUNCTION ledger.reconstructed_balances(), ledger.integrity_violations()
+TO deypay_ledger_controller, deypay_ledger_reader;
+
+-- Finance operations: accounts, maker-checker corrections, recovery and reconciliation.
+-- Each function additionally checks the acting person's audit.admin_* permission.
+GRANT EXECUTE ON FUNCTION
+    ledger.open_platform_account(text,uuid,text,uuid),
+    ledger.set_account_status(uuid,text,text,uuid),
+    ledger.request_correction(text,uuid,jsonb,text,text,uuid),
+    ledger.decide_correction(uuid,uuid,boolean,text),
+    ledger.execute_correction(uuid,uuid),
+    ledger.resolve_recovery_case(uuid,uuid,text,uuid),
+    ledger.lift_asset_hold(uuid,text,uuid),
+    operations.start_reconciliation(text,uuid,timestamptz,timestamptz,uuid),
+    operations.reconcile_ledger_integrity(uuid),
+    operations.reconcile_customer_liabilities(uuid,uuid),
+    operations.record_balance_evidence(uuid,uuid,text,text,bytea,timestamptz),
+    operations.record_transaction_evidence(uuid,text,uuid,uuid,text,text,text,bytea,timestamptz),
+    operations.complete_reconciliation(uuid,text[],uuid),
+    operations.update_case(uuid,text,uuid,text,text,uuid)
+TO deypay_ledger_controller;
+
+GRANT SELECT ON ALL TABLES IN SCHEMA ledger, operations TO deypay_ledger_reader;
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_class c CROSS JOIN unnest(ARRAY['deypay_app','deypay_ledger_poster',
+            'deypay_ledger_controller','deypay_ledger_reader']) AS r(name)
+        WHERE c.relnamespace IN ('ledger'::regnamespace, 'operations'::regnamespace) AND c.relkind IN ('r','p')
+          AND EXISTS (SELECT FROM pg_roles WHERE rolname = r.name)
+          AND has_table_privilege(r.name, c.oid, 'INSERT,UPDATE,DELETE,TRUNCATE')) THEN
+        RAISE EXCEPTION 'A runtime role can write ledger tables directly';
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'deypay_app')
+       AND (has_schema_privilege('deypay_app', 'ledger', 'USAGE')
+            OR has_schema_privilege('deypay_app', 'operations', 'USAGE')) THEN
+        RAISE EXCEPTION 'The general API role must not reach the ledger';
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_proc p
+               WHERE p.pronamespace IN ('ledger'::regnamespace, 'operations'::regnamespace)
+                 AND p.proowner <> 'deypay_ledger_owner'::regrole) THEN
+        RAISE EXCEPTION 'Ledger routines must belong to deypay_ledger_owner';
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+               WHERE p.pronamespace IN ('ledger'::regnamespace, 'operations'::regnamespace) AND a.grantee = 0) THEN
+        RAISE EXCEPTION 'Ledger routines must not be executable by PUBLIC';
+    END IF;
+END $$;
+COMMIT;

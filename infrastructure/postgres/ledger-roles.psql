@@ -1,0 +1,24 @@
+-- Cluster administrator prerequisite for migration 202611260001 (Phase 5 ledger).
+-- Creates the NOLOGIN ledger roles. Safe to rerun. Grant deypay_ledger_poster
+-- to the login of each process that runs financial workflows, and
+-- deypay_ledger_controller / deypay_ledger_reader to finance-operations and
+-- reporting logins, only once those processes are authorized.
+DO $$
+DECLARE
+    wanted text;
+BEGIN
+    FOREACH wanted IN ARRAY ARRAY['deypay_ledger_owner','deypay_ledger_poster','deypay_ledger_controller','deypay_ledger_reader'] LOOP
+        IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = wanted) THEN
+            BEGIN
+                EXECUTE format('CREATE ROLE %I NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS', wanted);
+            EXCEPTION WHEN duplicate_object OR unique_violation THEN
+                NULL; -- created concurrently
+            END;
+        END IF;
+    END LOOP;
+    IF EXISTS (SELECT FROM pg_catalog.pg_roles
+               WHERE rolname IN ('deypay_ledger_owner','deypay_ledger_poster','deypay_ledger_controller','deypay_ledger_reader')
+                 AND (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls OR rolcanlogin)) THEN
+        RAISE EXCEPTION 'Unsafe pre-existing ledger role';
+    END IF;
+END $$;
