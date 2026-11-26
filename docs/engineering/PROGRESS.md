@@ -1,5 +1,16 @@
 # Engineering progress
 
+## 2026-11-26 · Phase 5 financial ledger implementation (IMP-P5-001–017)
+
+Claude implemented the complete Phase 5 ledger on `feat/claude-phase5-financial-ledger` under the owner's 2026-11-26 financial-architecture decisions. All seventeen tasks are In review; engineering acceptance follows owner review and merge.
+
+- **Exact money and assets (P5-001/002):** checked 38-digit units, strict decimal parsing and formatting, approved precision (USDC/USDT 6, NGN 2) enforced by `wallets.assets`, and exact token-to-accounting conversion that rejects sub-unit remainders.
+- **Ledger structures (P5-003–006, 012, 013):** the proposed §7.2 chart, account instances, accounting events unique by (economic key, purpose), journals, entries and signed balance projections. A deferred constraint rejects any journal that is unbalanced per asset at commit; history is append-only for every role.
+- **Posting, reservations and corrections (P5-007–011, 014, 016):** SECURITY DEFINER functions own posting, transfers, reserve/consume/release with evidence-based release, maker-checker reversals and adjustments, and recovery cases instead of overdrafts. Locks follow account-id order; duplicate identities serialize on an advisory lock and replay.
+- **Reconciliation (P5-015):** runs, immutable items, cases with investigation history, integrity reconstruction, customer-liability versus custody checks with automatic asset hold on a shortfall, and external balance/transaction evidence matching. No real provider reconciliation is claimed.
+- **Tests (P5-017):** domain unit and randomized tests, application gate tests, and 13 PostgreSQL tests in `backend/crates/deypay-infrastructure/tests/ledger.rs` covering invariants, privileges, concurrency, idempotency, crash recovery, reversals and reconciliation. Hosted CI evidence for the exact commit is recorded in the pull request.
+- **Not activated:** no financial endpoint, provider execution or live customer activity. The shipped `NoApprovedPolicy` gate refuses customer-initiated movements; remaining gates are in [BLOCKERS.md](BLOCKERS.md).
+
 ## 2026-11-26 · Local authentication browser-path follow-ups (Phase 17 account slice, IMP-P3-002 workstation)
 
 This entry follows up the three open findings below. PR #16 (the workstation outbox) merged at `5aebe3d`; its push run [45869868410](https://github.com/Kenule-Africa/Daypay/actions/runs/45869868410) on `7faf84d` passed backend (13/13 steps) and frontend (11/11). **External email delivery remains unverified**, and IMP-P3-002 stays In testing.
