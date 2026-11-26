@@ -1,18 +1,19 @@
-//! Workstation-only email-verification outbox (IMP-P3-002 local acceptance).
+//! Workstation-only email outbox (IMP-P3-002 and IMP-P3-008 local acceptance).
 //!
-//! Runs the production `VerificationWorker` dispatch, claim, token, prepare and
-//! finish path once against a local or test database. Instead of contacting an
-//! email provider, it writes each verification email to a private directory so
-//! the operator can open the link with the real `/verify-email` page and
-//! redemption endpoint.
+//! Runs the production `VerificationWorker` and, when `PASSWORD_RESET_BASE_URL`
+//! is set, `RecoveryWorker` once each: dispatch, claim, token, prepare, finish.
+//! The run uses a local or test database. Instead of contacting an email
+//! provider, it writes each email to a private directory. The operator then
+//! opens the link with the real `/verify-email` or `/reset-password` page and
+//! endpoint.
 //!
 //! Guards:
-//! - `APP_ENV` must be `local` or `test`; staging and production are refused.
-//! - The confirmation page must be a loopback `/verify-email` URL.
-//! - The sandbox worker claims only customers whose legal acceptance is
-//!   sandbox-scoped (`customers.email_verification_eligibility`), so hosted,
+//! - `APP_ENV` must be `local` or `test`. Staging and production are refused.
+//! - Each link page must be a loopback `/verify-email` or `/reset-password` URL.
+//! - The sandbox workers claim only sandbox-scoped customers, so hosted,
 //!   published-scope customers are never processed.
-//! - Each run uses a fresh random HMAC key that never leaves the process.
+//! - Each worker uses a fresh random HMAC key per run that never leaves the
+//!   process.
 //! - It is a Cargo example: no deployable binary or image contains it.
 //!
 //! This exercises local token generation and redemption only. It is not
@@ -26,6 +27,7 @@ use deypay_infrastructure::{
     database,
     email_delivery::{Delivery, EmailDelivery, Message, SendResult},
     email_verification::VerificationWorker,
+    password_recovery::RecoveryWorker,
 };
 use std::{
     error::Error,
@@ -40,14 +42,16 @@ use std::{
 use url::{Host, Url};
 use uuid::Uuid;
 
-/// Upper bound on jobs handled in one run, so a misbehaving queue cannot spin.
-const MAX_JOBS: usize = 100;
+/// Upper bound on rounds handled in one run, so a misbehaving queue cannot spin.
+const MAX_ROUNDS: usize = 100;
+/// Readiness probes (two seconds each, one second apart) before reporting the database unavailable.
+const READY_ATTEMPTS: usize = 5;
 
 fn local(environment: Environment) -> bool {
     matches!(environment, Environment::Local | Environment::Test)
 }
 
-fn loopback_page(value: &str) -> bool {
+fn loopback_page(value: &str, path: &str) -> bool {
     let Ok(url) = Url::parse(value) else {
         return false;
     };
@@ -57,7 +61,13 @@ fn loopback_page(value: &str) -> bool {
         Some(Host::Domain(name)) => name == "localhost",
         None => false,
     };
-    loopback && url.path() == "/verify-email"
+    loopback && url.path() == path
+}
+
+fn random_key() -> Result<[u8; 32], &'static str> {
+    let mut key = [0u8; 32];
+    getrandom::getrandom(&mut key).map_err(|_| "Operating-system randomness unavailable")?;
+    Ok(key)
 }
 
 /// A private, write-once directory standing in for the recipient's mailbox.
@@ -130,28 +140,59 @@ fn required(key: &'static str) -> Result<String, String> {
 async fn main() -> Result<(), Box<dyn Error>> {
     let settings = Settings::from_env()?;
     if !local(settings.environment) {
-        return Err("The local verification outbox runs only with APP_ENV=local or test".into());
+        return Err("The local email outbox runs only with APP_ENV=local or test".into());
     }
     init_logging(&settings.log_level)?;
     let page = required("EMAIL_VERIFY_BASE_URL")?;
-    if !loopback_page(&page) {
+    if !loopback_page(&page, "/verify-email") {
         return Err("EMAIL_VERIFY_BASE_URL must be a loopback /verify-email page".into());
     }
+    let reset_page = std::env::var("PASSWORD_RESET_BASE_URL").ok();
+    if reset_page
+        .as_deref()
+        .is_some_and(|url| !loopback_page(url, "/reset-password"))
+    {
+        return Err("PASSWORD_RESET_BASE_URL must be a loopback /reset-password page".into());
+    }
     let outbox = Arc::new(Outbox::open(&required("DEYPAY_LOCAL_OUTBOX_DIR")?)?);
-    let mut key = [0u8; 32];
-    getrandom::getrandom(&mut key).map_err(|_| "Operating-system randomness unavailable")?;
-    let worker = VerificationWorker::sandbox(outbox.clone(), key, &page)?;
+    let verification = VerificationWorker::sandbox(outbox.clone(), random_key()?, &page)?;
+    let recovery = match reset_page {
+        Some(url) => Some(RecoveryWorker::sandbox(
+            outbox.clone(),
+            random_key()?,
+            &url,
+        )?),
+        None => None,
+    };
     let pool = database::pool(&settings)?;
-    if !database::ready(&pool).await {
+    // A busy workstation can exceed the two-second readiness probe on the first
+    // SCRAM login, so retry briefly before giving up.
+    let mut ready = false;
+    for _ in 0..READY_ATTEMPTS {
+        if database::ready(&pool).await {
+            ready = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+    if !ready {
         return Err("Database unavailable".into());
     }
-    let mut jobs = 0;
-    while jobs < MAX_JOBS && worker.tick(&pool).await? {
-        jobs += 1;
+    let mut rounds = 0;
+    while rounds < MAX_ROUNDS {
+        let mut busy = verification.tick(&pool).await?;
+        if let Some(recovery) = &recovery {
+            busy |= recovery.tick(&pool).await?;
+        }
+        if !busy {
+            break;
+        }
+        rounds += 1;
     }
     pool.close().await;
     println!(
-        "Processed {jobs} verification job(s); wrote {} message(s) to {}",
+        "Processed {rounds} round(s) of email jobs (password reset {}); wrote {} message(s) to {}",
+        if recovery.is_some() { "on" } else { "off" },
         outbox.written.load(Ordering::Relaxed),
         outbox.dir.display()
     );
@@ -161,7 +202,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use deypay_infrastructure::email_delivery::verification_message;
+    use deypay_infrastructure::email_delivery::{password_reset_message, verification_message};
 
     fn scratch(prefix: &str) -> PathBuf {
         let mut bytes = [0u8; 16];
@@ -176,24 +217,33 @@ mod tests {
     }
 
     #[test]
-    fn accepts_only_loopback_confirmation_pages() {
-        for url in [
-            "https://127.0.0.2:8443/verify-email",
-            "http://127.0.0.1:8000/verify-email",
-            "https://localhost/verify-email",
-            "https://[::1]:8443/verify-email",
+    fn accepts_only_loopback_link_pages() {
+        for (url, path) in [
+            ("https://127.0.0.2:8443/verify-email", "/verify-email"),
+            ("http://127.0.0.1:8000/verify-email", "/verify-email"),
+            ("https://localhost/verify-email", "/verify-email"),
+            ("https://[::1]:8443/verify-email", "/verify-email"),
+            ("https://127.0.0.2:8443/reset-password", "/reset-password"),
         ] {
-            assert!(loopback_page(url), "{url}");
+            assert!(loopback_page(url, path), "{url}");
         }
-        for url in [
-            "https://app.example.test/verify-email",
-            "https://10.0.0.1/verify-email",
-            "https://127.0.0.1.example.test/verify-email",
-            "https://localhost.example.test/verify-email",
-            "https://127.0.0.1/elsewhere",
-            "not a url",
+        for (url, path) in [
+            ("https://app.example.test/verify-email", "/verify-email"),
+            ("https://10.0.0.1/verify-email", "/verify-email"),
+            (
+                "https://127.0.0.1.example.test/verify-email",
+                "/verify-email",
+            ),
+            (
+                "https://localhost.example.test/verify-email",
+                "/verify-email",
+            ),
+            ("https://127.0.0.1/elsewhere", "/verify-email"),
+            ("https://127.0.0.2:8443/verify-email", "/reset-password"),
+            ("https://app.example.test/reset-password", "/reset-password"),
+            ("not a url", "/verify-email"),
         ] {
-            assert!(!loopback_page(url), "{url}");
+            assert!(!loopback_page(url, path), "{url}");
         }
     }
 
@@ -222,6 +272,13 @@ mod tests {
         let other = verification_message("two@example.test", &link, "2030-05-20 09:15:30");
         assert_eq!(outbox.store(id, &other), Delivery::Permanent);
         assert_eq!(outbox.written.load(Ordering::Relaxed), 1);
+        let reset = Url::parse("https://127.0.0.2:8443/reset-password#fixture").unwrap();
+        let message = password_reset_message("one@example.test", &reset, "2030-05-20 09:15:30");
+        let id = Uuid::from_u128(2);
+        assert_eq!(outbox.store(id, &message), Delivery::Accepted(None));
+        let saved = std::fs::read_to_string(dir.join(format!("{id}.txt"))).unwrap();
+        assert!(saved.starts_with("To: one@example.test\nSubject: Reset your DEYPAY password\n"));
+        assert!(saved.contains(reset.as_str()));
         std::fs::remove_dir_all(dir).unwrap();
     }
 }
