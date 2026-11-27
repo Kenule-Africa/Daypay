@@ -1,5 +1,28 @@
 # Engineering progress
 
+## 2026-11-27 · Phase 6 wallet independent-review remediation (PR #20)
+
+Claude resolved the independent review of PR #20 (reviewed commit `0a283f3`) on the same branch. The analysis, residual risks and test mapping are in [PHASE6-WALLET-REVIEW.md](PHASE6-WALLET-REVIEW.md). IMP-P6-001–010 remain In review.
+
+- **Execution-time revalidation (confirmed):**
+  - `wallets.begin_provisioning` now applies `wallets.deposit_blocker` before submitting a pending request. This is the same rule `request_deposit_address` uses. It covers wallet status, account and compliance restrictions, KYC, asset suspension and holds, network and contract enablement, and `CUSTOMER_CREDIT`.
+  - It also requires the request's own provider to still be eligible.
+  - The wallet is locked before the request.
+  - A revoked request fails with its reason before any provider call. SUBMITTED and UNKNOWN requests stay lookup-only.
+- **Provider precedence (confirmed):** `wallets.eligible_address_providers` replaces the arbitrary `DISTINCT ON` choice:
+  - restrictions win at any scope;
+  - the most specific scope decides, and its rows must agree;
+  - order is by priority, then provider code.
+- **Verification items 1–12:** no further defect found. Phase 9 requirements are recorded for late or unsolicited deposits, token precision and the deposit-address QR (FR-WAL-010). No new task ID.
+- **Changes:**
+  - the migration, modified in place because it is unmerged and has only been applied to disposable test databases;
+  - two PostgreSQL tests in `tests/wallets.rs`;
+  - documentation.
+
+  No grant, role, endpoint or state changed.
+- **Hosted CI:** run [45934155594](https://github.com/Kenule-Africa/Daypay/actions/runs/45934155594) on `77397b2` passed backend and frontend.
+  - PostgreSQL suites: wallets 9/9 (both new tests included), ledger 18/18, persistence 16/16, registration 11/11, email verification 5/5, `registration_http` 57/57.
+
 ## 2026-11-27 · Phase 6 wallet and asset management (IMP-P6-001–010)
 
 Claude implemented Phase 6 on `feat/claude-phase6-wallet-asset-management`, branched from `main` at `a9bf52b`. It builds on the merged Phase 5 ledger (PR #18, merged at `5ddb1c1`; push run [45905299130](https://github.com/Kenule-Africa/Daypay/actions/runs/45905299130)) and PR #19 (merged at `a9bf52b`). All ten tasks are In review; engineering acceptance follows owner review and merge.

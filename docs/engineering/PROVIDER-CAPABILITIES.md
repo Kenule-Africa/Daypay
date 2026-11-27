@@ -43,11 +43,14 @@ On review, record the evidence reference, date, reviewer, exact scope and restri
 - `production_approved` holds exactly at `PRODUCTION_ENABLED`.
 - `operational` records current health.
 
-DEYPAY routes a new deposit-address request to a provider only when all of these hold:
-- the provider is `APPROVED` and enabled;
-- its most specific production row for the asset and network is `PRODUCTION_ENABLED`, available and operational.
+`wallets.eligible_address_providers` decides which providers may provision a deposit address for an asset network, and in what order. `select_address_provider` takes the first one. Only a provider's applicable rows count: production environment, service `DEPOSIT_ADDRESS_PROVISIONING`, no corridor or country scope, and a matching or NULL asset and network.
 
-Among qualifying providers, the lowest `routing_priority` wins. Only the database administrator writes these rows, and every change is kept in `wallets.registry_changes`.
+1. **Explicit restrictions win.** An `UNSUPPORTED` or non-operational row at any applicable scope excludes the provider. A broader, narrower or equally specific approval never overrides it.
+2. **The most specific scope decides.** The scopes are exact asset and network, then asset-only or network-only (these two are equal), then provider-wide. Every row at the deciding scope must be `PRODUCTION_ENABLED`, production-approved and available. Rows that disagree at the same scope exclude the provider.
+3. **The provider must be approved.** It must be `APPROVED` and enabled.
+4. **Ordering.** Providers are ordered by the lowest `routing_priority` among the deciding rows, then by provider code, so the order is deterministic.
+
+New requests go to the first provider. A pending request is submitted only while its own provider is still eligible and the wallet may still receive (see [the Phase 6 review](PHASE6-WALLET-REVIEW.md)). Only the database administrator writes these rows, and every change is kept in `wallets.registry_changes`.
 
 | Provider | Capability | Stage | Inspection notes (2026-11-27) |
 |---|---|---|---|

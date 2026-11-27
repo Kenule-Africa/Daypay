@@ -792,6 +792,10 @@ Address assignment uniqueness must be enforced using the actual custody model.
 **Provider register**
 - `integrations.providers` adds a lifecycle status; an enabled provider must be `APPROVED`.
 - `integrations.provider_capabilities` adds a verification stage, evidence, routing priority and operational health. Production approval is tied to the `PRODUCTION_ENABLED` stage.
+- `wallets.eligible_address_providers` applies the routing precedence:
+  - an `UNSUPPORTED` or non-operational row at any applicable scope excludes the provider;
+  - otherwise the most specific scope decides, and its rows must agree;
+  - order is by priority, then provider code.
 
 **Wallet profiles and history**
 - `wallets.wallet_profiles` provisioning status is `PENDING` until the ledger accounts exist, then `COMPLETE`.
@@ -800,6 +804,8 @@ Address assignment uniqueness must be enforced using the actual custody model.
 
 **Provisioning requests and addresses**
 - `wallets.wallet_provisioning_requests` adds the asset/network, the provider's reference and a state machine: `PENDING`, `SUBMITTED`, `UNKNOWN`, then `PROVISIONED`, `FAILED` or `UNSUPPORTED`. At most one open request exists per wallet and asset/network.
+  - `wallets.begin_provisioning` revalidates a pending request with `wallets.deposit_blocker`, the rule used when the request was opened, and checks that the request's provider is still eligible. It locks the wallet before the request. A request whose eligibility was revoked becomes `FAILED` with the reason and is never submitted.
+  - `SUBMITTED` and `UNKNOWN` requests are only looked up with their original provider.
 - `wallets.wallet_addresses` adds the network, verification state, evidence, activation and retirement.
   - An address is shown only when verified, and is retired rather than replaced.
   - One on-chain address (with its memo) on a network belongs to one customer and one provider, and may serve that customer's several tokens.

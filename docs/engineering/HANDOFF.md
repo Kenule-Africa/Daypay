@@ -36,6 +36,11 @@
     - The web app shows them at `/app/wallets`.
   - **Test:** run `--test wallets` with the infrastructure suite, `registration_http` (which includes the wallet HTTP cases), and `npm test` in `frontend/`.
   - **Provider boundary:** `DepositAddressProvider` / `AddressProvisioner` with durable requests. No adapter exists; Nuvion and ImportaPay are `CANDIDATE` providers with no capability ([PROVIDER-CAPABILITIES.md](PROVIDER-CAPABILITIES.md)).
+  - **Review remediation:** the independent review of PR #20 is resolved on the same branch ([PHASE6-WALLET-REVIEW.md](PHASE6-WALLET-REVIEW.md)). Before submitting a pending request, `begin_provisioning` revalidates eligibility and its own provider, locking the wallet before the request. Provider precedence puts restrictions first and is deterministic. The migration was modified in place because it is unmerged.
+  - **Phase 9 inputs:** that record lists what deposits must do:
+    - attribute deposits from address records of every status, including retired and suspended ones;
+    - never automatically credit late, unsolicited, unsupported or non-representable deposits, and route them to review or suspense instead;
+    - add the deposit-address QR (FR-WAL-010), for verified ACTIVE addresses only.
   - **Must stay disabled:**
     - network, contract and capability enablement until verified evidence exists;
     - `CUSTOMER_CREDIT` and the other activations until approval;
