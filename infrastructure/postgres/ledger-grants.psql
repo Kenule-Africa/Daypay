@@ -98,10 +98,14 @@ GRANT SELECT ON ALL TABLES IN SCHEMA ledger, operations TO deypay_ledger_reader;
 DO $$
 DECLARE
     -- The wallet roles (wallet-roles.psql) are checked once they exist.
-    runtime CONSTANT text[] := ARRAY['deypay_app','deypay_ledger_poster','deypay_ledger_evidence',
+    candidates CONSTANT text[] := ARRAY['deypay_app','deypay_ledger_poster','deypay_ledger_evidence',
         'deypay_ledger_controller','deypay_ledger_reader','deypay_wallet_owner','deypay_wallet_provisioner'];
+    runtime text[];
     offending text;
 BEGIN
+    -- Only roles that exist; privilege functions fail on unknown roles and
+    -- PostgreSQL does not promise to evaluate an existence filter first.
+    runtime := ARRAY(SELECT c.name FROM unnest(candidates) AS c(name) WHERE EXISTS (SELECT FROM pg_roles WHERE rolname = c.name));
     IF EXISTS (
         SELECT 1 FROM pg_class c CROSS JOIN unnest(runtime) AS r(name)
         WHERE c.relnamespace IN ('ledger'::regnamespace, 'operations'::regnamespace) AND c.relkind IN ('r','p')

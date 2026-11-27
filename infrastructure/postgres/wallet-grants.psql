@@ -67,10 +67,14 @@ GRANT EXECUTE ON FUNCTION wallets.set_wallet_status(uuid,text,text,uuid) TO deyp
 
 DO $$
 DECLARE
-    runtime CONSTANT text[] := ARRAY['deypay_app','deypay_wallet_provisioner','deypay_ledger_poster',
+    candidates CONSTANT text[] := ARRAY['deypay_app','deypay_wallet_provisioner','deypay_ledger_poster',
         'deypay_ledger_evidence','deypay_ledger_controller','deypay_ledger_reader'];
+    runtime text[];
     offending text;
 BEGIN
+    -- Only roles that exist; privilege functions fail on unknown roles and
+    -- PostgreSQL does not promise to evaluate an existence filter first.
+    runtime := ARRAY(SELECT c.name FROM unnest(candidates) AS c(name) WHERE EXISTS (SELECT FROM pg_roles WHERE rolname = c.name));
     -- No runtime role writes any wallet or integration table, and none writes a registry.
     SELECT string_agg(r.name || ' → ' || c.oid::regclass::text, ', ') INTO offending
     FROM pg_class c CROSS JOIN unnest(runtime) AS r(name)
