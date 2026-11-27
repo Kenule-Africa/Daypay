@@ -670,7 +670,7 @@ LANGUAGE sql STABLE SET search_path = pg_catalog, pg_temp AS $$
         CROSS JOIN LATERAL (SELECT wallets.restrictions(w.id) AS restrictions) r
         CROSS JOIN LATERAL ledger.asset_controls(w.asset_id) c
         WHERE w.id = p_wallet)
-    SELECT an.id, n.code, n.name, n.chain_family, an.token_contract, an.token_decimals, n.memo_required,
+    SELECT an.id, n.code, n.name, n.chain_family, an.token_contract::text, an.token_decimals, n.memo_required,
            n.required_confirmations, (n.deposits_enabled AND an.deposit_enabled),
            f.receivable AND (live.address IS NOT NULL OR EXISTS (SELECT 1 FROM wallets.select_address_provider(an.id))),
            cardinality(v.restrictions) = 0 AND n.withdrawals_enabled AND an.withdrawal_enabled,
@@ -820,7 +820,7 @@ BEGIN
         RAISE EXCEPTION 'unsupported asset' USING ERRCODE = 'WA005';
     END IF;
     RETURN QUERY
-    SELECT n.code, n.name, n.chain_family, a.symbol, an.token_contract, an.token_decimals, n.memo_required,
+    SELECT n.code, n.name, n.chain_family, a.symbol, an.token_contract::text, an.token_decimals, n.memo_required,
            n.required_confirmations, n.deposits_enabled AND an.deposit_enabled,
            n.withdrawals_enabled AND an.withdrawal_enabled
     FROM wallets.networks n
@@ -896,8 +896,8 @@ RETURNS TABLE(request_id uuid, request_reference text, status text, provider_cod
     asset text, network_code text, chain_family text, token_contract text, external_reference text,
     attempt_count integer)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
-    SELECT r.id, r.request_reference, r.status, p.provider_code, w.id, w.asset_symbol, n.code, n.chain_family,
-           an.token_contract, r.external_reference, r.attempt_count
+    SELECT r.id, r.request_reference::text, r.status, p.provider_code, w.id, w.asset_symbol, n.code, n.chain_family,
+           an.token_contract::text, r.external_reference, r.attempt_count
     FROM wallets.wallet_provisioning_requests r
     JOIN integrations.providers p ON p.id = r.provider_id
     JOIN wallets.wallet_profiles w ON w.id = r.wallet_profile_id
