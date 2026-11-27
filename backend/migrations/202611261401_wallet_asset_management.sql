@@ -64,7 +64,7 @@ CREATE FUNCTION wallets.base58_byte_length(p_text text) RETURNS integer
 LANGUAGE plpgsql IMMUTABLE SET search_path = pg_catalog, pg_temp AS $$
 DECLARE
     alphabet constant text := '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
-    value numeric := 0;
+    accumulated numeric := 0;
     leading_zeros integer := 0;
     in_prefix boolean := true;
     digit integer;
@@ -83,10 +83,10 @@ BEGIN
         ELSE
             in_prefix := false;
         END IF;
-        value := value * 58 + digit;
+        accumulated := accumulated * 58 + digit;
     END LOOP;
-    WHILE value > 0 LOOP
-        value := div(value, 256);
+    WHILE accumulated > 0 LOOP
+        accumulated := div(accumulated, 256);
         bytes := bytes + 1;
     END LOOP;
     RETURN leading_zeros + bytes;
@@ -521,7 +521,7 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
 DECLARE
     network record;
     canonical text;
-    owner uuid;
+    holder uuid;
 BEGIN
     IF TG_OP = 'UPDATE' THEN
         IF (NEW.id, NEW.wallet_profile_id, NEW.asset_id, NEW.asset_network_id, NEW.network_id, NEW.provider_id,
@@ -553,13 +553,13 @@ BEGIN
         RAISE EXCEPTION 'a new deposit address starts unverified' USING ERRCODE = 'WA010';
     END IF;
     NEW.address := canonical;
-    SELECT w.user_id INTO owner FROM wallets.wallet_profiles w WHERE w.id = NEW.wallet_profile_id;
+    SELECT w.user_id INTO holder FROM wallets.wallet_profiles w WHERE w.id = NEW.wallet_profile_id;
     PERFORM pg_advisory_xact_lock(hashtextextended('deypay.wallets.address|' || NEW.network_id::text || '|'
         || canonical || '|' || coalesce(NEW.memo_tag, ''), 0));
     IF EXISTS (SELECT 1 FROM wallets.wallet_addresses a JOIN wallets.wallet_profiles w ON w.id = a.wallet_profile_id
                WHERE a.network_id = NEW.network_id AND a.address = canonical
                  AND a.memo_tag IS NOT DISTINCT FROM NEW.memo_tag
-                 AND (w.user_id <> owner OR a.provider_id <> NEW.provider_id)) THEN
+                 AND (w.user_id <> holder OR a.provider_id <> NEW.provider_id)) THEN
         RAISE EXCEPTION 'this address belongs to another customer or provider' USING ERRCODE = 'WA010';
     END IF;
     RETURN NEW;
@@ -959,8 +959,8 @@ BEGIN
         RAISE EXCEPTION 'unknown provisioning request' USING ERRCODE = 'WA004';
     END IF;
     IF request.status IN ('PROVISIONED','FAILED','UNSUPPORTED') THEN
-        IF request.status = CASE p_result WHEN 'PROVISIONED' THEN 'PROVISIONED' WHEN 'FAILED' THEN 'FAILED'
-                                          WHEN 'UNSUPPORTED' THEN 'UNSUPPORTED' END THEN
+        IF request.status = (CASE p_result WHEN 'PROVISIONED' THEN 'PROVISIONED' WHEN 'FAILED' THEN 'FAILED'
+                                           WHEN 'UNSUPPORTED' THEN 'UNSUPPORTED' END) THEN
             SELECT a.id INTO recorded FROM wallets.wallet_addresses a WHERE a.provisioning_request_id = p_request;
             RETURN recorded;
         END IF;
