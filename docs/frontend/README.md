@@ -7,4 +7,4 @@ These files establish the **long-term frontend design and engineering standards*
 
 **Claude instruction when frontend work is authorized:** Read both files along with `AGENTS.md` and the current FRS/API/implementation documentation before implementation. Treat these rules as persistent frontend requirements. If a rule conflicts with an approved backend contract or security requirement, preserve the backend/security contract and report the conflict.
 
-**Current scheduling rule:** Frontend implementation must wait until the customer-account backend has completed engineering acceptance. Documentation/design preparation may continue meanwhile.
+**Current scheduling rule:** The customer-account backend is engineering-accepted (PR #14), and the first account frontend is merged (PR #15, #17 and #19), along with the wallet pages (PR #20). Build each further Phase 17 screen only after its backend APIs are accepted. Track progress in the Phase 17 table of [TASKS.md](../engineering/TASKS.md).

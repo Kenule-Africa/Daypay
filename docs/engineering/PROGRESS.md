@@ -1,5 +1,47 @@
 # Engineering progress
 
+## 2026-11-27 · Phase 6 accepted; workstation environment upgraded to Phases 5 and 6
+
+**Merges and CI.** Each push run below completed with conclusion `success`. Backend passed 13/13 steps and frontend 11/11, with no skipped or non-successful steps.
+
+| PR | Merge commit | Push run |
+|---|---|---|
+| #20 Phase 6 wallets and assets (IMP-P6-001–010) | `1386d1b8658e5816efa252d532d085d6f5091a0b` | [45935622358](https://github.com/Kenule-Africa/Daypay/actions/runs/45935622358) |
+| #21 Git Bash guide for the local environment ([LOCAL-DEVELOPMENT.md](LOCAL-DEVELOPMENT.md)) | `e8c74754d7c6a6129751b5e6933280f5d884b48a` | [45973301583](https://github.com/Kenule-Africa/Daypay/actions/runs/45973301583) |
+
+IMP-P6-001–010 are therefore Completed — Engineering Accepted. That is not activation. The wallet policy defaults remain pending owner confirmation, and no network, token contract, provider capability, deposit, transfer or withdrawal is enabled.
+
+**Workstation upgrade.** This was a local, environment-specific check on the private HTTPS environment (`https://127.0.0.2:8443`, PostgreSQL 18.7 on loopback). It is not deployment evidence.
+
+1. **Checkout.** `main` was fast-forwarded to `1386d1b`. The existing database was backed up privately with `pg_dump` before any change.
+2. **Migrations.** The environment's native migration transport applied `202611260001` (ledger) and `202611261401` (wallets). All 20 versions are recorded, and every checksum matches its file.
+3. **Roles and grants.** Applied as the DBA in this order: `ledger-roles`, `wallet-roles`, `ledger-grants`, `wallet-grants`. Each script's self-checks passed. Afterwards:
+   - `verify.psql` passed as `deypay_app`;
+   - `identity.auth_acl_ok()` and `identity.auth_owner_ok()` both returned true;
+   - the seven new roles are NOLOGIN, and no login holds any of them;
+   - `deypay_app` can execute exactly the five customer wallet functions and has no ledger schema usage;
+   - there are 0 capability activations, 0 operator logins, 0 networks and 0 provider capabilities;
+   - the existing customers were preserved.
+4. **Binaries.** `deypay-api` and `deypay-auth` were rebuilt from `main` (`cargo build --locked -p deypay-api --bins`) and installed in place, and the environment was restarted. The launcher's supervisor had already exited, so the two orphaned service processes were stopped manually first. The troubleshooting table in LOCAL-DEVELOPMENT.md now covers this case.
+5. **Smoke checks.** These ran through the ingress against the `next dev` frontend, using a throwaway sandbox account. The account was registered and verified through the [local outbox](LOCAL-EMAIL-VERIFICATION.md), and its password was sent only to the loopback verifier.
+   - **Registration and verification:** registration returned 202; verification returned 200, and reusing the link returned 422.
+   - **Sign-in and account:** sign-in returned 200, and `/me` and preferences returned 200.
+   - **Wallets:**
+     - `GET /api/v1/wallets` returned USDC and USDT, both `active` with a 0.000000 balance;
+     - wallet detail and balance returned 200;
+     - `/networks` and `/assets/USDC/networks` returned empty lists;
+     - wallet requests without a session returned 401.
+   - **Logout:** logout returned 200, and wallet requests after it returned 401.
+   - **Signed-in pages:** `/app`, `/app/wallets`, profile, preferences and security returned 200.
+   - **Public pages:** `/`, `/login`, `/register` and `/forgot-password` returned 200.
+   - **Expected results, not defects:**
+     - Listing deposit addresses without a `network` parameter returned 400, as API §19 requires.
+     - The `next dev` pages contain the session cookie in their debug data, the documented Next.js 15.5 development behaviour.
+   - **Environment issue:** the wallet detail page first returned 500 ("Cannot find module './vendor-chunks/@radix-ui.js'"). A `next build` had been started in the same `frontend/.next` directory as the running `next dev` server. After the dev server was restarted, the page returned 200.
+   - **Machine load:** on this 8 GB workstation, one registration attempt returned a transient 503.
+
+**Not run or not established:** the production frontend build on the workstation, the owner browser walkthrough, external email delivery (IMP-P3-002 stays In testing), and any provider or financial operation.
+
 ## 2026-11-27 · Phase 6 wallet independent-review remediation (PR #20)
 
 Claude resolved the independent review of PR #20 (reviewed commit `0a283f3`) on the same branch. The analysis, residual risks and test mapping are in [PHASE6-WALLET-REVIEW.md](PHASE6-WALLET-REVIEW.md). IMP-P6-001–010 remain In review.

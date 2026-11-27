@@ -46,9 +46,11 @@ Current implementation assignments are listed here. Assignment status is separat
 | Claude | IMP-P4-006 Customer Restriction Engine | `feat/claude-imp-p4-005-007-kyc-controls` | Workspace: `DeyPay-claude`. PR contains fail-closed restriction and central authorization foundations. No financial operation is wired or activated. Preserve code and defer further work under the owner-directed hold. | IMP-P4-001–002; approved eligibility/restriction rules before any operational use; financial work must remain blocked unless eligibility is verified | On Hold — Owner-Directed | Same draft, open and unmerged PR [#10](https://github.com/Kenule-Africa/Daypay/pull/10), head `a5ff8c3e1474f7bde4c4c06089cf10682f98c7cb`; CI passed. Not accepted. |
 | Claude | IMP-P4-007 Transaction Limit Foundation | `feat/claude-imp-p4-005-007-kyc-controls` | Workspace: `DeyPay-claude`. PR contains exact-money and limit-usage decision foundations; no thresholds are configured, usage is not persisted/consumed, and no financial operation calls them. Preserve code and defer further work under the owner-directed hold. | Approved limit thresholds, scopes/windows and eligibility requirements; coordinated implementation with IMP-P4-006 and transaction acceptance flows | On Hold — Owner-Directed | Same draft, open and unmerged PR [#10](https://github.com/Kenule-Africa/Daypay/pull/10), head `a5ff8c3e1474f7bde4c4c06089cf10682f98c7cb`; CI passed. Not accepted. |
 
-The canonical roadmap statuses are separate from assignment status. IMP-P3-007/011 are Completed — Engineering Accepted through merged PR #11; IMP-P3-010 through merged PR #12; and IMP-P3-008/009/012 through merged PR #14 at `4fc5c034385ebe34d3b4c9f10594664b923ecd50`, with backend/frontend Actions run `45810331511` passing. IMP-P3-002 remains In testing until real Resend staging delivery and confirmation are evidenced. Next planned work is Claude's production account frontend and Codex's authentication environment activation; these are priorities, not new roadmap task IDs. Live activation remains subject to [BLOCKERS.md](BLOCKERS.md). IMP-P3-013 remains deferred by owner decision; P3-003 remains Deferred — Post-MVP. IMP-P4-005/006/007 remain blocked by the owner-directed hold while PR #10 remains open and unmerged.
+The canonical roadmap statuses are separate from assignment status. IMP-P3-007/011 are Completed — Engineering Accepted through merged PR #11; IMP-P3-010 through merged PR #12; and IMP-P3-008/009/012 through merged PR #14 at `4fc5c034385ebe34d3b4c9f10594664b923ecd50`, with backend/frontend Actions run `45810331511` passing. IMP-P3-002 remains In testing until real Resend staging delivery and confirmation are evidenced. The early account frontend (PR #15, #17, #19), the Phase 5 ledger (PR #18) and Phase 6 wallets (PR #20) are merged. Next in the approved schedule (order 3) are Phase 7 internal transfers (IMP-P7-001–010) and Phase 8 provider-framework foundations (IMP-P8-001–013). Neither has an agent assignment recorded yet; assign one here before work starts. Codex's authentication environment activation remains outstanding. These are priorities, not new roadmap task IDs. Live activation remains subject to [BLOCKERS.md](BLOCKERS.md). IMP-P3-013 remains deferred by owner decision; P3-003 remains Deferred — Post-MVP. IMP-P4-005/006/007 remain blocked by the owner-directed hold while PR #10 remains open and unmerged.
 
 ## Shared-file ownership and integration plan
+
+This plan governed the Cycle 2 parallel work, which ended when PR #13 and PR #14 merged. It is kept for reference; record a new plan before the next parallel cycle starts.
 
 The agents work in parallel only within these boundaries. A file has one primary editor for this cycle; requests to change another owner's file must be coordinated before editing. Branches are owner-created from the verified `main` SHA above.
 
@@ -200,18 +202,18 @@ IMP-P5-001–017 are Completed — Engineering Accepted: PR #18 (Claude, `feat/c
 
 | Task ID | Roadmap task | Status |
 |---|---|---|
-| IMP-P6-001 | Asset registry. | In review |
-| IMP-P6-002 | Network registry. | In review |
-| IMP-P6-003 | Token contract registry. | In review |
-| IMP-P6-004 | Customer wallet profiles. | In review |
-| IMP-P6-005 | Wallet status management. | In review |
-| IMP-P6-006 | Wallet balance APIs. | In review |
-| IMP-P6-007 | Deposit address domain model. | In review |
-| IMP-P6-008 | Provider address provisioning interface. | In review |
-| IMP-P6-009 | Wallet restrictions. | In review |
-| IMP-P6-010 | Wallet tests. | In review |
+| IMP-P6-001 | Asset registry. | Completed |
+| IMP-P6-002 | Network registry. | Completed |
+| IMP-P6-003 | Token contract registry. | Completed |
+| IMP-P6-004 | Customer wallet profiles. | Completed |
+| IMP-P6-005 | Wallet status management. | Completed |
+| IMP-P6-006 | Wallet balance APIs. | Completed |
+| IMP-P6-007 | Deposit address domain model. | Completed |
+| IMP-P6-008 | Provider address provisioning interface. | Completed |
+| IMP-P6-009 | Wallet restrictions. | Completed |
+| IMP-P6-010 | Wallet tests. | Completed |
 
-IMP-P6-001–010 are implemented by Claude on `feat/claude-phase6-wallet-asset-management` and are In review pending owner review and merge of the pull request. Migration `202611261401_wallet_asset_management.sql` extends the Phase 2 wallet tables and the existing provider capability register; grants are in `infrastructure/postgres/wallet-roles.psql` and `wallet-grants.psql`; tests are `backend/crates/deypay-infrastructure/tests/wallets.rs`, `backend/crates/deypay-api/tests/cases/wallet_http.rs` and the frontend wallet tests. USDC and USDT wallet profiles, ledger-backed balances, status management, restrictions, and the wallet APIs and pages are functional. IMP-P6-007/008 deliver the deposit-address model, the durable provisioning state machine and the provider-independent `DepositAddressProvider` port only: no provider adapter exists; no network, token contract or provider capability is enabled; and external address provisioning remains Blocked under [BLOCKERS.md](BLOCKERS.md) until Nuvion (or another approved provider) capabilities are verified and approved. No deposit, transfer or withdrawal is enabled. The independent review of PR #20 is resolved on the same branch ([PHASE6-WALLET-REVIEW.md](PHASE6-WALLET-REVIEW.md)). Provisioning now revalidates eligibility before submission, and provider precedence is deterministic and restriction-first. The statuses are unchanged.
+IMP-P6-001–010 are Completed — Engineering Accepted: PR #20 (Claude, `feat/claude-phase6-wallet-asset-management`, including its independent-review remediation in [PHASE6-WALLET-REVIEW.md](PHASE6-WALLET-REVIEW.md)) merged to `main` at `1386d1b`, and GitHub Actions push run [45935622358](https://github.com/Kenule-Africa/Daypay/actions/runs/45935622358) passed backend and frontend on that merge commit. Migration `202611261401_wallet_asset_management.sql` extends the Phase 2 wallet tables and the existing provider capability register; grants are in `infrastructure/postgres/wallet-roles.psql` and `wallet-grants.psql`; tests are `backend/crates/deypay-infrastructure/tests/wallets.rs`, `backend/crates/deypay-api/tests/cases/wallet_http.rs` and the frontend wallet tests. USDC and USDT wallet profiles, ledger-backed balances, status management, restrictions, and the wallet APIs and pages are functional. IMP-P6-007/008 deliver the deposit-address model, the durable provisioning state machine and the provider-independent `DepositAddressProvider` port only: no provider adapter exists; no network, token contract or provider capability is enabled; and external address provisioning remains Blocked under [BLOCKERS.md](BLOCKERS.md) until Nuvion (or another approved provider) capabilities are verified and approved. No deposit, transfer or withdrawal is enabled. Provisioning revalidates eligibility before submission, and provider precedence is deterministic and restriction-first. Migration `202611261401` is now merged and immutable; any further wallet change needs a new forward-only migration. The Phase 6 wallet policy defaults remain pending owner confirmation ([BLOCKERS.md](BLOCKERS.md)). Engineering acceptance is not activation.
 
 ## Phase 7 · INTERNAL TRANSFERS (§20)
 
@@ -380,17 +382,26 @@ The roadmap assigns no task IDs here. Track its existing integration sections di
 
 | Roadmap section | Work | Status |
 |---|---|---|
-| §30.1 | Authentication Screens | Backlog |
-| §30.2 | Customer Onboarding | Backlog |
-| §30.3 | Wallet Dashboard | Backlog |
+| §30.1 | Authentication Screens | In testing |
+| §30.2 | Customer Onboarding | In progress |
+| §30.3 | Wallet Dashboard | In progress |
 | §30.4 | Send and Receive | Backlog |
 | §30.5 | Conversion | Backlog |
 | §30.6 | NGN Payments | Backlog |
 | §30.7 | Transaction History | Backlog |
-| §30.8 | Security | Backlog |
-| §30.9 | Frontend Requirements | Backlog |
+| §30.8 | Security | In progress |
+| §30.9 | Frontend Requirements | In progress |
 
 The early account frontend slice is a named milestone in roadmap §30, using existing P1-004 and §30.1, §30.2, relevant §30.8 and §30.9. It includes a dashboard shell and profile-management interfaces, adds no task ID or assignee, and does not complete Phase 17. It follows account-backend readiness and precedes financial implementation; apply security checks during the slice.
+
+Current state on `main` (2026-11-27):
+
+- **§30.1, In testing.** Registration, sign-in, email verification and password recovery screens use the real APIs. They came in with the early account frontend (PR #15, merged at `b4a17fe`), the sign-in redirect and Windows startup fixes (PR #17, `9dfe83e`) and the protected-page navigation tests (PR #19, `a9bf52b`); CI passed on each merge commit. Pending: the owner browser walkthrough, and IMP-P3-002 hosted email delivery.
+- **§30.2, In progress.** Profile completion and account status are delivered. The KYC screens wait for Phase 4 to resume.
+- **§30.3, In progress.** The USDC and USDT wallet pages show the ledger's available and reserved amounts (PR #20, `1386d1b`). Recent transactions wait for Phase 7 and Phase 15.
+- **§30.8, In progress.** Session listing and revocation are delivered. Step-up authorization and the account-restriction views are not built yet.
+- **§30.9, In progress.** These requirements apply to each screen as it is built.
+- **§30.4–30.7, Backlog.** Each waits for its backend phase.
 
 ## Phase 18 · SECURITY HARDENING AND QUALITY ASSURANCE (§31)
 
