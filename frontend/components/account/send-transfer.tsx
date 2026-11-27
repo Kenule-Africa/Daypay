@@ -21,7 +21,7 @@ import { displayAmount } from "@/lib/wallets";
 
 type Step =
   | { name: "compose" }
-  | { name: "review"; challenge: TransferChallenge; key: string; token: string | null }
+  | { name: "review"; challenge: TransferChallenge; key: string; token: string | null; uncertain: boolean }
   | { name: "done"; result: TransferResult };
 
 const failure = (result: ApiFailure) => transferFailure(result.code, result.reason, result.status);
@@ -32,18 +32,17 @@ const failure = (result: ApiFailure) => transferFailure(result.code, result.reas
  * send once. A retry after an uncertain outcome reuses the same confirmation
  * and Idempotency-Key, so the transfer can never happen twice.
  */
-export function SendTransfer({ wallets }: { wallets: Wallet[] }) {
-  const senders = wallets.filter(wallet => wallet.balance);
+export function SendTransfer({ wallets, initialAsset }: { wallets: Wallet[]; initialAsset?: string }) {
   const [step, setStep] = React.useState<Step>({ name: "compose" });
   const [username, setUsername] = React.useState("");
   const [recipient, setRecipient] = React.useState<Recipient | null>(null);
-  const [asset, setAsset] = React.useState(senders[0]?.asset ?? "USDC");
+  const [asset, setAsset] = React.useState(initialAsset ?? wallets[0]?.asset);
   const [amount, setAmount] = React.useState("");
   const [note, setNote] = React.useState("");
   const [pending, setPending] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [fieldError, setFieldError] = React.useState<{ username?: string; amount?: string; note?: string }>({});
-  const wallet = senders.find(w => w.asset === asset);
+  const wallet = wallets.find(w => w.asset === asset);
 
   async function find() {
     const handle = normalizeHandle(username);
@@ -92,11 +91,11 @@ export function SendTransfer({ wallets }: { wallets: Wallet[] }) {
       setError(failure(result));
       return;
     }
-    setStep({ name: "review", challenge: result.data, key: newIdempotencyKey(), token: null });
+    setStep({ name: "review", challenge: result.data, key: newIdempotencyKey(), token: null, uncertain: false });
   }
 
   async function send() {
-    if (step.name !== "review" || !recipient) return;
+    if (step.name !== "review") return;
     setError(null);
     setPending(true);
     let token = step.token;
@@ -107,21 +106,23 @@ export function SendTransfer({ wallets }: { wallets: Wallet[] }) {
       );
       if (!confirmed.ok) {
         setPending(false);
+        if (confirmed.code === "AUTHORIZATION_INVALID") setStep({ name: "compose" });
         setError(failure(confirmed));
         return;
       }
       token = confirmed.data.authorization_token;
       setStep({ ...step, token });
     }
+    const { terms } = step.challenge;
     const result = await request<TransferResult>("/api/v1/transfers/internal", {
       method: "POST",
       headers: { "Idempotency-Key": step.key },
       json: {
-        recipient_id: recipient.recipient_id,
+        recipient_id: terms.recipient.id,
         authorization_token: token,
-        asset,
-        amount: amount.trim(),
-        description: note.trim() || null,
+        asset: terms.asset,
+        amount: terms.amount,
+        description: terms.description,
       },
     });
     setPending(false);
@@ -129,12 +130,15 @@ export function SendTransfer({ wallets }: { wallets: Wallet[] }) {
       setStep({ name: "done", result: result.data });
       return;
     }
-    if (result.code === "AUTHORIZATION_INVALID" || result.code === "IDEMPOTENCY_CONFLICT") {
+    const uncertain = result.status === 0 || (result.status >= 500 && result.reason !== "transfers_not_enabled");
+    if (uncertain) {
+      setStep({ ...step, token, uncertain: true });
+    } else if (result.code === "AUTHORIZATION_INVALID" || result.code === "IDEMPOTENCY_CONFLICT") {
       setStep({ name: "compose" });
     }
     setError(
-      result.status === 0 || result.status >= 500
-        ? "We couldn't confirm the result. Try again: the same transfer is never sent twice."
+      uncertain
+        ? "The result is unknown. Retry this payment or check your payment history."
         : failure(result),
     );
   }
@@ -212,12 +216,12 @@ export function SendTransfer({ wallets }: { wallets: Wallet[] }) {
         <div className="mt-6 flex flex-wrap gap-3">
           <Button type="button" onClick={send} disabled={pending}>
             {pending ? <Spinner /> : <Send aria-hidden />}
-            Confirm and send
+            {step.uncertain ? "Retry payment" : "Confirm and send"}
           </Button>
           <Button
             type="button"
             variant="quiet"
-            disabled={pending}
+            disabled={pending || step.uncertain}
             onClick={() => {
               setError(null);
               setStep({ name: "compose" });
@@ -253,6 +257,7 @@ export function SendTransfer({ wallets }: { wallets: Wallet[] }) {
               autoCapitalize="none"
               spellCheck={false}
               placeholder="@username"
+              disabled={pending}
               value={username}
               onChange={event => {
                 setUsername(event.target.value);
@@ -276,10 +281,11 @@ export function SendTransfer({ wallets }: { wallets: Wallet[] }) {
             id={id}
             aria-describedby={describedBy}
             value={asset}
+            disabled={pending}
             onChange={event => setAsset(event.target.value)}
             className="h-12 w-full rounded-control bg-surface px-4 text-[0.9375rem] text-ink-900 shadow-[inset_0_0_0_1px_rgb(18_16_25/0.09)]"
           >
-            {senders.map(w => (
+            {wallets.map(w => (
               <option key={w.id} value={w.asset}>
                 {w.asset}
               </option>
@@ -297,6 +303,7 @@ export function SendTransfer({ wallets }: { wallets: Wallet[] }) {
             autoComplete="off"
             placeholder="0.00"
             value={amount}
+            disabled={pending}
             onChange={event => setAmount(event.target.value)}
           />
         )}
@@ -309,6 +316,7 @@ export function SendTransfer({ wallets }: { wallets: Wallet[] }) {
             invalid={invalid}
             maxLength={MAX_NOTE}
             value={note}
+            disabled={pending}
             onChange={event => setNote(event.target.value)}
           />
         )}

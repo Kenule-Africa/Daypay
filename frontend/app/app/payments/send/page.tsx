@@ -9,10 +9,12 @@ import { loadWallets, requireCustomer } from "@/lib/server/session";
 
 export const metadata: Metadata = { title: "Send" };
 
-export default async function SendPage() {
+export default async function SendPage({ searchParams }: { searchParams: Promise<{ asset?: string | string[] }> }) {
   await requireCustomer("/app/payments/send");
   const wallets = await loadWallets();
-  const sendable = wallets.state === "ok" && wallets.wallets.some(wallet => wallet.capabilities.send);
+  const { asset } = await searchParams;
+  const sendable = wallets.state === "ok" ? wallets.wallets.filter(wallet => wallet.capabilities.send && wallet.balance) : [];
+  const canStart = asset === undefined ? sendable.length > 0 : sendable.some(wallet => wallet.asset === asset);
   return (
     <>
       <Link
@@ -28,8 +30,8 @@ export default async function SendPage() {
       />
       {wallets.state !== "ok" ? (
         <WalletsUnavailable />
-      ) : sendable ? (
-        <SendTransfer wallets={wallets.wallets.filter(wallet => wallet.capabilities.send)} />
+      ) : canStart ? (
+        <SendTransfer wallets={sendable} initialAsset={typeof asset === "string" ? asset : undefined} />
       ) : (
         <Notice tone="info" title="Sending isn't open yet">
           Sending money on DEYPAY opens once your account and wallet are eligible and DEYPAY has completed its

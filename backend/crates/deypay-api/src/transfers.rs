@@ -579,9 +579,14 @@ where
     };
     match api.service.history(customer.id(), cursor, limit).await {
         Ok(records) => {
-            let next = (records.len() == limit as usize)
-                .then(|| records.last().map(|r| r.id.to_string()))
-                .flatten();
+            let mut next = None;
+            if let Some(last) = records.last().filter(|_| records.len() == limit as usize) {
+                match api.service.history(customer.id(), Some(last.id), 1).await {
+                    Ok(older) if !older.is_empty() => next = Some(last.id),
+                    Ok(_) => {}
+                    Err(problem) => return failure(problem),
+                }
+            }
             let data: Vec<Value> = records.iter().map(transaction_json).collect();
             json_response(
                 StatusCode::OK,

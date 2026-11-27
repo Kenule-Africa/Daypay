@@ -8,6 +8,7 @@ import { once } from "node:events";
 import { createServer, request as httpRequest } from "node:http";
 import { after, before, beforeEach, test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
+import { chromium } from "playwright-core";
 
 const SESSION = "__Host-deypay_session";
 const TOKEN = "a".repeat(64);
@@ -128,6 +129,7 @@ before(async () => {
         return json(res, 200, {
           data: {
             ...usdcWallet,
+            capabilities: { deposit: false, send: state.send },
             networks: [
               network("base-fixture", "active", { address: VERIFIED_ADDRESS, memo: null }),
               network("polygon-fixture", "pending", null),
@@ -409,6 +411,10 @@ test("wallet details show a deposit address only once it is verified", async () 
   assert.ok(html.includes("Copy address"));
   assert.ok(html.includes("Being prepared"), "a pending address is described, never invented");
   assert.ok(html.includes("Not yet available"), "moving money stays unavailable");
+  assert.ok(!html.includes('href="/app/payments/send?asset=USDC"'));
+  state.send = true;
+  const enabled = await (await get(`/app/wallets/${usdcWallet.id}`, signedIn)).text();
+  assert.ok(enabled.includes('href="/app/payments/send?asset=USDC"'));
 });
 
 test("unknown and malformed wallets are not found without leaking anything", async () => {
@@ -472,5 +478,70 @@ test("sending stays closed until a wallet may send, then shows the confirmation 
   const open = await (await get("/app/payments/send", signedIn)).text();
   for (const shown of ["Review transfer", "username", "Available: 1,234,567.50 USDC"]) {
     assert.ok(open.includes(shown), shown);
+  }
+  const selected = await (await get("/app/payments/send?asset=USDT", signedIn)).text();
+  assert.ok(selected.includes("Available: 0.00 USDT"));
+});
+
+test("the browser confirms the displayed terms and retries an uncertain payment with its original key", async () => {
+  state.send = true;
+  const browser = await chromium.launch();
+  try {
+    const context = await browser.newContext();
+    await context.addCookies([{ name: SESSION, value: TOKEN, domain: "127.0.0.1", path: "/", secure: true, httpOnly: true }]);
+    const page = await context.newPage();
+    const recipient = sent.counterparty;
+    const terms = { recipient, asset: "USDC", amount: "2.500000", fee: "0.000000", total: "2.500000", description: "Lunch" };
+    const challenge = "58ff51bd-4fa0-4eb3-a676-2162123bd994";
+    const proof = "b".repeat(64);
+    const calls = [];
+    await page.route("**/api/v1/**", async route => {
+      const req = route.request();
+      const url = new URL(req.url());
+      const path = url.pathname + url.search;
+      const key = await req.headerValue("idempotency-key");
+      calls.push({ path, method: req.method(), key, body: req.postDataJSON() });
+      if (path.startsWith("/api/v1/recipients/resolve?")) {
+        return route.fulfill({ json: { data: { recipient_id: recipient.id, username: recipient.username, display_name: recipient.display_name, can_receive: true } } });
+      }
+      if (path === "/api/v1/transaction-authorizations") {
+        return route.fulfill({ status: 201, json: { data: { challenge_id: challenge, verification_method: "confirmation", operation_type: "internal_transfer", expires_at: "2030-01-01T00:05:00Z", terms } } });
+      }
+      if (path === `/api/v1/transaction-authorizations/${challenge}/confirm`) {
+        return route.fulfill({ json: { data: { authorization_token: proof, expires_at: "2030-01-01T00:02:00Z" } } });
+      }
+      if (path === "/api/v1/transfers/internal") {
+        if (calls.filter(call => call.path === path).length === 1) return route.abort("connectionreset");
+        return route.fulfill({ status: 201, headers: { "Idempotency-Replayed": "true" }, json: { data: {
+          ...terms, recipient, transaction_id: sent.id, reference: sent.reference, status: "completed", type: "internal_transfer"
+        } } });
+      }
+      return route.abort();
+    });
+    await page.goto(origin + "/app/payments/send");
+    await page.getByPlaceholder("@username").fill("@" + recipient.username);
+    await page.getByRole("button", { name: "Find", exact: true }).click();
+    await page.getByLabel("Amount", { exact: true }).fill("2.5");
+    await page.getByLabel("Note (optional)").fill("Lunch");
+    await page.getByRole("button", { name: "Review transfer" }).click();
+    await page.getByRole("heading", { name: "Check and confirm" }).waitFor();
+    await page.getByRole("button", { name: "Confirm and send" }).click();
+    await page.getByRole("button", { name: "Retry payment" }).waitFor();
+    assert.ok(await page.getByRole("button", { name: "Edit" }).isDisabled());
+    await page.getByRole("button", { name: "Retry payment" }).click();
+    await page.getByRole("link", { name: "View payment" }).waitFor();
+    assert.deepEqual(calls.map(c => [c.method, c.path]), [
+      ["GET", "/api/v1/recipients/resolve?username=" + recipient.username],
+      ["POST", "/api/v1/transaction-authorizations"],
+      ["POST", `/api/v1/transaction-authorizations/${challenge}/confirm`],
+      ["POST", "/api/v1/transfers/internal"], ["POST", "/api/v1/transfers/internal"],
+    ]);
+    assert.deepEqual(calls[1].body, { operation_type: "internal_transfer", recipient_id: recipient.id, asset: "USDC", amount: "2.5", description: "Lunch" });
+    assert.deepEqual(calls[2].body, { confirm: true });
+    assert.match(calls[3].key, /^[A-Za-z0-9_.:-]{8,128}$/);
+    assert.deepEqual(calls[3].body, { recipient_id: recipient.id, authorization_token: proof, asset: terms.asset, amount: terms.amount, description: terms.description });
+    assert.deepEqual(calls[4], calls[3]);
+  } finally {
+    await browser.close();
   }
 });

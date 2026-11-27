@@ -814,6 +814,38 @@ async fn authorization_is_single_use_and_bound_to_terms_session_and_time(pool: P
         .await;
     world.fund(alice, world.usdt, 50 * UNIT).await;
     let terms = to(bob, "USDT", "2");
+    // Even simultaneous reviews in one session leave just one confirmable challenge.
+    let (first, second) = tokio::join!(
+        world.service.authorize(alice, &session, terms),
+        world.service.authorize(alice, &session, terms)
+    );
+    let challenges = [first.unwrap().id, second.unwrap().id];
+    let open: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM identity.verification_challenges WHERE id = ANY($1) AND revoked_at IS NULL",
+    )
+    .bind(challenges.as_slice())
+    .fetch_one(&world.pool)
+    .await
+    .unwrap();
+    assert_eq!(open, 1);
+
+    let short_session = world.session(alice).await;
+    sqlx::query("UPDATE identity.sessions SET expires_at = now() + interval '1 minute' WHERE token_hash = $1")
+        .bind(&short_session)
+        .execute(&world.pool)
+        .await
+        .unwrap();
+    let short_token = world.authorized(alice, &short_session, terms).await;
+    let within_session: bool = sqlx::query_scalar(
+        "SELECT p.expires_at <= s.expires_at FROM identity.transaction_proofs p
+         JOIN identity.verification_challenges c ON c.id = p.challenge_id
+         JOIN identity.sessions s ON s.id = c.session_id WHERE p.proof_hash = $1",
+    )
+    .bind(token_digest(&short_token).unwrap())
+    .fetch_one(&world.pool)
+    .await
+    .unwrap();
+    assert!(within_session);
     let token = world.authorized(alice, &session, terms).await;
 
     // Any material change invalidates the confirmation (SEC-TXN-005).
@@ -1079,6 +1111,12 @@ async fn recipient_lookup_is_exact_budgeted_and_private(pool: PgPool) {
     let alice = world.customer("alice_l", "KYC_APPROVED").await;
     world.customer("bob_l", "KYC_APPROVED").await;
     world.customer("pending_l", "KYC_PENDING").await;
+    let retired = world.customer("retired_l", "KYC_APPROVED").await;
+    world
+        .admin(&format!(
+            "UPDATE customers.usernames SET is_active = false, retired_at = now() WHERE user_id = '{retired}'"
+        ))
+        .await;
     let suspended = world.customer("gone_l", "KYC_APPROVED").await;
     world
         .admin(&format!(
@@ -1091,7 +1129,16 @@ async fn recipient_lookup_is_exact_budgeted_and_private(pool: PgPool) {
         Err(TransferError::LookupUnavailable),
         "no approved budget, no lookups"
     );
-    world.lookup_budget(5).await;
+    world.lookup_budget(6).await;
+    // Exercise the SQL result contract directly so function or grant failures report PostgreSQL's error.
+    let retired_hit: Option<(Uuid, String, Option<String>, bool)> =
+        sqlx::query_as("SELECT * FROM payments.resolve_recipient($1, $2)")
+            .bind(alice)
+            .bind("@Retired_L")
+            .fetch_optional(&world.app_pool)
+            .await
+            .unwrap();
+    assert_eq!(retired_hit, None);
     assert_eq!(
         world.service.resolve(alice, "a..b").await,
         Err(TransferError::InvalidRequest)
@@ -1145,7 +1192,7 @@ async fn recipient_lookup_is_exact_budgeted_and_private(pool: PgPool) {
             "SELECT sum(lookups) FROM payments.recipient_lookup_usage"
         )
         .await,
-        5
+        6
     );
 }
 

@@ -345,6 +345,9 @@ impl<S: TransferStore, G: FinancialGate> TransferService<S, G> {
         challenge: Uuid,
         token: String,
     ) -> Result<AuthorizationProof, TransferError> {
+        if !self.gate.policy_approved() {
+            return Err(TransferError::NotEnabled);
+        }
         let digest = token_digest(&token).ok_or(TransferError::InvalidRequest)?;
         let expires_at = self
             .store
@@ -612,6 +615,10 @@ mod tests {
             let service = TransferService::new(&recorder, crate::ledger::NoApprovedPolicy);
             assert_eq!(
                 service.authorize(ALICE, "digest", input("1")).await,
+                Err(TransferError::NotEnabled)
+            );
+            assert_eq!(
+                service.confirm(ALICE, "digest", BOB, TOKEN.into()).await,
                 Err(TransferError::NotEnabled)
             );
             assert!(recorder.calls().is_empty());

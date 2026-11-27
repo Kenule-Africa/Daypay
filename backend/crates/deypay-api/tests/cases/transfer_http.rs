@@ -356,6 +356,11 @@ async fn customers_confirm_and_send_once_over_http(pool: PgPool) -> sqlx::Result
         )
     );
     let id = sent["transaction_id"].as_str().unwrap().to_owned();
+    // A retry returns the accepted response, even after the recipient edits their profile.
+    sqlx::query("UPDATE customers.profiles SET first_name = 'Amaka' WHERE user_id = $1")
+        .bind(bob)
+        .execute(&pool)
+        .await?;
     let (status, headers, body) = call(
         &app,
         Method::POST,
@@ -386,7 +391,7 @@ async fn customers_confirm_and_send_once_over_http(pool: PgPool) -> sqlx::Result
     let (_, _, mine) = call(
         &app,
         Method::GET,
-        "/api/v1/transactions",
+        "/api/v1/transactions?limit=1",
         Some(&alice_cookie),
         &[],
         None,
@@ -402,6 +407,7 @@ async fn customers_confirm_and_send_once_over_http(pool: PgPool) -> sqlx::Result
     )
     .await;
     assert_eq!(mine["data"].as_array().unwrap().len(), 1);
+    assert_eq!(mine["meta"]["next_cursor"], Value::Null);
     assert_eq!(theirs["data"].as_array().unwrap().len(), 1);
     let (mine, theirs) = (&mine["data"][0], &theirs["data"][0]);
     assert_eq!(

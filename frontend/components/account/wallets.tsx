@@ -200,20 +200,23 @@ export function WalletDetailView({ wallet }: { wallet: WalletDetail }) {
           <p className="mt-6 text-ink-300">This wallet is still being set up.</p>
         )}
         <div className="mt-6 flex flex-wrap gap-2">
-          {[
-            { icon: ArrowDownLeft, label: "Deposit" },
-            { icon: ArrowUpRight, label: "Send" },
-          ].map(({ icon: Icon, label }) => (
-            <span
-              key={label}
-              aria-disabled="true"
-              className="inline-flex items-center gap-2 rounded-control bg-white/[0.07] px-3.5 py-2 text-sm text-ink-300"
+          <span aria-disabled="true" className="inline-flex items-center gap-2 rounded-control bg-white/[0.07] px-3.5 py-2 text-sm text-ink-300">
+            <ArrowDownLeft aria-hidden className="size-4" /> Deposit
+            <Badge tone="dark">Not yet available</Badge>
+          </span>
+          {wallet.capabilities.send && wallet.balance ? (
+            <Link
+              href={`/app/payments/send?asset=${encodeURIComponent(wallet.asset)}`}
+              className="inline-flex items-center gap-2 rounded-control bg-brand-500 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-600"
             >
-              <Icon aria-hidden className="size-4" />
-              {label}
+              <ArrowUpRight aria-hidden className="size-4" /> Send
+            </Link>
+          ) : (
+            <span aria-disabled="true" className="inline-flex items-center gap-2 rounded-control bg-white/[0.07] px-3.5 py-2 text-sm text-ink-300">
+              <ArrowUpRight aria-hidden className="size-4" /> Send
               <Badge tone="dark">Not yet available</Badge>
             </span>
-          ))}
+          )}
         </div>
       </section>
 
