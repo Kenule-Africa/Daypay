@@ -2,6 +2,8 @@
 
 PR #20 · branch `feat/claude-phase6-wallet-asset-management` · reviewed commit `0a283f3`
 
+**Status:** PR #20 merged to `main` at `1386d1b` on 2026-11-27; push run [45935622358](https://github.com/Kenule-Africa/Daypay/actions/runs/45935622358) passed. IMP-P6-001–010 are Completed — Engineering Accepted. This record describes the review as it stood before the merge. Migration `202611261401` is now immutable, so any further change must be a new forward-only migration.
+
 This document records how each review finding was classified and resolved. The resolutions keep the Phase 6 architecture unchanged: ledger-only balances, DBA-controlled registries, the provider-independent `DepositAddressProvider` port and the role model. They add no state, role, grant, endpoint, provider capability or task ID.
 
 Files changed:

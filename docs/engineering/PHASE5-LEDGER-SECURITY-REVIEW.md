@@ -2,6 +2,8 @@
 
 PR #18 · branch `feat/claude-phase5-financial-ledger` · reviewed commit `85a5e71`
 
+**Status:** PR #18 merged to `main` at `5ddb1c1`; push run [45905299130](https://github.com/Kenule-Africa/Daypay/actions/runs/45905299130) passed. IMP-P5-001–017 are Completed — Engineering Accepted. This record describes the review as it stood before the merge.
+
 This document records how each review finding was classified and resolved. Each resolution keeps the existing ledger architecture, exact arithmetic, double-entry invariants, immutable journals, reservations and reconciliation unchanged.
 
 Files changed:

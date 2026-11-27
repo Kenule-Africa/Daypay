@@ -1,8 +1,16 @@
 # DEYPAY
 
-The Phase 1 foundation contains a Rust API and worker, a Next.js PWA frontend foundation and a local PostgreSQL service. Delivery follows [the implementation roadmap](docs/08-IMPLEMENTATION-PLAN.md). Current verification evidence and outstanding setup requirements are in [the engineering handoff](docs/engineering/HANDOFF.md).
+DEYPAY's `main` branch contains:
+
+- a Rust API, the isolated sign-in service (`deypay-auth`) and a worker;
+- PostgreSQL migrations from the Phase 2 foundations through customer accounts and authentication (Phase 3), the financial ledger (Phase 5) and USDC/USDT wallets (Phase 6);
+- the Next.js customer web app with its account and wallet pages.
+
+No provider is connected and no financial operation is enabled. Delivery follows [the implementation roadmap](docs/08-IMPLEMENTATION-PLAN.md). Current verification evidence and outstanding setup requirements are in [the engineering handoff](docs/engineering/HANDOFF.md).
 
 ## Local development
+
+For the Windows workstation HTTPS environment, run from Git Bash, see [the local development guide](docs/engineering/LOCAL-DEVELOPMENT.md). The steps below describe the generic Compose-based setup.
 
 Use stable Rust with rustfmt and Clippy, Node.js 22 LTS and PostgreSQL 16 or newer. On Windows, use an MSVC Developer PowerShell with its Windows SDK. Docker Compose v2 provides the containerized local database option.
 
