@@ -780,6 +780,31 @@ Address assignment uniqueness must be enforced using the actual custody model.
 | created_at | TIMESTAMPTZ |
 | updated_at | TIMESTAMPTZ |
 
+## 12.4 Phase 6 Implementation (migration 202611261401)
+
+**Registries**
+- `wallets.assets` restricts asset types to `STABLECOIN` and `FIAT`, adds an approval reference and suspension, and requires ledger chart accounts before an asset is enabled. USDC and USDT (6 decimals) and NGN (2) are seeded.
+- `wallets.networks` supports the EVM and Solana families, each with a validated chain identifier; a family and identifier pair is unique. It adds deposit and withdrawal flags, a memo requirement, a confirmation rule and an evidence reference.
+- `wallets.asset_networks` adds verification and lifecycle states. A contract is validated and canonicalized per family, each contract maps to one asset per network, and at most one enabled mapping exists per asset and network.
+- The identities of assets, networks, mappings, providers and capabilities never change.
+- Every registry insert and update is kept in `wallets.registry_changes`.
+
+**Provider register**
+- `integrations.providers` adds a lifecycle status; an enabled provider must be `APPROVED`.
+- `integrations.provider_capabilities` adds a verification stage, evidence, routing priority and operational health. Production approval is tied to the `PRODUCTION_ENABLED` stage.
+
+**Wallet profiles and history**
+- `wallets.wallet_profiles` provisioning status is `PENDING` until the ledger accounts exist, then `COMPLETE`.
+- Status transitions are enforced, `CLOSED` is final and profiles are never deleted.
+- `wallets.wallet_status_history` records each change with its actor and database login.
+
+**Provisioning requests and addresses**
+- `wallets.wallet_provisioning_requests` adds the asset/network, the provider's reference and a state machine: `PENDING`, `SUBMITTED`, `UNKNOWN`, then `PROVISIONED`, `FAILED` or `UNSUPPORTED`. At most one open request exists per wallet and asset/network.
+- `wallets.wallet_addresses` adds the network, verification state, evidence, activation and retirement.
+  - An address is shown only when verified, and is retired rather than replaced.
+  - One on-chain address (with its memo) on a network belongs to one customer and one provider, and may serve that customer's several tokens.
+- Wallet reads, creation and requests run through SECURITY DEFINER functions owned by `deypay_wallet_owner`. Balances come from the ledger, never from a wallet column.
+
 ---
 
 # 13. FINANCIAL LEDGER TABLES

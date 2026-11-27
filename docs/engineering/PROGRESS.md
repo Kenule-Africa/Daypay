@@ -1,5 +1,53 @@
 # Engineering progress
 
+## 2026-11-27 · Phase 6 wallet and asset management (IMP-P6-001–010)
+
+Claude implemented Phase 6 on `feat/claude-phase6-wallet-asset-management`, branched from `main` at `a9bf52b`. It builds on the merged Phase 5 ledger (PR #18, merged at `5ddb1c1`; push run [45905299130](https://github.com/Kenule-Africa/Daypay/actions/runs/45905299130)) and PR #19 (merged at `a9bf52b`). All ten tasks are In review; engineering acceptance follows owner review and merge.
+
+**Capabilities**
+- **Registries (P6-001–003):**
+  - Assets have approved types and precision, approval and suspension, and must have ledger chart accounts to be enabled. USDC/USDT (6) and NGN (2) are seeded.
+  - Networks (EVM, Solana) have validated chain identifiers and evidence-gated enablement.
+  - Token contracts are validated per family, verified before enablement, unique per network and immutable.
+  - Only the DBA writes the registries, and the change history is append-only.
+  - No network, contract or provider capability is seeded or enabled.
+- **Wallets (P6-004/005):**
+  - USDC and USDT wallets are created automatically, atomically and idempotently on the first wallet read, together with their zero-balance Phase 5 ledger accounts. Creation is safe under concurrency, and interrupted initialization is recovered.
+  - Status transitions are enforced in PostgreSQL. Operator changes need the session-bound operator holding `WALLET_STATUS_CONTROL`, and status history is append-only.
+- **Balances and APIs (P6-006):** the customer wallet, balance, deposit-address and network routes return exact decimal balances from `ledger.customer_balance`. A foreign, unknown or malformed wallet returns the same 404, and an unavailable store returns 503 with no substitute data.
+- **Deposit addresses and provider boundary (P6-007/008):**
+  - Address ownership is per customer and provider and may be shared across tokens. Addresses are never edited in place.
+  - Requests are durable, and provider results are normalized behind the `DepositAddressProvider` port. `AddressProvisioner` submits once and only looks up after an uncertain outcome.
+  - Routing uses the existing capability register, extended with verification stage, evidence, priority and health.
+  - Only `deypay_wallet_provisioner` records results and verifies addresses.
+  - Nuvion and ImportaPay are recorded as candidates; no adapter exists.
+- **Restrictions (P6-009):** wallet status, account and compliance restrictions, KYC, asset suspension and holds, and ledger activations are combined fail-closed. Deposit addresses require KYC approval and `CUSTOMER_CREDIT` activation.
+- **Frontend:** `/app/wallets` and `/app/wallets/[walletId]` show ledger balances exactly, status, restrictions, supported networks and deposit-address state. Moving money stays unavailable.
+
+**Changes**
+- Migration `202611261401_wallet_asset_management.sql`.
+- `wallet-roles.psql` and `wallet-grants.psql`, which verify ownership, PUBLIC access, `search_path`, memberships and per-role allowlists.
+- `ledger-grants.psql` now allowlists the wallet owner and checks only roles that exist.
+- Earlier ledger and persistence fixtures were adapted to the seeded registry.
+
+**Tests**
+- PostgreSQL wallet suite (7 tests): registries, creation and concurrency, ledger-only balances, operator status control, fail-closed restrictions, and the full provider lifecycle (unknown outcomes, provider switching, shared and conflicting addresses, verification, privileges).
+- 3 wallet HTTP cases and unit tests (domain +5, application +5, API +2).
+- 7 frontend tests (3 unit, 4 page).
+
+**Hosted CI:** run [45926817689](https://github.com/Kenule-Africa/Daypay/actions/runs/45926817689) on `5d1124a` passed backend (13/13 steps) and frontend (11/11).
+- PostgreSQL suites: ledger 18/18, persistence 16/16, registration 11/11, wallets 7/7, email verification 5/5, `registration_http` 57/57.
+- Unit tests: domain 43, application 48, API 6. Frontend: 29/29 node tests.
+- Earlier runs on this branch failed on migration syntax (a reserved word, CASE inside IF), an existing capability table, grant verification evaluation order, a varchar/text return type and test fixtures. Each was fixed before this run.
+
+**Not done**
+- No deposit, transfer or withdrawal.
+- No provider adapter, network, contract or capability enabled.
+- Nuvion and ImportaPay capabilities unverified.
+- Wallet policy defaults await owner confirmation.
+
+See [BLOCKERS.md](BLOCKERS.md) and [PROVIDER-CAPABILITIES.md](PROVIDER-CAPABILITIES.md).
+
 ## 2026-11-26 · Phase 5 ledger independent-review remediation (PR #18)
 
 Claude resolved the independent review of PR #18 (reviewed commit `85a5e71`) on the same branch. The analysis, residual risks and test mapping are in [PHASE5-LEDGER-SECURITY-REVIEW.md](PHASE5-LEDGER-SECURITY-REVIEW.md). IMP-P5-001–017 remain In review.

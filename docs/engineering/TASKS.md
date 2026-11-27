@@ -176,40 +176,42 @@ IMP-P4-005–007 are Blocked by the repository owner's explicit hold on further 
 
 | Task ID | Roadmap task | Status |
 |---|---|---|
-| IMP-P5-001 | Define exact-money types. | In review |
-| IMP-P5-002 | Define asset identifiers and precision rules. | In review |
-| IMP-P5-003 | Implement ledger accounts. | In review |
-| IMP-P5-004 | Implement journal headers. | In review |
-| IMP-P5-005 | Implement journal entries. | In review |
-| IMP-P5-006 | Implement balanced journal validation. | In review |
-| IMP-P5-007 | Implement posting service. | In review |
-| IMP-P5-008 | Implement customer available accounts. | In review |
-| IMP-P5-009 | Implement customer reserved accounts. | In review |
-| IMP-P5-010 | Implement reservations. | In review |
-| IMP-P5-011 | Implement reservation release. | In review |
-| IMP-P5-012 | Implement balance projections. | In review |
-| IMP-P5-013 | Implement accounting event idempotency. | In review |
-| IMP-P5-014 | Implement compensating journals. | In review |
-| IMP-P5-015 | Implement reconciliation foundations. | In review |
-| IMP-P5-016 | Implement concurrency controls. | In review |
-| IMP-P5-017 | Implement financial invariant tests. | In review |
+| IMP-P5-001 | Define exact-money types. | Completed |
+| IMP-P5-002 | Define asset identifiers and precision rules. | Completed |
+| IMP-P5-003 | Implement ledger accounts. | Completed |
+| IMP-P5-004 | Implement journal headers. | Completed |
+| IMP-P5-005 | Implement journal entries. | Completed |
+| IMP-P5-006 | Implement balanced journal validation. | Completed |
+| IMP-P5-007 | Implement posting service. | Completed |
+| IMP-P5-008 | Implement customer available accounts. | Completed |
+| IMP-P5-009 | Implement customer reserved accounts. | Completed |
+| IMP-P5-010 | Implement reservations. | Completed |
+| IMP-P5-011 | Implement reservation release. | Completed |
+| IMP-P5-012 | Implement balance projections. | Completed |
+| IMP-P5-013 | Implement accounting event idempotency. | Completed |
+| IMP-P5-014 | Implement compensating journals. | Completed |
+| IMP-P5-015 | Implement reconciliation foundations. | Completed |
+| IMP-P5-016 | Implement concurrency controls. | Completed |
+| IMP-P5-017 | Implement financial invariant tests. | Completed |
 
-IMP-P5-001–017 are implemented by Claude on `feat/claude-phase5-financial-ledger` under the owner's 2026-11-26 financial-architecture decisions and are In review pending owner review and merge of the pull request. The ledger is persisted by migration `202611260001_financial_ledger.sql` with grants in `infrastructure/postgres/ledger-roles.psql` and `ledger-grants.psql`; the PostgreSQL financial-invariant suite is `backend/crates/deypay-infrastructure/tests/ledger.rs`. No financial endpoint, provider execution or live customer activity is enabled; the shipped application gate refuses every customer-initiated movement until an approved eligibility policy exists. The independent review of the PR was remediated on the same branch ([PHASE5-LEDGER-SECURITY-REVIEW.md](PHASE5-LEDGER-SECURITY-REVIEW.md)). PostgreSQL also refuses customer movements until they are activated, binds operator identity to the authenticated database login, and requires authenticated provider outcomes for settlement and post-submission release. Status is unchanged.
+IMP-P5-001–017 are Completed — Engineering Accepted: PR #18 (Claude, `feat/claude-phase5-financial-ledger`, including its independent-review remediation in [PHASE5-LEDGER-SECURITY-REVIEW.md](PHASE5-LEDGER-SECURITY-REVIEW.md)) merged to `main` at `5ddb1c1`, and GitHub Actions run [45905299130](https://github.com/Kenule-Africa/Daypay/actions/runs/45905299130) passed on that merge commit. The ledger is persisted by migration `202611260001_financial_ledger.sql` with grants in `infrastructure/postgres/ledger-roles.psql` and `ledger-grants.psql`; the PostgreSQL suite is `backend/crates/deypay-infrastructure/tests/ledger.rs`. Engineering acceptance is not production activation: customer movements stay refused until capability activations, operator bindings and authenticated provider evidence exist, and the Finance, Legal, custody and provider gates in [BLOCKERS.md](BLOCKERS.md) remain open.
 
 ## Phase 6 · WALLET AND ASSET MANAGEMENT (§19)
 
 | Task ID | Roadmap task | Status |
 |---|---|---|
-| IMP-P6-001 | Asset registry. | Backlog |
-| IMP-P6-002 | Network registry. | Backlog |
-| IMP-P6-003 | Token contract registry. | Backlog |
-| IMP-P6-004 | Customer wallet profiles. | Backlog |
-| IMP-P6-005 | Wallet status management. | Backlog |
-| IMP-P6-006 | Wallet balance APIs. | Backlog |
-| IMP-P6-007 | Deposit address domain model. | Backlog |
-| IMP-P6-008 | Provider address provisioning interface. | Backlog |
-| IMP-P6-009 | Wallet restrictions. | Backlog |
-| IMP-P6-010 | Wallet tests. | Backlog |
+| IMP-P6-001 | Asset registry. | In review |
+| IMP-P6-002 | Network registry. | In review |
+| IMP-P6-003 | Token contract registry. | In review |
+| IMP-P6-004 | Customer wallet profiles. | In review |
+| IMP-P6-005 | Wallet status management. | In review |
+| IMP-P6-006 | Wallet balance APIs. | In review |
+| IMP-P6-007 | Deposit address domain model. | In review |
+| IMP-P6-008 | Provider address provisioning interface. | In review |
+| IMP-P6-009 | Wallet restrictions. | In review |
+| IMP-P6-010 | Wallet tests. | In review |
+
+IMP-P6-001–010 are implemented by Claude on `feat/claude-phase6-wallet-asset-management` and are In review pending owner review and merge of the pull request. Migration `202611261401_wallet_asset_management.sql` extends the Phase 2 wallet tables and the existing provider capability register; grants are in `infrastructure/postgres/wallet-roles.psql` and `wallet-grants.psql`; tests are `backend/crates/deypay-infrastructure/tests/wallets.rs`, `backend/crates/deypay-api/tests/cases/wallet_http.rs` and the frontend wallet tests. USDC and USDT wallet profiles, ledger-backed balances, status management, restrictions, and the wallet APIs and pages are functional. IMP-P6-007/008 deliver the deposit-address model, the durable provisioning state machine and the provider-independent `DepositAddressProvider` port only: no provider adapter exists; no network, token contract or provider capability is enabled; and external address provisioning remains Blocked under [BLOCKERS.md](BLOCKERS.md) until Nuvion (or another approved provider) capabilities are verified and approved. No deposit, transfer or withdrawal is enabled.
 
 ## Phase 7 · INTERNAL TRANSFERS (§20)
 
