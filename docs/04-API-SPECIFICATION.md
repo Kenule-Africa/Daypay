@@ -972,6 +972,16 @@ Historical transactions must reference immutable user IDs.
 
 A username contains only ASCII letters, digits, underscore and period. It is 3–30 characters long and does not start or end with a period or contain two consecutive periods. A leading `@` is optional and is not part of the username. Uniqueness and reserved-name checks ignore letter case. Registration returns 422 for any other format, and the database refuses new active usernames that do not comply. The repository owner approved this format on 2026-11-25.
 
+## 16.8 Implemented Recipient Resolution (IMP-P7-001/002)
+
+- `GET /api/v1/recipients/resolve?username=<handle>` requires an active customer session. Exactly one `username` parameter is accepted; anything else returns 400.
+- A handle outside §16.7 returns 422 `VALIDATION_ERROR` with `details.fields` `["username"]`, before any lookup.
+- Matching is exact, ignoring letter case and the optional `@`. There is no partial search or listing.
+- An unknown, retired or ineligible username returns 404 `NOT_FOUND`.
+- `can_receive` is false for the caller and for anyone who cannot receive now, without a reason. Only `recipient_id`, `username`, `display_name` (profile first and last name) and `can_receive` are returned.
+- Every lookup, including one that finds nobody, is charged to the customer's budget in `payments.recipient_lookup_policy`. An exhausted budget returns 429 `RATE_LIMITED`. Without a recorded budget, lookups return 503 with `details.reason` `recipient_lookup_not_enabled`.
+- Phone discovery (§16.5) is not implemented; it depends on phone verification (IMP-P3-003, deferred).
+
 ---
 
 # 17. KYC AND COMPLIANCE APIS
@@ -1244,6 +1254,36 @@ The proposed MVP default is zero, subject to commercial approval.
 1. Resolve the username to the immutable recipient ID (§16), or obtain a server quote bound to the verified destination. POST /api/v1/transaction-authorizations with the operation type and quote ID or the immutable transfer terms. The authenticated server returns a challenge ID, normalized display terms, expiry and required verification method.
 2. Display those terms. POST /api/v1/transaction-authorizations/{challenge_id}/confirm with explicit customer confirmation and the required step-up response, if applicable. Verify the same session, terms and expiry, complete the challenge once and return a short-lived, single-use authorization_token.
 3. Submit the proof with the financial request and Idempotency-Key. For the authenticated customer and operation, return the stored acceptance on identical replay; conflicting content returns HTTP 409. For a new request, verify the bound details from SEC-TXN-002, reject expired, used or mismatched proofs, and consume the proof atomically with acceptance. This contract also applies to withdrawals, FX, funding orders and bank payments.
+
+## 20.7 Implemented Contract (IMP-P7-003–008)
+
+**Authorization**
+- `POST /api/v1/transaction-authorizations` takes `operation_type` `internal_transfer`, `recipient_id`, `asset` (`USDC` or `USDT`), `amount` (a decimal string with at most the asset's 6 places) and an optional `description` of up to 140 characters.
+- It validates the terms, eligibility and activation, then returns 201 with:
+  - `challenge_id`, `expires_at` (5 minutes) and `verification_method` `confirmation`;
+  - `terms`: the recipient's `id`, `username` and `display_name`, plus `asset`, `amount`, `fee`, `total` and `description`.
+- The challenge is bound to the customer, the session, the operation type, the asset, the amount in accounting units, the recipient ID, the fee and the description.
+- A new challenge revokes the session's earlier open one.
+
+**Confirmation**
+- `POST /api/v1/transaction-authorizations/{challenge_id}/confirm` takes exactly `{"confirm": true}` in the same session before expiry.
+- It returns the single-use `authorization_token` once, with its `expires_at` (up to 2 minutes, bounded by the session expiry). Only the token's SHA-256 digest is stored.
+- An unknown, foreign, expired, revoked or already-confirmed challenge returns 403 `AUTHORIZATION_INVALID`.
+
+**Transfer**
+- `POST /api/v1/transfers/internal` requires exactly one `Idempotency-Key` header of 8–128 characters from `A–Z a–z 0–9 _ . : -`, and the §20.2 body.
+- On success it returns 201 with `transaction_id`, `reference`, `type`, `status` `completed`, `asset`, `amount`, `fee`, `description`, `recipient`, `created_at` and `completed_at`.
+- An identical repeat returns the same body with `Idempotency-Replayed: true`. Different content under the same key returns 409 `IDEMPOTENCY_CONFLICT`.
+- The token must come from the same customer and session, be unexpired and unused, and match the exact terms. Otherwise the response is 403 `AUTHORIZATION_INVALID`.
+- One database transaction validates, consumes the token, posts the balanced journal and completes the transfer. A refusal records nothing and leaves the token unused.
+
+**Errors**
+- 422: `VALIDATION_ERROR`, `INVALID_AMOUNT`, `UNSUPPORTED_ASSET`, `RECIPIENT_NOT_FOUND`, `RECIPIENT_UNAVAILABLE`, `SELF_TRANSFER_NOT_PERMITTED`, `ASSET_UNAVAILABLE`, `INSUFFICIENT_FUNDS`, `TRANSACTION_LIMIT_EXCEEDED` (the activated per-operation ceiling).
+- 403: `KYC_REQUIRED`, `ACCOUNT_RESTRICTED`.
+- 503 with `details.reason` `transfers_not_enabled` while no approved policy or activation exists. Other 503 responses mean the transfer should be retried with the same key.
+
+**Fees**
+- The fee is zero (§20.5; DEC-010 is open).
 
 ---
 
@@ -1692,6 +1732,13 @@ Third-party bank payments must not be enabled in production until the applicable
 - Pagination must be supported.
 - Sensitive beneficiary data must be masked.
 - Historical transaction records must remain consistent with ledger evidence.
+
+## 28.6 Implemented Scope (IMP-P7-009)
+
+- `GET /api/v1/transactions` and `GET /api/v1/transactions/{transaction_id}` serve internal transfers for their sender and recipient only. Other transaction types arrive with their phases, and filtering and receipts with IMP-P15-002/005.
+- Each item has the §28.4 fields plus `direction` (`debit` or `credit` for the viewer), `fee` (zero for the recipient), `description` and `counterparty` (`id`, `username`, `display_name`).
+- Pages: `limit` 1–100 (default 20) and `cursor`, the last `id` of the previous page. The response's `meta.next_cursor` is null on the last page.
+- An unknown, unrelated or malformed transaction returns 404 `TRANSACTION_NOT_FOUND`.
 
 ---
 

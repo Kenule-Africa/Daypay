@@ -1,6 +1,20 @@
 -- Phase 7: preserve the accepted response for idempotent retries and evaluate
 -- authorization lifetime after lock waits. Existing signatures, role grants and
 -- activation gates carry forward. No customer capability or policy is enabled.
+
+-- The earlier branch stored only a subset of the result. Preserve those keys
+-- and capture the permitted participant projection once for existing records.
+-- Display names edited before this upgrade cannot be recovered from those rows.
+WITH legacy AS (
+    SELECT r.id, to_jsonb(v) AS snapshot
+    FROM payments.idempotency_records r
+    CROSS JOIN LATERAL payments.participant_transfers(r.user_id, r.transaction_id, NULL, 1) v
+    WHERE r.operation_type = 'INTERNAL_TRANSFER' AND r.status = 'COMPLETED'
+      AND r.transaction_id IS NOT NULL AND NOT (r.response_body ? 'reference')
+)
+UPDATE payments.idempotency_records r SET response_body = r.response_body || legacy.snapshot
+FROM legacy WHERE r.id = legacy.id;
+
 CREATE OR REPLACE FUNCTION payments.authorize_internal_transfer(p_customer uuid, p_session_digest text, p_recipient uuid,
     p_asset text, p_amount_minor text, p_description text)
 RETURNS TABLE(challenge_id uuid, expires_at text, recipient_id uuid, recipient_username text,
@@ -96,7 +110,6 @@ DECLARE
     proof record;
     opened uuid;
     posted record;
-    accepted record;
     stamp timestamptz;
     finished timestamptz;
 BEGIN
@@ -115,16 +128,11 @@ BEGIN
         IF previous.request_hash <> fingerprint THEN
             RAISE EXCEPTION 'this idempotency key was used for a different transfer' USING ERRCODE = 'TR010';
         END IF;
-        IF previous.response_body ? 'reference' THEN
-            RETURN QUERY SELECT true, v.* FROM jsonb_to_record(previous.response_body) AS v(
-                transaction_id uuid, reference text, transaction_type text, status text, direction text,
-                asset text, accounting_precision smallint, amount_minor text, fee_minor text, description text,
-                counterparty_id uuid, counterparty_username text, counterparty_display_name text,
-                created_at text, completed_at text);
-        ELSE
-            -- Earlier internal-test acceptances recorded only the operation identity and amounts.
-            RETURN QUERY SELECT true, v.* FROM payments.participant_transfers(p_customer, previous.transaction_id, NULL, 1) v;
-        END IF;
+        RETURN QUERY SELECT true, v.* FROM jsonb_to_record(previous.response_body) AS v(
+            transaction_id uuid, reference text, transaction_type text, status text, direction text,
+            asset text, accounting_precision smallint, amount_minor text, fee_minor text, description text,
+            counterparty_id uuid, counterparty_username text, counterparty_display_name text,
+            created_at text, completed_at text);
         RETURN;
     END IF;
 
@@ -179,12 +187,6 @@ BEGIN
     INSERT INTO payments.transaction_status_history(transaction_id, previous_status, new_status, reason_code,
         actor_type, actor_id, created_at)
     VALUES (opened, 'AUTHORIZED', 'COMPLETED', 'LEDGER_POSTED', 'SYSTEM', NULL, finished);
-    SELECT * INTO STRICT accepted FROM payments.participant_transfers(p_customer, opened, NULL, 1);
-    INSERT INTO payments.idempotency_records(user_id, operation_type, idempotency_key, request_hash, transaction_id,
-        response_status, response_body, status, created_at, expires_at)
-    VALUES (p_customer, 'INTERNAL_TRANSFER', p_idempotency_key, fingerprint, opened, 201,
-        to_jsonb(accepted),
-        'COMPLETED', stamp, stamp + interval '90 days');
     INSERT INTO integrations.outbox_events(aggregate_type, aggregate_id, event_type, payload)
     VALUES ('payments.transaction', opened, 'INTERNAL_TRANSFER_COMPLETED', jsonb_build_object(
         'transaction_id', opened, 'sender_user_id', p_customer, 'recipient_user_id', p_recipient,
@@ -193,6 +195,20 @@ BEGIN
     VALUES ('CUSTOMER', p_customer, 'INTERNAL_TRANSFER_COMPLETED', 'TRANSACTION', opened,
         jsonb_build_object('session_id', session, 'authorization_proof_id', proof.id,
             'journal_id', posted.journal_id, 'recipient_id', p_recipient));
-    RETURN QUERY SELECT false, accepted.*;
+    -- Project once: the first caller and every retry see the same accepted result.
+    RETURN QUERY
+    WITH result AS MATERIALIZED (
+        SELECT v.* FROM payments.participant_transfers(p_customer, opened, NULL, 1) v
+    ), saved AS (
+        INSERT INTO payments.idempotency_records(user_id, operation_type, idempotency_key, request_hash,
+            transaction_id, response_status, response_body, status, created_at, expires_at)
+        SELECT p_customer, 'INTERNAL_TRANSFER', p_idempotency_key, fingerprint, opened, 201,
+            to_jsonb(v), 'COMPLETED', stamp, stamp + interval '90 days' FROM result v
+        RETURNING payments.idempotency_records.transaction_id
+    )
+    SELECT false, v.* FROM result v JOIN saved USING (transaction_id);
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'completed transfer has no participant result';
+    END IF;
 END;
 $$;

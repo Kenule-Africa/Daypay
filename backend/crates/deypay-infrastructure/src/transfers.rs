@@ -91,7 +91,8 @@ impl PgTransfers {
                 Err(error) => {
                     let mapped = map_error(&error);
                     if matches!(mapped, TransferError::Unavailable | TransferError::Busy) {
-                        tracing::warn!(event = "transfer_database_failure", error = %error, "Transfer call failed");
+                        let sqlstate = error.as_database_error().and_then(|db| db.code());
+                        tracing::warn!(event = "transfer_database_failure", sqlstate = sqlstate.as_deref(), error = %error, "Transfer call failed");
                     }
                     return Err(mapped);
                 }

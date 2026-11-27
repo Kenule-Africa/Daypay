@@ -13,7 +13,7 @@ use deypay_infrastructure::transfers::{PgTransfers, generate_proof_token};
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use sqlx::postgres::PgPoolOptions;
-use std::sync::Arc;
+use std::sync::{Arc, Once};
 use uuid::Uuid;
 
 const SCRIPTS: [&str; 6] = [
@@ -64,6 +64,8 @@ fn app_pool(pool: &PgPool) -> PgPool {
 }
 
 async fn setup(pool: PgPool) -> World {
+    static LOGGING: Once = Once::new();
+    LOGGING.call_once(|| deypay_common::runtime::init_logging("warn").unwrap());
     for script in SCRIPTS {
         sqlx::raw_sql(script).execute(&pool).await.unwrap();
     }
@@ -582,6 +584,34 @@ async fn transfers_move_exact_funds_once_and_both_parties_see_them(pool: PgPool)
             "{sql}"
         );
     }
+    // Upgrade an acceptance in the original Phase 7 format. Further profile edits
+    // cannot change its replay, and the migration must never post another journal.
+    world
+        .admin(&format!(
+            "UPDATE payments.idempotency_records SET response_body = jsonb_build_object(
+                 'transaction_id', transaction_id, 'status', 'COMPLETED', 'asset', 'USDT', 'amount_minor', '25500000')
+             WHERE transaction_id = '{}'",
+            sent.id
+        ))
+        .await;
+    world
+        .admin(include_str!(
+            "../../../migrations/202611271602_internal_transfer_acceptance.sql"
+        ))
+        .await;
+    world
+        .admin(&format!(
+            "UPDATE customers.profiles SET first_name = 'Updated' WHERE user_id = '{bob}'"
+        ))
+        .await;
+    let upgraded = world
+        .service
+        .execute(alice, &session, "transfer-key-1", &token, input)
+        .await
+        .unwrap();
+    assert!(upgraded.replayed);
+    assert_eq!(upgraded.transfer, sent);
+    assert_eq!(world.available(alice, world.usdt).await, 74_500_000);
     assert!(world.violations().await.is_empty());
 }
 

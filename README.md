@@ -1,10 +1,10 @@
 # DEYPAY
 
-DEYPAY's `main` branch contains:
+This checkout contains:
 
 - a Rust API, the isolated sign-in service (`deypay-auth`) and a worker;
-- PostgreSQL migrations from the Phase 2 foundations through customer accounts and authentication (Phase 3), the financial ledger (Phase 5) and USDC/USDT wallets (Phase 6);
-- the Next.js customer web app with its account and wallet pages.
+- PostgreSQL migrations from the Phase 2 foundations through customer accounts and authentication (Phase 3), the financial ledger (Phase 5), USDC/USDT wallets (Phase 6) and internal transfers (Phase 7);
+- the Next.js customer web app with its account, wallet and payment pages.
 
 No provider is connected and no financial operation is enabled. Delivery follows [the implementation roadmap](docs/08-IMPLEMENTATION-PLAN.md). Current verification evidence and outstanding setup requirements are in [the engineering handoff](docs/engineering/HANDOFF.md).
 
@@ -38,7 +38,7 @@ Use PostgreSQL 16+ and SQLx CLI 0.8.6. From `backend/`, set `DATABASE_URL` in th
 
 Migrations are forward-only. On a populated database, recover by a reviewed corrective migration or restore a verified backup into a separate database before switching traffic. A failed transactional migration can be fixed before first successful application. Preserve the contents and checksums of deployed migrations.
 
-For the Rust integration suite, point `DATABASE_URL` at a dedicated disposable PostgreSQL instance with a database-creating test administrator and the restricted `deypay_app` role. From `backend/`, run `cargo test --locked -p deypay-infrastructure --features postgres-tests --test persistence --test registration --test ledger --test wallets`. SQLx creates a new database per test. The ledger and wallet suites apply `infrastructure/postgres/ledger-roles.psql`, `wallet-roles.psql`, `ledger-grants.psql` and `wallet-grants.psql` themselves; the cluster user must be able to create roles. Fixtures contain synthetic identities and asset precision. Production registry rows, address assignment policy, encryption/key management, retention policy and financial execution await their respective approvals.
+For the Rust integration suite, point `DATABASE_URL` at a dedicated disposable PostgreSQL instance with a database-creating test administrator and the restricted `deypay_app` role. From `backend/`, run `cargo test --locked -p deypay-infrastructure --features postgres-tests --test persistence --test registration --test ledger --test wallets --test transfers`. SQLx creates a new database per test. The ledger, wallet and transfer suites apply `infrastructure/postgres/ledger-roles.psql`, `wallet-roles.psql`, `payments-roles.psql`, `ledger-grants.psql`, `wallet-grants.psql` and `payments-grants.psql` themselves; the cluster user must be able to create roles. Fixtures contain synthetic identities and asset precision. Production registry rows, address assignment policy, encryption/key management, retention policy and financial execution await their respective approvals.
 
 ## Sandbox registration
 
@@ -60,7 +60,7 @@ Use `GET /api/v1/legal/documents` to discover the current versions and exact Mar
 
 From `backend/`, run `cargo fmt --all -- --check`, `cargo clippy --locked --workspace --all-targets -- -D warnings`, `cargo build --locked --workspace` and `cargo test --locked --workspace`. After building the binaries and starting the development database, run `node --env-file=.env --test scripts/backend-health.test.mjs` from the repository root. This covers API liveness and readiness, worker startup failure on a database outage and, on POSIX, graceful worker shutdown on SIGTERM. On Windows, stop the connected worker with Ctrl+C and check for the shutdown log and a zero exit code.
 
-From `frontend/`, run `npm run lint`, `npm run build`, `npm run typecheck` and `npm test`. `npm test` runs the validation unit tests and starts the built frontend against an in-test HTTP double of the API to exercise the session guard, redirects, caching headers and unavailable states. From the root, run `node --test scripts/engineering-tracking.test.mjs scripts/local-environment.test.mjs` to verify the roadmap tracker, provider register and local credential setup.
+GitHub Actions runs frontend lint, build, type checking and tests. For a focused browser test of a built frontend, run `npx --no-install playwright-core install chromium --only-shell` once after `npm ci` in `frontend/`. The payment test uses the pinned browser to confirm a payment and retry after a lost response. `npm test` runs the validation unit tests and starts the built frontend against an in-test HTTP double of the API to exercise the session guard, redirects, caching headers and unavailable states. From the root, run `node --test scripts/engineering-tracking.test.mjs scripts/local-environment.test.mjs` to verify the roadmap tracker, provider register and local credential setup.
 ## Email verification
 
 The API and worker opt in with `EMAIL_VERIFICATION_ENABLED=true`. Registration keeps its own release gates. Local and test processes use sandbox consent records. Staging and production accept only identities with published registration evidence.
@@ -99,7 +99,7 @@ The worker reuses `EMAIL_PROVIDER`, `EMAIL_FROM`, `RESEND_API_KEY` and the email
 
 ## Customer web app
 
-`frontend/` serves the landing page, registration, email verification, sign-in, password recovery and the protected `/app` account area (overview, wallets, profile and photo, preferences, sessions). It calls only the implemented APIs. The wallet pages show USDC and USDT balances exactly as the ledger reports them through `/api/v1/wallets`, with wallet status, restrictions, supported networks and deposit-address state; an unavailable API shows an error, never a substitute balance. Deposits, transfers and withdrawals are shown as unavailable.
+`frontend/` serves the landing page, registration, email verification, sign-in, password recovery and the protected `/app` account area (overview, wallets, payments, profile and photo, preferences, sessions). It calls only the implemented APIs. The wallet pages show USDC and USDT balances exactly as the ledger reports them through `/api/v1/wallets`, with wallet status, restrictions, supported networks and deposit-address state; an unavailable API shows an error, never a substitute balance. The payments pages show internal transfers from `/api/v1/transactions` and offer sending only while a wallet reports the send capability, which stays false until transfers are approved and activated. Deposits and withdrawals are shown as unavailable.
 
 - **One HTTPS origin.** Serve the web app and both APIs from the authentication release's browser origin (`DEYPAY_LOGIN_ORIGIN`). At the ingress, route `POST /api/v1/auth/{login,refresh,logout,forgot-password,reset-password}`, `GET /api/v1/auth/sessions` and `DELETE /api/v1/auth/sessions/{id}` to `deypay-auth`, other `/api/` paths to `deypay-api`, and everything else to the web app. The browser sends same-origin requests, so the session cookie stays host-only and the Origin check applies. Route `/verify-email` and `/reset-password` to the web app; its pages follow the same fragment-token handling as the API's fallback pages.
 - **Server-side guard.** Every `/app` request forwards only the `__Host-deypay_session` cookie to `GET /api/v1/me` at `API_BASE_URL` (a private address; use TLS between hosts). A 401 redirects to sign-in, and nothing private renders or is cached. The ingress must therefore pass that one cookie, and nothing else, to the web app on page requests. Strip `Authorization` and any other cookie, and never send it to `/_next/*`. Middleware builds sign-in redirects from the forwarded `Host` and scheme, so they stay on the browser origin.
