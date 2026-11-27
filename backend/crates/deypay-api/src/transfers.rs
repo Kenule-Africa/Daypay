@@ -582,7 +582,7 @@ where
             let mut next = None;
             if let Some(last) = records.last().filter(|_| records.len() == limit as usize) {
                 match api.service.history(customer.id(), Some(last.id), 1).await {
-                    Ok(older) if !older.is_empty() => next = Some(last.id),
+                    Ok(older) if !older.is_empty() => next = Some(last.id.to_string()),
                     Ok(_) => {}
                     Err(problem) => return failure(problem),
                 }
