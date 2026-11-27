@@ -1,0 +1,167 @@
+-- Apply after migration 202611261401, ledger-roles.psql, wallet-roles.psql and
+-- ledger-grants.psql (and again after any later wallet migration), as a DBA or
+-- a migration administrator that owns the wallet objects and may SET ROLE to
+-- deypay_wallet_owner. The verification at the end aborts the whole
+-- transaction if any rule below does not hold.
+--
+-- deypay_app runs only the fixed customer wallet functions, always for the
+-- authenticated customer; it gains no wallet table write, no ledger schema
+-- access and no registry access. The registries (assets, networks, token
+-- contracts, providers, provider capabilities) are written only by the
+-- database administrator.
+BEGIN;
+GRANT USAGE ON SCHEMA wallets, identity, compliance, audit, integrations, ledger TO deypay_wallet_owner;
+GRANT SELECT ON wallets.assets, wallets.networks, wallets.asset_networks TO deypay_wallet_owner;
+GRANT SELECT, INSERT, UPDATE ON wallets.wallet_profiles, wallets.wallet_addresses,
+    wallets.wallet_provisioning_requests TO deypay_wallet_owner;
+GRANT SELECT, INSERT ON wallets.wallet_status_history, wallets.registry_changes TO deypay_wallet_owner;
+GRANT SELECT (id, provider_code, enabled, lifecycle_status) ON integrations.providers TO deypay_wallet_owner;
+GRANT SELECT ON integrations.provider_capabilities TO deypay_wallet_owner;
+GRANT SELECT (id, status, email_verified_at) ON identity.users TO deypay_wallet_owner;
+GRANT SELECT (user_id, active) ON compliance.account_restrictions TO deypay_wallet_owner;
+GRANT INSERT (actor_type, actor_id, action, resource_type, resource_id, reason, metadata) ON audit.audit_events
+    TO deypay_wallet_owner;
+-- The ledger stays encapsulated: zero-balance account opening, balance reads,
+-- hold/activation state and the operator binding, nothing else.
+GRANT EXECUTE ON FUNCTION
+    ledger.open_customer_accounts(uuid),
+    ledger.customer_balance(uuid,uuid),
+    ledger.asset_controls(uuid),
+    ledger.authenticated_operator(uuid,text)
+TO deypay_wallet_owner;
+
+GRANT CREATE ON SCHEMA wallets TO deypay_wallet_owner;
+DO $$
+DECLARE
+    routine regprocedure;
+BEGIN
+    FOR routine IN SELECT p.oid::regprocedure FROM pg_proc p WHERE p.pronamespace = 'wallets'::regnamespace LOOP
+        EXECUTE format('ALTER FUNCTION %s OWNER TO deypay_wallet_owner', routine);
+    END LOOP;
+END $$;
+REVOKE CREATE ON SCHEMA wallets FROM deypay_wallet_owner;
+
+GRANT USAGE ON SCHEMA wallets TO deypay_app, deypay_wallet_provisioner, deypay_ledger_controller;
+
+-- Customer API: always called with the authenticated customer's identifier.
+GRANT EXECUTE ON FUNCTION
+    wallets.initialize_customer_wallets(uuid),
+    wallets.customer_wallets(uuid,uuid),
+    wallets.customer_wallet_networks(uuid,uuid),
+    wallets.supported_networks(text),
+    wallets.request_deposit_address(uuid,uuid,text)
+TO deypay_app;
+
+-- Provider-integration workers: provisioning results and address verification.
+GRANT EXECUTE ON FUNCTION
+    wallets.provisioning_work(integer),
+    wallets.begin_provisioning(uuid),
+    wallets.record_provisioning_result(uuid,text,text,text,text,text),
+    wallets.verify_deposit_address(uuid,text,bytea),
+    wallets.reject_deposit_address(uuid,text),
+    wallets.retire_deposit_address(uuid,text)
+TO deypay_wallet_provisioner;
+
+-- Finance and compliance operations, as the operator bound to the login.
+GRANT EXECUTE ON FUNCTION wallets.set_wallet_status(uuid,text,text,uuid) TO deypay_ledger_controller;
+
+DO $$
+DECLARE
+    runtime CONSTANT text[] := ARRAY['deypay_app','deypay_wallet_provisioner','deypay_ledger_poster',
+        'deypay_ledger_evidence','deypay_ledger_controller','deypay_ledger_reader'];
+    offending text;
+BEGIN
+    -- No runtime role writes any wallet or integration table, and none writes a registry.
+    SELECT string_agg(r.name || ' → ' || c.oid::regclass::text, ', ') INTO offending
+    FROM pg_class c CROSS JOIN unnest(runtime) AS r(name)
+    WHERE c.relnamespace IN ('wallets'::regnamespace, 'integrations'::regnamespace) AND c.relkind IN ('r','p')
+      AND (c.relnamespace = 'wallets'::regnamespace
+           OR c.oid IN ('integrations.providers'::regclass, 'integrations.provider_capabilities'::regclass))
+      AND EXISTS (SELECT FROM pg_roles WHERE rolname = r.name)
+      AND has_table_privilege(r.name, c.oid, 'INSERT,UPDATE,DELETE,TRUNCATE');
+    IF offending IS NOT NULL THEN
+        RAISE EXCEPTION 'A runtime role can write wallet tables directly: %', offending;
+    END IF;
+    SELECT string_agg(c.oid::regclass::text, ', ') INTO offending FROM pg_class c
+    WHERE c.oid IN ('wallets.assets'::regclass, 'wallets.networks'::regclass, 'wallets.asset_networks'::regclass,
+                    'integrations.providers'::regclass, 'integrations.provider_capabilities'::regclass)
+      AND has_table_privilege('deypay_wallet_owner', c.oid, 'INSERT,UPDATE,DELETE,TRUNCATE');
+    IF offending IS NOT NULL THEN
+        RAISE EXCEPTION 'Wallet functions must not be able to change the registries: %', offending;
+    END IF;
+    IF has_table_privilege('deypay_wallet_owner', 'wallets.registry_changes', 'UPDATE,DELETE,TRUNCATE')
+       OR has_table_privilege('deypay_wallet_owner', 'wallets.wallet_status_history', 'UPDATE,DELETE,TRUNCATE') THEN
+        RAISE EXCEPTION 'Wallet history must be append-only for the wallet functions';
+    END IF;
+    -- The wallet owner reaches the ledger only through its four functions.
+    SELECT string_agg(c.oid::regclass::text, ', ') INTO offending FROM pg_class c
+    WHERE c.relnamespace IN ('ledger'::regnamespace, 'operations'::regnamespace) AND c.relkind IN ('r','p')
+      AND (has_table_privilege('deypay_wallet_owner', c.oid, 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE')
+           OR has_any_column_privilege('deypay_wallet_owner', c.oid, 'SELECT,INSERT,UPDATE'));
+    IF offending IS NOT NULL THEN
+        RAISE EXCEPTION 'The wallet owner must not read or write ledger tables: %', offending;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_proc p WHERE p.pronamespace = 'wallets'::regnamespace
+               AND p.proowner <> 'deypay_wallet_owner'::regrole) THEN
+        RAISE EXCEPTION 'Wallet routines must belong to deypay_wallet_owner';
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+               WHERE p.pronamespace = 'wallets'::regnamespace AND a.grantee = 0) THEN
+        RAISE EXCEPTION 'Wallet routines must not be executable by PUBLIC';
+    END IF;
+    SELECT string_agg(p.oid::regprocedure::text, ', ') INTO offending FROM pg_proc p
+    WHERE p.pronamespace = 'wallets'::regnamespace
+      AND NOT coalesce('search_path=pg_catalog, pg_temp' = ANY (p.proconfig), false);
+    IF offending IS NOT NULL THEN
+        RAISE EXCEPTION 'Wallet routines must pin search_path to pg_catalog, pg_temp: %', offending;
+    END IF;
+    -- Memberships: nothing acts as the wallet owner, and the API never holds
+    -- the provisioner, poster, evidence or controller roles.
+    SELECT string_agg(r.rolname, ', ') INTO offending FROM pg_roles r
+    WHERE NOT r.rolsuper AND r.rolname <> 'deypay_wallet_owner'
+      AND pg_has_role(r.oid, 'deypay_wallet_owner', 'MEMBER')
+      AND (r.rolname = ANY (runtime)
+           OR (r.rolcanlogin AND (pg_has_role(r.oid, 'deypay_wallet_provisioner', 'MEMBER')
+               OR pg_has_role(r.oid, 'deypay_ledger_poster', 'MEMBER')
+               OR pg_has_role(r.oid, 'deypay_ledger_controller', 'MEMBER'))));
+    IF offending IS NOT NULL THEN
+        RAISE EXCEPTION 'Runtime logins must not act as deypay_wallet_owner: %', offending;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'deypay_app')
+       AND (pg_has_role('deypay_app', 'deypay_wallet_provisioner', 'MEMBER')
+            OR pg_has_role('deypay_app', 'deypay_wallet_owner', 'MEMBER')) THEN
+        RAISE EXCEPTION 'The general API role must not hold a wallet role';
+    END IF;
+    SELECT string_agg(r.rolname, ', ') INTO offending FROM pg_roles r
+    WHERE NOT r.rolsuper AND r.rolcanlogin
+      AND pg_has_role(r.oid, 'deypay_wallet_provisioner', 'MEMBER')
+      AND pg_has_role(r.oid, 'deypay_ledger_poster', 'MEMBER');
+    IF offending IS NOT NULL THEN
+        RAISE EXCEPTION 'A login must not both record deposit addresses and post: %', offending;
+    END IF;
+
+    -- Every runtime role executes exactly its wallet interface.
+    WITH allowed(role_name, routine) AS (VALUES
+        ('deypay_app', 'wallets.initialize_customer_wallets(uuid)'::regprocedure),
+        ('deypay_app', 'wallets.customer_wallets(uuid,uuid)'),
+        ('deypay_app', 'wallets.customer_wallet_networks(uuid,uuid)'),
+        ('deypay_app', 'wallets.supported_networks(text)'),
+        ('deypay_app', 'wallets.request_deposit_address(uuid,uuid,text)'),
+        ('deypay_wallet_provisioner', 'wallets.provisioning_work(integer)'),
+        ('deypay_wallet_provisioner', 'wallets.begin_provisioning(uuid)'),
+        ('deypay_wallet_provisioner', 'wallets.record_provisioning_result(uuid,text,text,text,text,text)'),
+        ('deypay_wallet_provisioner', 'wallets.verify_deposit_address(uuid,text,bytea)'),
+        ('deypay_wallet_provisioner', 'wallets.reject_deposit_address(uuid,text)'),
+        ('deypay_wallet_provisioner', 'wallets.retire_deposit_address(uuid,text)'),
+        ('deypay_ledger_controller', 'wallets.set_wallet_status(uuid,text,text,uuid)'))
+    SELECT string_agg(r.name || ' → ' || p.oid::regprocedure::text, ', ') INTO offending
+    FROM pg_proc p CROSS JOIN unnest(runtime) AS r(name)
+    WHERE p.pronamespace = 'wallets'::regnamespace
+      AND EXISTS (SELECT FROM pg_roles WHERE rolname = r.name)
+      AND has_function_privilege(r.name, p.oid, 'EXECUTE')
+      AND NOT EXISTS (SELECT 1 FROM allowed a WHERE a.role_name = r.name AND a.routine::oid = p.oid);
+    IF offending IS NOT NULL THEN
+        RAISE EXCEPTION 'Runtime roles may execute only their wallet interface: %', offending;
+    END IF;
+END $$;
+COMMIT;

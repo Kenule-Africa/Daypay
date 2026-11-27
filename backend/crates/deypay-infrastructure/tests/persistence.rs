@@ -97,8 +97,9 @@ use uuid::Uuid;
 async fn customer_reads_are_scoped_and_exact(pool: PgPool) -> sqlx::Result<()> {
     let owner: Uuid = sqlx::query_scalar("INSERT INTO identity.users(email,status) VALUES ('repo@example.test','REGISTERED') RETURNING id")
         .fetch_one(&pool).await?;
-    let asset: Uuid = sqlx::query_scalar("INSERT INTO wallets.assets(symbol,name,asset_type,accounting_precision) VALUES ('USDC','fixture','TEST',6) RETURNING id")
-        .fetch_one(&pool).await?;
+    let asset: Uuid = sqlx::query_scalar("SELECT id FROM wallets.assets WHERE symbol = 'USDC'")
+        .fetch_one(&pool)
+        .await?;
     let id: Uuid = sqlx::query_scalar("INSERT INTO payments.transactions(user_id,public_reference,transaction_type,status,source_asset_id,source_amount_minor)
         VALUES ($1,'repo-ref','INTERNAL_TRANSFER','CREATED',$2,99999999999999999999999999999999999999) RETURNING id")
         .bind(owner).bind(asset).fetch_one(&pool).await?;

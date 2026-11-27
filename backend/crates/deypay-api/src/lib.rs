@@ -7,3 +7,4 @@ pub mod registration;
 mod registration_config;
 pub mod sessions;
 pub mod usernames;
+pub mod wallets;

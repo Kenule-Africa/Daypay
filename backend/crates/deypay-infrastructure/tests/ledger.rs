@@ -191,12 +191,13 @@ async fn setup(pool: PgPool) -> Books {
         test_role(&pool, login, "deypay_ledger_controller").await;
     }
     sqlx::raw_sql(GRANTS).execute(&pool).await.unwrap();
+    // USDC, USDT (six decimals) and NGN (two) are seeded by the asset registry
+    // migration under the owner's 2026-11-26 decision.
     let asset = |symbol: &'static str, precision: i16| {
         let pool = pool.clone();
         async move {
             sqlx::query_scalar::<_, Uuid>(
-                "INSERT INTO wallets.assets(symbol, name, asset_type, accounting_precision, enabled)
-                 VALUES ($1, $1 || ' fixture', 'TEST', $2, true) RETURNING id",
+                "SELECT id FROM wallets.assets WHERE symbol = $1 AND accounting_precision = $2 AND enabled",
             )
             .bind(symbol)
             .bind(precision)

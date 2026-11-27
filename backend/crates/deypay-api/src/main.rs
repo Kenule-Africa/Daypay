@@ -28,11 +28,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         return Err("Authentication database is unready".into());
     }
     let readiness_auth = auth.clone();
-    // Customer profile routes exist only behind the customer session guard.
+    // Customer profile and wallet routes exist only behind the customer session guard.
     let profiles = deypay_api::profile::routes(deypay_api::profile::ProfileApi::new(pool.clone()));
+    let wallets = deypay_api::wallets::routes(deypay_api::wallets::WalletApi::new(pool.clone()));
     let customer_routes = match &auth {
-        Some(auth) => auth.protect(profiles),
-        None => deypay_api::profile::unavailable(),
+        Some(auth) => auth.protect(profiles.merge(wallets)),
+        None => deypay_api::profile::unavailable().merge(deypay_api::wallets::unavailable()),
     };
     let app = Router::new()
         .route(
