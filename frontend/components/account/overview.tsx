@@ -31,7 +31,7 @@ const statusToneClass = {
 };
 
 const upcoming = [
-  { icon: Wallet, title: "USDC and USDT wallets", text: "Hold digital dollars with clear available and reserved amounts." },
+  { icon: Wallet, title: "Deposit stablecoins", text: "Receive USDC and USDT on networks DEYPAY has confirmed." },
   { icon: Send, title: "Send and receive", text: "Transfer to other DEYPAY customers by username." },
   { icon: ArrowLeftRight, title: "Convert", text: "Move between stablecoins and naira with a quote first." },
   { icon: Landmark, title: "Fund and withdraw in naira", text: "Use supported Nigerian payment methods and banks." },
@@ -178,8 +178,15 @@ export function Overview() {
             <Badge tone="dark">Not yet available</Badge>
           </div>
           <p className="mt-2 text-[0.9375rem] leading-relaxed text-ink-300">
-            Wallets and payments aren&apos;t open yet. You won&apos;t see balances or activity here until they are real.
+            Your USDC and USDT wallets are ready to view, with balances straight from DEYPAY&apos;s ledger. Deposits and
+            payments open once they&apos;re approved.
           </p>
+          <Link
+            href="/app/wallets"
+            className="mt-4 inline-flex items-center gap-1.5 rounded-control bg-white/[0.08] px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-white/[0.12]"
+          >
+            View wallets <ArrowRight aria-hidden className="size-4" />
+          </Link>
           <ul className="mt-5 grid gap-1">
             {upcoming.map(({ icon: Icon, title, text }) => (
               <li key={title} className="flex items-start gap-3.5 rounded-panel p-2.5">

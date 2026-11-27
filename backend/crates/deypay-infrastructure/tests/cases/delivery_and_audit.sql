@@ -6,7 +6,7 @@ BEGIN
     INSERT INTO payments.transactions(user_id,public_reference,transaction_type,status)
         VALUES(owner_id,'fixture-event','BANK_PAYMENT','CREATED') RETURNING id INTO tx;
     INSERT INTO integrations.providers(provider_code,provider_name,provider_type)
-        VALUES('fixture','fixture','TEST') RETURNING id INTO provider;
+        VALUES('FIXTURE','fixture','TEST') RETURNING id INTO provider;
     INSERT INTO integrations.provider_operations(provider_id,provider_account_scope,is_financial,transaction_id,operation_type,leg,
         authorized_attempt,idempotency_reference,status) VALUES(provider,'account',true,tx,'PAYOUT','payout',1,'submission','CREATED')
         RETURNING id INTO op;

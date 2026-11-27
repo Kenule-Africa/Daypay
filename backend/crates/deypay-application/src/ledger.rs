@@ -290,6 +290,12 @@ pub trait FinancialGate: Sync {
         customer: Uuid,
         operation: GatedOperation<'_>,
     ) -> impl Future<Output = Result<(), LedgerError>> + Send;
+
+    /// Whether an approved eligibility policy is in force at all. Wallet views
+    /// use it to report spending as unavailable without asking per operation.
+    fn policy_approved(&self) -> bool {
+        false
+    }
 }
 
 /// The only gate shipped until the eligibility policy, limits and their

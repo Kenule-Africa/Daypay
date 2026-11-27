@@ -34,6 +34,37 @@ const legalDocuments = [
   { document_id: "DEP-LEG-002", title: "DEYPAY PRIVACY NOTICE", version: "1.0", sha256: "y", status: "sandbox_draft", url: "/api/v1/legal/documents/DEP-LEG-002/1.0" },
 ];
 
+const usdcWallet = {
+  id: "6f1c0e2a-1b2c-4d3e-8f90-0123456789ab",
+  asset: "USDC",
+  asset_name: "USD Coin",
+  status: "active",
+  balance: { available: "1234567.500000", reserved: "2.000000", total: "1234569.500000" },
+  restrictions: ["kyc_required", "financial_activity_not_enabled"],
+  capabilities: { deposit: false, send: false },
+  created_at: "2026-11-26T10:00:00.000000Z",
+  updated_at: "2026-11-26T10:00:00.000000Z",
+};
+const usdtWallet = {
+  ...usdcWallet,
+  id: "7f1c0e2a-1b2c-4d3e-8f90-0123456789ab",
+  asset: "USDT",
+  asset_name: "Tether USD",
+  balance: { available: "0.000000", reserved: "0.000000", total: "0.000000" },
+};
+const VERIFIED_ADDRESS = "0x00000000000000000000000000000000000000a1";
+const network = (code, status, address) => ({
+  network: code,
+  name: code + " fixture",
+  chain_family: "evm",
+  token_contract: "0x1111111111111111111111111111111111111111",
+  token_decimals: 6,
+  memo_required: false,
+  required_confirmations: 12,
+  deposit: { available: status !== "unavailable", address_status: status, address },
+  withdrawal: { available: false },
+});
+
 let state;
 let api;
 let web;
@@ -41,7 +72,7 @@ let origin;
 let output = "";
 
 function reset() {
-  state = { ready: true, me: 200, legal: 200, seen: [] };
+  state = { ready: true, me: 200, legal: 200, wallets: 200, seen: [] };
 }
 
 function json(res, status, body) {
@@ -59,6 +90,23 @@ before(async () => {
   reset();
   api = createServer((req, res) => {
     state.seen.push({ url: req.url, cookie: req.headers.cookie ?? null });
+    if (req.url.startsWith("/api/v1/wallets")) {
+      if (req.headers.cookie !== `${SESSION}=${TOKEN}`) return json(res, 401, { error: { code: "AUTHENTICATION_REQUIRED" } });
+      if (state.wallets !== 200) return json(res, state.wallets, { error: { code: "SERVICE_UNAVAILABLE" } });
+      if (req.url === "/api/v1/wallets") return json(res, 200, { data: [usdcWallet, usdtWallet] });
+      if (req.url === `/api/v1/wallets/${usdcWallet.id}`) {
+        return json(res, 200, {
+          data: {
+            ...usdcWallet,
+            networks: [
+              network("base-fixture", "active", { address: VERIFIED_ADDRESS, memo: null }),
+              network("polygon-fixture", "pending", null),
+            ],
+          },
+        });
+      }
+      return json(res, 404, { error: { code: "NOT_FOUND", message: "Wallet not found", details: {} } });
+    }
     switch (req.url) {
       case "/health/ready":
         return json(res, state.ready ? 200 : 503, { status: state.ready ? "ready" : "unavailable" });
@@ -289,4 +337,46 @@ test("legal documents render Markdown as text, never as markup", async () => {
   assert.ok(!html.includes("<script>alert(1)</script>"));
   assert.ok(html.includes("&lt;script&gt;alert(1)&lt;/script&gt;"));
   assert.equal((await get("/legal/not-a-document/1.0")).status, 404);
+});
+
+test("wallets render the ledger balances the API returns, exactly", async () => {
+  const response = await get("/app/wallets", signedIn);
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("cache-control") ?? "", /no-store/);
+  const html = await response.text();
+  for (const shown of ["1,234,569.50", "1,234,567.50", "USDT", "Identity verification is needed"]) {
+    assert.ok(html.includes(shown), shown);
+  }
+  const reads = state.seen.filter(entry => entry.url === "/api/v1/wallets");
+  assert.ok(reads.length >= 1);
+  for (const read of reads) assert.equal(read.cookie, signedIn, "only the session cookie is forwarded");
+});
+
+test("an unavailable wallet service never shows a substitute balance", async () => {
+  state.wallets = 503;
+  const response = await get("/app/wallets", signedIn);
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.ok(html.includes("load your wallets right now"));
+  assert.ok(!html.includes("Total balance"));
+  assert.ok(!html.includes("1,234,569.50"));
+});
+
+test("wallet details show a deposit address only once it is verified", async () => {
+  const response = await get(`/app/wallets/${usdcWallet.id}`, signedIn);
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.ok(html.includes(VERIFIED_ADDRESS));
+  assert.ok(html.includes("Copy address"));
+  assert.ok(html.includes("Being prepared"), "a pending address is described, never invented");
+  assert.ok(html.includes("Not yet available"), "moving money stays unavailable");
+});
+
+test("unknown and malformed wallets are not found without leaking anything", async () => {
+  const unknown = await get("/app/wallets/42e0fca0-5942-4ef0-974e-ef84594a35ef", signedIn);
+  assert.equal(unknown.status, 404);
+  const before = state.seen.length;
+  const malformed = await get("/app/wallets/not-a-wallet", signedIn);
+  assert.equal(malformed.status, 404);
+  assert.ok(!state.seen.slice(before).some(entry => entry.url.startsWith("/api/v1/wallets/")), "no API call for a malformed id");
 });

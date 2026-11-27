@@ -1,0 +1,27 @@
+-- Cluster administrator prerequisite for migration 202611261401 (Phase 6
+-- wallets). Creates the NOLOGIN wallet roles. Safe to rerun.
+--   deypay_wallet_owner        owns the wallet functions; granted to no login
+--   deypay_wallet_provisioner  provider-integration workers that record deposit
+--                              address results; never to the API login or to a
+--                              login that also holds deypay_ledger_poster
+-- Customer wallet functions are executed by deypay_app; administrative wallet
+-- status changes by deypay_ledger_controller logins bound to an operator.
+DO $$
+DECLARE
+    wanted text;
+BEGIN
+    FOREACH wanted IN ARRAY ARRAY['deypay_wallet_owner','deypay_wallet_provisioner'] LOOP
+        IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = wanted) THEN
+            BEGIN
+                EXECUTE format('CREATE ROLE %I NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS', wanted);
+            EXCEPTION WHEN duplicate_object OR unique_violation THEN
+                NULL; -- created concurrently
+            END;
+        END IF;
+    END LOOP;
+    IF EXISTS (SELECT FROM pg_catalog.pg_roles
+               WHERE rolname IN ('deypay_wallet_owner','deypay_wallet_provisioner')
+                 AND (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls OR rolcanlogin)) THEN
+        RAISE EXCEPTION 'Unsafe pre-existing wallet role';
+    END IF;
+END $$;

@@ -97,10 +97,15 @@ GRANT SELECT ON ALL TABLES IN SCHEMA ledger, operations TO deypay_ledger_reader;
 
 DO $$
 DECLARE
-    runtime CONSTANT text[] := ARRAY['deypay_app','deypay_ledger_poster','deypay_ledger_evidence',
-        'deypay_ledger_controller','deypay_ledger_reader'];
+    -- The wallet roles (wallet-roles.psql) are checked once they exist.
+    candidates CONSTANT text[] := ARRAY['deypay_app','deypay_ledger_poster','deypay_ledger_evidence',
+        'deypay_ledger_controller','deypay_ledger_reader','deypay_wallet_owner','deypay_wallet_provisioner'];
+    runtime text[];
     offending text;
 BEGIN
+    -- Only roles that exist; privilege functions fail on unknown roles and
+    -- PostgreSQL does not promise to evaluate an existence filter first.
+    runtime := ARRAY(SELECT c.name FROM unnest(candidates) AS c(name) WHERE EXISTS (SELECT FROM pg_roles WHERE rolname = c.name));
     IF EXISTS (
         SELECT 1 FROM pg_class c CROSS JOIN unnest(runtime) AS r(name)
         WHERE c.relnamespace IN ('ledger'::regnamespace, 'operations'::regnamespace) AND c.relkind IN ('r','p')
@@ -204,7 +209,13 @@ BEGIN
         ('deypay_ledger_controller', 'operations.record_balance_evidence(uuid,uuid,text,text,bytea,timestamptz)'),
         ('deypay_ledger_controller', 'operations.record_transaction_evidence(uuid,text,uuid,uuid,text,text,text,bytea,timestamptz)'),
         ('deypay_ledger_controller', 'operations.complete_reconciliation(uuid,text[],uuid)'),
-        ('deypay_ledger_controller', 'operations.update_case(uuid,text,uuid,text,text,uuid)'))
+        ('deypay_ledger_controller', 'operations.update_case(uuid,text,uuid,text,text,uuid)'),
+        -- Wallet functions (wallet-grants.psql): zero-balance account opening,
+        -- balance reads, hold/activation state and the operator binding.
+        ('deypay_wallet_owner', 'ledger.open_customer_accounts(uuid)'),
+        ('deypay_wallet_owner', 'ledger.customer_balance(uuid,uuid)'),
+        ('deypay_wallet_owner', 'ledger.asset_controls(uuid)'),
+        ('deypay_wallet_owner', 'ledger.authenticated_operator(uuid,text)'))
     SELECT string_agg(r.name || ' → ' || p.oid::regprocedure::text, ', ') INTO offending
     FROM pg_proc p CROSS JOIN unnest(runtime) AS r(name)
     WHERE p.pronamespace IN ('ledger'::regnamespace, 'operations'::regnamespace)

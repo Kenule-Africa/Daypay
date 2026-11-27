@@ -28,3 +28,69 @@ Nuvion is the preferred candidate. Each row concerns DEYPAY’s proposed Nigeria
 | Incident and recovery support | Unverified | Escalation contacts, incident response and recovery commitments | Operations |
 
 On review, record the evidence reference, date, reviewer, exact scope and restrictions. Apply the roadmap classifications Confirmed, Confirmed with restrictions, Unverified or Unsupported. Store confidential contracts in controlled storage and record only their reference here. Live own-bank and third-party payouts require separate evidence under DEC-008 and DEC-009.
+
+## Provider strategy and portability · Phase 6
+
+**Direction (owner, 2026-11-27):** Nuvion is DEYPAY's first intended infrastructure integration; ImportaPay is a retained alternative. This is product direction, not capability evidence, a commercial agreement or production approval. Both are recorded in `integrations.providers` as `CANDIDATE`, neither approved nor enabled, with no capability.
+
+### Capability stages
+
+`integrations.provider_capabilities` (the Phase 2 register, extended in migration `202611261401`) records each provider capability by service, asset, network, corridor, country and environment, with a verification stage:
+
+`PENDING_CONFIRMATION` → `DOCUMENTED` → `TECHNICALLY_VERIFIED` → `SANDBOX_TESTED` → `CONTRACTUALLY_APPROVED` → `PRODUCTION_ENABLED`, or `UNSUPPORTED`.
+
+- Every stage beyond pending needs an evidence reference.
+- `production_approved` holds exactly at `PRODUCTION_ENABLED`.
+- `operational` records current health.
+
+`wallets.eligible_address_providers` decides which providers may provision a deposit address for an asset network, and in what order. `select_address_provider` takes the first one. Only a provider's applicable rows count: production environment, service `DEPOSIT_ADDRESS_PROVISIONING`, no corridor or country scope, and a matching or NULL asset and network.
+
+1. **Explicit restrictions win.** An `UNSUPPORTED` or non-operational row at any applicable scope excludes the provider. A broader, narrower or equally specific approval never overrides it.
+2. **The most specific scope decides.** The scopes are exact asset and network, then asset-only or network-only (these two are equal), then provider-wide. Every row at the deciding scope must be `PRODUCTION_ENABLED`, production-approved and available. Rows that disagree at the same scope exclude the provider.
+3. **The provider must be approved.** It must be `APPROVED` and enabled.
+4. **Ordering.** Providers are ordered by the lowest `routing_priority` among the deciding rows, then by provider code, so the order is deterministic.
+
+New requests go to the first provider. A pending request is submitted only while its own provider is still eligible and the wallet may still receive (see [the Phase 6 review](PHASE6-WALLET-REVIEW.md)). Only the database administrator writes these rows, and every change is kept in `wallets.registry_changes`.
+
+| Provider | Capability | Stage | Inspection notes (2026-11-27) |
+|---|---|---|---|
+| Nuvion | Deposit address provisioning (USDC/USDT, per network) | Pending confirmation | Public reporting describes Nuvion stablecoin rails, an embedded-wallet partnership with Turnkey and collaboration with Flutterwave. No official deposit-address provisioning API contract, network/token list, address-ownership, idempotency or webhook specification was found. A wallet API at `docs.nuwebgroup.com` could not be confirmed as Nuvion's. No adapter is implemented. |
+| Nuvion | Webhooks and status lookup | Pending confirmation | Signature scheme, replay window and lookup-by-reference unverified; required before any adapter can report outcomes. |
+| ImportaPay | Deposit address provisioning | Pending confirmation | Not inspected in this cycle; retained as an alternative candidate. |
+
+### Canonical interface
+
+`deypay_application::wallets::DepositAddressProvider` is the only provisioning port. Adapters map every provider response and transport failure onto `ProviderResult`:
+- `Provisioned`, `Accepted` or `Failed`;
+- `Unknown` (may have been received);
+- `NotReceived` (certainly not received);
+- `Unsupported`.
+
+They also confirm assigned addresses through `confirm_address`. No provider data type enters the wallet model.
+
+`AddressRequest.reference` is DEYPAY's durable request identity (`deypay-addr-<uuid>`), sent as the idempotency key. Providers see DEYPAY wallet identifiers, never customer identities.
+
+### Reference mapping and portability
+
+- **Identity.** Wallet IDs, balances and ledger accounts belong to DEYPAY. Each provisioning request and address keeps its `provider_id`, the provider's `external_reference` / `external_wallet_reference`, the asset and network, and its evidence. None of these become customer-facing identifiers.
+- **Address ownership.**
+  - One on-chain address (with its memo) on a network belongs to one customer and one provider for ever. It may serve several of that customer's tokens.
+  - An address is never edited in place. It is retired and kept, so late deposits remain attributable.
+  - Only a verified address is shown.
+- **Switching providers.** A switch changes routing for new requests only. Existing addresses, provider operations and custodial balances stay with their original provider, and nothing moves implicitly.
+- **Failover safety.** A request that was submitted or whose outcome is unknown is resolved only by lookup with its original provider. It is never resubmitted there or through another provider. Only a request the provider certainly did not receive may be submitted again.
+
+### Phase 8 handoff
+
+Before Nuvion or ImportaPay can provision addresses, Phase 8 must deliver:
+
+1. A provider adapter implementing `DepositAddressProvider` from verified documentation, with credentials kept outside Git and requests authenticated.
+2. A provider-integration worker that runs `AddressProvisioner` under a login holding only `deypay_wallet_provisioner`.
+3. Webhook intake with signature validation (SEC-WHK-001–007), feeding the same `record` and `verify` path.
+4. A sweep that re-attempts confirmation of addresses left `PENDING_VERIFICATION`.
+5. Sandbox routing through `environment = 'sandbox'` capability rows.
+6. Health monitoring that updates `operational`.
+7. A routing policy beyond priority, if required.
+8. Reconciliation of provider address lists against `wallets.wallet_addresses`.
+
+Each capability is then advanced through the stages above with recorded evidence.

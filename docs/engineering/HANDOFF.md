@@ -2,7 +2,7 @@
 
 ## Current state
 
-- **Latest accepted `main` baseline:** `4fc5c034385ebe34d3b4c9f10594664b923ecd50` (supplied as the final PR #14 merge commit). PR #14 contains the Cycle 2 authentication completion; PR #10 remains open, draft, unmerged and on hold.
+- **Latest accepted `main` baseline:** `a9bf52baf781c8892463b6e3d0edb2712a9cf1f3`, the PR #19 merge; push run [45905528166](https://github.com/Kenule-Africa/Daypay/actions/runs/45905528166) passed. PR #18 (Phase 5 ledger) merged at `5ddb1c1`, and push run [45905299130](https://github.com/Kenule-Africa/Daypay/actions/runs/45905299130) passed on that commit. PR #14 contains the Cycle 2 authentication completion. PR #10 remains open, draft, unmerged and on hold.
 - **Phase 1 and Phase 2:** accepted on the recorded evidence; the corrected Cargo.lock and hosted backend/frontend verification are recorded in [PROGRESS.md](PROGRESS.md#2026-11-18--verified-github-actions-run).
 - **IMP-P3-001–004:** registration and password hashing retain their existing accepted/testing/deferred statuses. PR [#8](https://github.com/Kenule-Africa/Daypay/pull/8) remains the merged acceptance for P3-004.
 - **Cycle 1 Phase 3 acceptance:** IMP-P3-007/011 are Completed — Engineering Accepted from merged PR [#11](https://github.com/Kenule-Africa/Daypay/pull/11); final head `04ef4e62386de8747a1bb792723e4c04ebc515c5` passed backend/frontend Actions run [45598725222](https://github.com/Kenule-Africa/Daypay/actions/runs/45598725222). IMP-P3-010, including the approved profile-image extension, is Completed — Engineering Accepted from merged PR [#12](https://github.com/Kenule-Africa/Daypay/pull/12); final head `0a61dcb48f3161cceb6b1560f0b7700116a5be2c` passed backend/frontend Actions runs [45629571933](https://github.com/Kenule-Africa/Daypay/actions/runs/45629571933) and [45630944319](https://github.com/Kenule-Africa/Daypay/actions/runs/45630944319). P3-009's core uniqueness controls are accepted, but its availability endpoint remains incomplete and the task stays In testing.
@@ -13,10 +13,39 @@
 - **Next planned work:** Claude — production account frontend, using real approved APIs and the existing Phase 17 account-first scope. Codex — authentication environment activation. These are next priorities, not new roadmap task IDs or proof that deployment prerequisites are satisfied.
 - **Owner-directed delivery order:** complete customer-account backend, then the first real-API account frontend, then production-intended transaction implementation and internal verification, then resume KYC verification implementation. The scheduling exception and frontend milestone are recorded in [the roadmap](../08-IMPLEMENTATION-PLAN.md#30-phase-17--frontend-integration-and-user-experience).
 - **KYC and financial eligibility:** application accounts and ordinary non-financial account management do not require KYC. KYC remains a separate eligibility gate for applicable financial services; no transaction may bypass KYC, account restrictions, limits, compliance or release approvals.
-- **Phase 5 financial ledger (Claude):** IMP-P5-001–017 are implemented on `feat/claude-phase5-financial-ledger`, independently reviewed and remediated ([PHASE5-LEDGER-SECURITY-REVIEW.md](PHASE5-LEDGER-SECURITY-REVIEW.md)), and In review. No financial endpoint or provider uses the ledger yet.
+- **Phase 5 financial ledger (Claude):** IMP-P5-001–017 are Completed — Engineering Accepted through merged PR #18, including the independent review remediation ([PHASE5-LEDGER-SECURITY-REVIEW.md](PHASE5-LEDGER-SECURITY-REVIEW.md)). Engineering acceptance is not activation; no financial endpoint or provider moves funds.
   - **Install:** apply migration `202611260001`, then `infrastructure/postgres/ledger-roles.psql` (cluster administrator), then `ledger-grants.psql`. The grants run as a DBA or as a migration administrator that is a member of `deypay_ledger_owner`; rerun them after any later ledger migration.
   - **Roles:** grant `deypay_ledger_poster`, `deypay_ledger_evidence`, `deypay_ledger_controller` or `deypay_ledger_reader` to specific logins only when the corresponding process is authorized. Never grant poster and evidence to one login.
   - **Kept fail-closed until approved:** customer crediting, transfers and reservations (rows in `ledger.capability_activations`), operator actions (login bindings in `ledger.operator_logins`, after IMP-P16-001), and settlement or post-submission release (an authenticated adapter holding `deypay_ledger_evidence`). Only the DBA writes those tables, under change control.
+- **Phase 6 wallets and assets (Claude):** IMP-P6-001–010 are implemented on `feat/claude-phase6-wallet-asset-management` and In review.
+  - **What it does:**
+    - USDC and USDT wallets are created automatically, atomically and idempotently on the customer's first `GET /api/v1/wallets`, together with their zero-balance Phase 5 ledger accounts (`ledger.open_customer_accounts`).
+    - Balances come only from `ledger.customer_balance`.
+    - Statuses and restrictions are enforced in PostgreSQL.
+    - The registries hold USDC, USDT and NGN only; no network, contract or provider capability is enabled.
+  - **Install:** after the Phase 5 steps, apply migration `202611261401` (with the other migrations), then `infrastructure/postgres/wallet-roles.psql` (cluster administrator), `ledger-grants.psql` again, and `wallet-grants.psql`, as the DBA or a migration administrator that may act as `deypay_wallet_owner` and `deypay_ledger_owner`.
+  - **Roles:**
+    - `deypay_app` (the API login) executes only the five customer wallet functions.
+    - `deypay_wallet_provisioner` is only for a future provider-integration worker, never the API or a poster login.
+    - Wallet status changes need a `deypay_ledger_controller` login bound in `ledger.operator_logins` whose operator holds `WALLET_STATUS_CONTROL`.
+    - No new environment variables.
+  - **Endpoints:** behind the customer session guard, served from `/api/v1`:
+    - `GET /wallets`, `GET /wallets/{wallet_id}` and `GET /wallets/{wallet_id}/balance`;
+    - `GET` and `POST /wallets/{wallet_id}/deposit-addresses`;
+    - `GET /networks` and `GET /assets/{asset}/networks` (API §§18.8, 19).
+    - The web app shows them at `/app/wallets`.
+  - **Test:** run `--test wallets` with the infrastructure suite, `registration_http` (which includes the wallet HTTP cases), and `npm test` in `frontend/`.
+  - **Provider boundary:** `DepositAddressProvider` / `AddressProvisioner` with durable requests. No adapter exists; Nuvion and ImportaPay are `CANDIDATE` providers with no capability ([PROVIDER-CAPABILITIES.md](PROVIDER-CAPABILITIES.md)).
+  - **Review remediation:** the independent review of PR #20 is resolved on the same branch ([PHASE6-WALLET-REVIEW.md](PHASE6-WALLET-REVIEW.md)). Before submitting a pending request, `begin_provisioning` revalidates eligibility and its own provider, locking the wallet before the request. Provider precedence puts restrictions first and is deterministic. The migration was modified in place because it is unmerged.
+  - **Phase 9 inputs:** that record lists what deposits must do:
+    - attribute deposits from address records of every status, including retired and suspended ones;
+    - never automatically credit late, unsolicited, unsupported or non-representable deposits, and route them to review or suspense instead;
+    - add the deposit-address QR (FR-WAL-010), for verified ACTIVE addresses only.
+  - **Must stay disabled:**
+    - network, contract and capability enablement until verified evidence exists;
+    - `CUSTOMER_CREDIT` and the other activations until approval;
+    - granting the provisioner role until an authenticated adapter exists;
+    - deposits, transfers and withdrawals.
 - **Release boundary:** CI success is not PR acceptance, production deployment, provider capability evidence, legal/regulatory approval or authorization for live financial execution.
 
 ## Owner-approved testing policy · 26 November 2026
@@ -60,10 +89,10 @@ Next planned work is Claude's production account frontend and Codex's authentica
 
 ## Next actions
 
-1. Claude proceeds with the production account frontend within the existing account-first Phase 17 milestone, using real APIs and the approved session/profile contracts; do not introduce mock product endpoints or invented financial state.
+1. Owner reviews the Phase 6 pull request. Confirm or amend the Phase 6 wallet policy defaults recorded in [DECISIONS.md](DECISIONS.md) (wallet eligibility, automatic creation, RESTRICTED/SUSPENDED semantics, deposit-address KYC and credit-activation gating).
 2. Codex owns authentication environment activation. Verify and record live configuration/secrets custody, PostgreSQL connectivity and roles, HTTPS ingress/routing, approved admission policies and monitoring. Keep authentication disabled/fail-closed until applicable gates are cleared.
 3. Keep IMP-P3-002 In testing until authorized real Resend staging delivery and confirmation are recorded. CI does not establish external delivery. Local token generation, redemption and HTTPS sign-in were exercised on the workstation with the [local outbox example](LOCAL-EMAIL-VERIFICATION.md) on 2026-11-26; that is not delivery evidence. The follow-up branch fixes the sign-in redirect origin and the Windows dev startup path, adds production no-token-exposure tests, and records the local ingress and credential changes. `next dev` still exposes request cookies by design of Next.js 15.5, and the owner browser walkthrough is pending; see [PROGRESS.md](PROGRESS.md).
 4. Keep PR #10 open and on hold. Do not resume KYC verification implementation until the first account UI and internal transaction validation are complete and the owner authorizes resumption.
-5. Continue the approved financial-backend and internal-validation sequence after the account frontend; maintain fail-closed financial eligibility and all provider, KYC, compliance and release gates.
+5. Continue the approved financial-backend sequence: Phase 7 internal transfers build on the Phase 5 ledger and Phase 6 wallets; Phase 8 delivers the provider adapters, provisioning worker, webhook verification and sandbox routing listed in [PROVIDER-CAPABILITIES.md](PROVIDER-CAPABILITIES.md#phase-8-handoff). Maintain fail-closed financial eligibility and all provider, KYC, compliance and release gates.
 
 Codex owns the Cycle 2 authentication rate-limit interface and Claude owns password recovery, username availability and email-verification acceptance testing; Claude's previous Phase 4 PR remains on hold. Preserve separate worktrees and migration/API coordination. The repository owner reviews and merges; this handoff grants no merge, deployment, provider or live-execution approval.

@@ -77,3 +77,53 @@ export type ApiErrorBody = {
     details?: { reason?: string; fields?: string[] };
   };
 };
+
+// Wallet APIs (API §§18–19, backend deypay-api wallets.rs). Amounts are exact
+// decimal strings from the DEYPAY ledger; they are never computed here.
+export type WalletStatus = "provisioning" | "active" | "restricted" | "suspended" | "closed";
+
+export type WalletRestriction =
+  | "wallet_provisioning"
+  | "wallet_restricted"
+  | "wallet_suspended"
+  | "wallet_closed"
+  | "account_restricted"
+  | "kyc_required"
+  | "asset_unavailable"
+  | "asset_on_hold"
+  | "financial_activity_not_enabled";
+
+export type WalletBalance = { available: string; reserved: string; total: string };
+
+export type Wallet = {
+  id: string;
+  asset: string;
+  asset_name: string;
+  status: WalletStatus;
+  /** Null only while the wallet's ledger accounts are being opened. */
+  balance: WalletBalance | null;
+  restrictions: WalletRestriction[];
+  capabilities: { deposit: boolean; send: boolean };
+  created_at: string;
+  updated_at: string;
+};
+
+export type AddressStatus = "active" | "pending" | "not_requested" | "unavailable";
+
+export type WalletNetwork = {
+  network: string;
+  name: string;
+  chain_family: "evm" | "solana";
+  token_contract: string;
+  token_decimals: number;
+  memo_required: boolean;
+  required_confirmations: number | null;
+  deposit: {
+    available: boolean;
+    address_status: AddressStatus;
+    address: { address: string; memo: string | null } | null;
+  };
+  withdrawal: { available: boolean };
+};
+
+export type WalletDetail = Wallet & { networks: WalletNetwork[] };

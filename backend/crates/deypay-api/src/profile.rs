@@ -83,7 +83,7 @@ pub fn unavailable() -> Router {
         })
 }
 
-fn json_response(status: StatusCode, body: Value) -> Response {
+pub(crate) fn json_response(status: StatusCode, body: Value) -> Response {
     (
         status,
         [
@@ -95,7 +95,7 @@ fn json_response(status: StatusCode, body: Value) -> Response {
         .into_response()
 }
 
-fn error(status: StatusCode, code: &str, message: &str, details: Value) -> Response {
+pub(crate) fn error(status: StatusCode, code: &str, message: &str, details: Value) -> Response {
     json_response(
         status,
         json!({"error":{"code":code,"message":message,"details":details}}),
@@ -199,7 +199,7 @@ fn single_header(headers: &HeaderMap, name: header::HeaderName) -> Option<&str> 
 
 /// A non-empty JSON object of at most 16 KiB with an `application/json` type.
 /// Anything else is an invalid request.
-async fn json_object(req: Request) -> Option<Map<String, Value>> {
+pub(crate) async fn json_object(req: Request) -> Option<Map<String, Value>> {
     let is_json = single_header(req.headers(), header::CONTENT_TYPE)
         .and_then(|v| v.split(';').next())
         .is_some_and(|v| v.trim().eq_ignore_ascii_case("application/json"));

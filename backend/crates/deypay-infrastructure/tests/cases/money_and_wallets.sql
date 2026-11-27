@@ -7,8 +7,9 @@ DECLARE
     stored numeric;
 BEGIN
     INSERT INTO identity.users(email,status) VALUES ('money@example.test','REGISTERED') RETURNING id INTO customer;
-    INSERT INTO wallets.assets(symbol,name,asset_type,accounting_precision) VALUES ('USDC','test USDC','STABLECOIN',6) RETURNING id INTO usd;
-    INSERT INTO wallets.assets(symbol,name,asset_type,accounting_precision) VALUES ('NGN','test NGN','FIAT',2) RETURNING id INTO ngn;
+    -- USDC and NGN are seeded by the asset registry (migration 202611261401).
+    SELECT id INTO usd FROM wallets.assets WHERE symbol = 'USDC';
+    SELECT id INTO ngn FROM wallets.assets WHERE symbol = 'NGN';
     INSERT INTO wallets.wallet_profiles(user_id,asset_id,asset_symbol,status,provisioning_status)
         VALUES(customer,usd,'USDC','PROVISIONING','PENDING');
     BEGIN

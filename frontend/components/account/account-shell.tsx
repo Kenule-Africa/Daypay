@@ -1,6 +1,6 @@
 "use client";
 
-import { LayoutDashboard, LogOut, ShieldCheck, SlidersHorizontal, UserRound } from "lucide-react";
+import { LayoutDashboard, LogOut, ShieldCheck, SlidersHorizontal, UserRound, Wallet } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import * as React from "react";
@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 
 const navigation = [
   { href: "/app", label: "Overview", icon: LayoutDashboard },
+  { href: "/app/wallets", label: "Wallets", icon: Wallet },
   { href: "/app/profile", label: "Profile", icon: UserRound },
   { href: "/app/preferences", label: "Preferences", icon: SlidersHorizontal },
   { href: "/app/security", label: "Security", icon: ShieldCheck },
@@ -121,7 +122,7 @@ export function AccountShell({ children }: { children: React.ReactNode }) {
         aria-label="Account"
         className="fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-30 rounded-[1.4rem] bg-ink-950/95 p-1.5 shadow-pop backdrop-blur-xl lg:hidden"
       >
-        <ul className="grid grid-cols-4">
+        <ul className="grid grid-cols-5">
           {navigation.map(({ href, label, icon: Icon }) => {
             const active = isActive(pathname, href);
             return (

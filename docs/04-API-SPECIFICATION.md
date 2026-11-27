@@ -1075,6 +1075,33 @@ Wallets may be:
 
 The API must not accept a customer-supplied balance value as authoritative.
 
+## 18.8 Implemented Contract (IMP-P6-006/009)
+
+**Access and errors**
+- Every route in §§18–19 requires an active customer session and serves only that customer; responses use `Cache-Control: no-store`.
+- An unknown wallet, another customer's wallet and a malformed identifier all return the same 404 `NOT_FOUND`.
+- When the wallet database or ledger is unavailable, the response is 503 `SERVICE_UNAVAILABLE`. No balance is substituted.
+
+**Wallet creation**
+- `GET /api/v1/wallets` first creates any missing USDC and USDT wallet, together with its zero-balance ledger accounts. This applies to customers who can hold a session.
+- Creation is atomic and idempotent, and there is no customer NGN wallet.
+
+**Wallet object**
+- Fields: `id`, `asset`, `asset_name`, `status` (§18.6), `balance`, `restrictions`, `capabilities`, `created_at` and `updated_at`.
+- `balance` holds `available`, `reserved` and `total` as exact decimal strings with the asset's accounting precision, or is null while the wallet is being set up.
+- `restrictions` lists codes from: `wallet_provisioning`, `wallet_restricted`, `wallet_suspended`, `wallet_closed`, `account_restricted`, `kyc_required`, `asset_unavailable`, `asset_on_hold`, `financial_activity_not_enabled`.
+- `capabilities` holds the booleans `deposit` and `send`.
+
+**Wallet status**
+- An active wallet is reported `restricted` while its account is restricted or its asset is suspended or on hold.
+- `restricted` blocks outbound movement; `suspended` blocks all activity; `closed` is final and stays in history.
+- Only an authenticated operator holding `WALLET_STATUS_CONTROL` changes a stored status. There is no customer endpoint for it.
+
+**Other wallet routes**
+- `GET /api/v1/wallets/{wallet_id}` adds `networks`: the enabled networks for the wallet's asset. Each includes its token contract and decimals, `deposit.available`, `deposit.address_status` (`active`, `pending`, `not_requested` or `unavailable`), the verified `deposit.address` only when active, and `withdrawal.available`.
+- `GET /api/v1/wallets/{wallet_id}/balance` returns `wallet_id`, `asset`, `status`, `available`, `reserved` and `total`.
+- Pending deposits are not part of any balance. They will be reported separately once deposit detection (Phase 9) exists.
+
 ---
 
 # 19. DEPOSIT AND BLOCKCHAIN NETWORK APIS
@@ -1118,6 +1145,28 @@ Request:
 ```
 
 The address is illustrative.
+
+### Implemented behaviour (IMP-P6-007/008)
+
+**Supported networks**
+- `GET /api/v1/networks` lists only enabled networks, each with its enabled asset contracts.
+- `GET /api/v1/assets/{asset}/networks` does the same for one asset. Any asset other than USDC or USDT returns 422 `UNSUPPORTED_ASSET`.
+- Nothing is presented as supported until the database administrator enables the network and a verified token contract.
+
+**Reading a deposit address**
+- `GET .../deposit-addresses` takes exactly one `network` query parameter and returns `address` and `memo` only for a verified, active address the wallet may receive on. Otherwise they are null, and `status` says why.
+
+**Requesting a deposit address**
+- `POST .../deposit-addresses` accepts exactly `{"network": "<code>"}` and needs the browser `Origin`.
+- It returns:
+  - the active address (200);
+  - or a pending provisioning request (202), reusing an open one;
+  - or one of these errors:
+    - 422 `UNSUPPORTED_NETWORK`;
+    - 403 `ACCOUNT_RESTRICTED` or `KYC_REQUIRED`;
+    - 503 `SERVICE_UNAVAILABLE` with `details.reason` `deposits_not_enabled` (the asset's crediting is not activated);
+    - 503 `PROVIDER_UNAVAILABLE` (no approved provider capability).
+- The request never contacts a provider. A provider-integration worker submits it once, resolves an unknown outcome only by lookup with the same provider, and shows an assigned address only after verifying it.
 
 ## 19.6 Deposit History
 
