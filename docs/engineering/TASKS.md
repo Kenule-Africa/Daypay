@@ -45,8 +45,9 @@ Current implementation assignments are listed here. Assignment status is separat
 | Claude | IMP-P4-005 KYC API Endpoints | `feat/claude-imp-p4-005-007-kyc-controls` | Workspace: `DeyPay-claude`. PR implementation uses a `CustomerAuthenticator` port and server-derived identity; the current API binary has no trusted authenticator and KYC routes fail closed. It includes the IMP-P4-002 PostgreSQL follow-up. Further KYC verification implementation is held by owner decision. Preserve PR gaps; do not assume approved submission/document requirements. No login/session implementation. | Trusted P3-005/006 identity for any future operational API; PR10 KYC persistence and reviewed permissions; approved submission requirements and applicable compliance policy before resumption | On Hold — Owner-Directed | Draft, open and unmerged PR [#10](https://github.com/Kenule-Africa/Daypay/pull/10), head `a5ff8c3e1474f7bde4c4c06089cf10682f98c7cb`; backend/frontend CI passed in runs 45559944177 and 45559952380. Not accepted. |
 | Claude | IMP-P4-006 Customer Restriction Engine | `feat/claude-imp-p4-005-007-kyc-controls` | Workspace: `DeyPay-claude`. PR contains fail-closed restriction and central authorization foundations. No financial operation is wired or activated. Preserve code and defer further work under the owner-directed hold. | IMP-P4-001–002; approved eligibility/restriction rules before any operational use; financial work must remain blocked unless eligibility is verified | On Hold — Owner-Directed | Same draft, open and unmerged PR [#10](https://github.com/Kenule-Africa/Daypay/pull/10), head `a5ff8c3e1474f7bde4c4c06089cf10682f98c7cb`; CI passed. Not accepted. |
 | Claude | IMP-P4-007 Transaction Limit Foundation | `feat/claude-imp-p4-005-007-kyc-controls` | Workspace: `DeyPay-claude`. PR contains exact-money and limit-usage decision foundations; no thresholds are configured, usage is not persisted/consumed, and no financial operation calls them. Preserve code and defer further work under the owner-directed hold. | Approved limit thresholds, scopes/windows and eligibility requirements; coordinated implementation with IMP-P4-006 and transaction acceptance flows | On Hold — Owner-Directed | Same draft, open and unmerged PR [#10](https://github.com/Kenule-Africa/Daypay/pull/10), head `a5ff8c3e1474f7bde4c4c06089cf10682f98c7cb`; CI passed. Not accepted. |
+| Codex (continued from Claude) | IMP-P7-001–010 Internal Transfers | `feat/claude-phase7-internal-transfers` | Workspace: `DeyPay-claude`. Migrations `202611271601` and `202611271602`; `payments-roles.psql` and `payments-grants.psql` (allowlist entries in `ledger-grants.psql` and `wallet-grants.psql`); `deypay-application`, `deypay-infrastructure` and `deypay-api` `src/transfers.rs`; transfer tests; frontend `/app/payments`. | Merged Phase 5 ledger and Phase 6 wallets; the approvals in [BLOCKERS.md](BLOCKERS.md) before activation | In review | [PR #23](https://github.com/Kenule-Africa/Daypay/pull/23); CI evidence in [PROGRESS.md](PROGRESS.md) |
 
-The canonical roadmap statuses are separate from assignment status. IMP-P3-007/011 are Completed — Engineering Accepted through merged PR #11; IMP-P3-010 through merged PR #12; and IMP-P3-008/009/012 through merged PR #14 at `4fc5c034385ebe34d3b4c9f10594664b923ecd50`, with backend/frontend Actions run `45810331511` passing. IMP-P3-002 remains In testing until real Resend staging delivery and confirmation are evidenced. The early account frontend (PR #15, #17, #19), the Phase 5 ledger (PR #18) and Phase 6 wallets (PR #20) are merged. Next in the approved schedule (order 3) are Phase 7 internal transfers (IMP-P7-001–010) and Phase 8 provider-framework foundations (IMP-P8-001–013). Neither has an agent assignment recorded yet; assign one here before work starts. Codex's authentication environment activation remains outstanding. These are priorities, not new roadmap task IDs. Live activation remains subject to [BLOCKERS.md](BLOCKERS.md). IMP-P3-013 remains deferred by owner decision; P3-003 remains Deferred — Post-MVP. IMP-P4-005/006/007 remain blocked by the owner-directed hold while PR #10 remains open and unmerged.
+The canonical roadmap statuses are separate from assignment status. IMP-P3-007/011 are Completed — Engineering Accepted through merged PR #11; IMP-P3-010 through merged PR #12; and IMP-P3-008/009/012 through merged PR #14 at `4fc5c034385ebe34d3b4c9f10594664b923ecd50`, with backend/frontend Actions run `45810331511` passing. IMP-P3-002 remains In testing until real Resend staging delivery and confirmation are evidenced. The early account frontend (PR #15, #17, #19), the Phase 5 ledger (PR #18) and Phase 6 wallets (PR #20) are merged. Phase 7 internal transfers (IMP-P7-001–010) are assigned to Codex after the handoff and In review on `feat/claude-phase7-internal-transfers`. Phase 8 provider-framework foundations (IMP-P8-001–013), next in the approved schedule (order 3), have no agent assignment recorded yet; assign one here before work starts. Codex's authentication environment activation remains outstanding. These are priorities, not new roadmap task IDs. Live activation remains subject to [BLOCKERS.md](BLOCKERS.md). IMP-P3-013 remains deferred by owner decision; P3-003 remains Deferred — Post-MVP. IMP-P4-005/006/007 remain blocked by the owner-directed hold while PR #10 remains open and unmerged.
 
 ## Shared-file ownership and integration plan
 
@@ -219,16 +220,23 @@ IMP-P6-001–010 are Completed — Engineering Accepted: PR #20 (Claude, `feat/c
 
 | Task ID | Roadmap task | Status |
 |---|---|---|
-| IMP-P7-001 | Recipient resolution. | Backlog |
-| IMP-P7-002 | Username lookup controls. | Backlog |
-| IMP-P7-003 | Transfer request validation. | Backlog |
-| IMP-P7-004 | Customer eligibility checks. | Backlog |
-| IMP-P7-005 | Balance validation. | Backlog |
-| IMP-P7-006 | Transfer authorization. | Backlog |
-| IMP-P7-007 | Atomic ledger posting. | Backlog |
-| IMP-P7-008 | Idempotency. | Backlog |
-| IMP-P7-009 | Transaction history integration. | Backlog |
-| IMP-P7-010 | Transfer tests. | Backlog |
+| IMP-P7-001 | Recipient resolution. | In review |
+| IMP-P7-002 | Username lookup controls. | In review |
+| IMP-P7-003 | Transfer request validation. | In review |
+| IMP-P7-004 | Customer eligibility checks. | In review |
+| IMP-P7-005 | Balance validation. | In review |
+| IMP-P7-006 | Transfer authorization. | In review |
+| IMP-P7-007 | Atomic ledger posting. | In review |
+| IMP-P7-008 | Idempotency. | In review |
+| IMP-P7-009 | Transaction history integration. | In review |
+| IMP-P7-010 | Transfer tests. | In review |
+
+IMP-P7-001–010 are In review in [PR #23](https://github.com/Kenule-Africa/Daypay/pull/23). Codex continued Claude’s feature branch. The handoff assessment by task and commit-specific checks are in [PROGRESS.md](PROGRESS.md).
+- **Persistence:** migration `202611271601_internal_transfers.sql` adds `payments.internal_transfers`, the recipient-lookup budget and the payments functions. Grants are in `infrastructure/postgres/payments-roles.psql` and `payments-grants.psql`, with allowlist entries in `ledger-grants.psql` and `wallet-grants.psql`.
+- **Functional:** recipient resolution by exact username, the two-step transaction authorization (API §20.6), atomic execution through `ledger.transfer_between_customers`, idempotency, shared references, participant-scoped history and the `/app/payments` pages.
+- **Tests:** `backend/crates/deypay-infrastructure/tests/transfers.rs`, `backend/crates/deypay-api/tests/cases/transfer_http.rs`, application and API unit tests, and the frontend payment tests.
+- **Disabled:** the shipped `NoApprovedPolicy` gate refuses every transfer, the migrations seed no `CUSTOMER_TRANSFER` activation, and recipient lookups need a budget recorded by the DBA.
+- **Not in this delivery:** windowed limits (IMP-P4-007, on hold; DEC-011), step-up verification (DEC-002), fees (DEC-010), notifications (Phase 15), phone discovery (IMP-P3-003), QR payments, payment links and saved beneficiaries. See [BLOCKERS.md](BLOCKERS.md).
 
 ## Phase 8 · PROVIDER INTEGRATION FRAMEWORK (§21)
 

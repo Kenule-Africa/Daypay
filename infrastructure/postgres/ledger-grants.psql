@@ -97,9 +97,11 @@ GRANT SELECT ON ALL TABLES IN SCHEMA ledger, operations TO deypay_ledger_reader;
 
 DO $$
 DECLARE
-    -- The wallet roles (wallet-roles.psql) are checked once they exist.
+    -- The wallet and payments roles (wallet-roles.psql, payments-roles.psql)
+    -- are checked once they exist.
     candidates CONSTANT text[] := ARRAY['deypay_app','deypay_ledger_poster','deypay_ledger_evidence',
-        'deypay_ledger_controller','deypay_ledger_reader','deypay_wallet_owner','deypay_wallet_provisioner'];
+        'deypay_ledger_controller','deypay_ledger_reader','deypay_wallet_owner','deypay_wallet_provisioner',
+        'deypay_payments_owner'];
     runtime text[];
     offending text;
 BEGIN
@@ -215,7 +217,11 @@ BEGIN
         ('deypay_wallet_owner', 'ledger.open_customer_accounts(uuid)'),
         ('deypay_wallet_owner', 'ledger.customer_balance(uuid,uuid)'),
         ('deypay_wallet_owner', 'ledger.asset_controls(uuid)'),
-        ('deypay_wallet_owner', 'ledger.authenticated_operator(uuid,text)'))
+        ('deypay_wallet_owner', 'ledger.authenticated_operator(uuid,text)'),
+        -- Payments functions (payments-grants.psql): the customer transfer and
+        -- activation state.
+        ('deypay_payments_owner', 'ledger.transfer_between_customers(text,uuid,uuid,uuid,text,uuid,text,uuid,uuid)'),
+        ('deypay_payments_owner', 'ledger.asset_controls(uuid)'))
     SELECT string_agg(r.name || ' → ' || p.oid::regprocedure::text, ', ') INTO offending
     FROM pg_proc p CROSS JOIN unnest(runtime) AS r(name)
     WHERE p.pronamespace IN ('ledger'::regnamespace, 'operations'::regnamespace)

@@ -26,6 +26,8 @@ mod password_recovery;
 mod profile_http;
 #[path = "cases/registration_admission.rs"]
 mod registration_admission;
+#[path = "cases/transfer_http.rs"]
+mod transfer_http;
 #[path = "cases/username_availability.rs"]
 mod username_availability;
 #[path = "cases/wallet_http.rs"]

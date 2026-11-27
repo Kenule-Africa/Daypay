@@ -16,6 +16,7 @@ pub mod rate_limit;
 pub mod registration;
 pub mod repositories;
 pub mod sessions;
+pub mod transfers;
 pub mod wallets;
 
 pub static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations");

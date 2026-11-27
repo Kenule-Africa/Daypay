@@ -5,7 +5,8 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
-import type { Preferences, Profile, Wallet, WalletDetail } from "../contracts";
+import type { Preferences, Profile, Transaction, Wallet, WalletDetail } from "../contracts";
+import { isTransactionId } from "../transfers";
 import { isWalletId } from "../wallets";
 
 export const SESSION_COOKIE = "__Host-deypay_session";
@@ -126,4 +127,35 @@ export async function loadWallet(id: string): Promise<WalletState> {
   if (result?.status !== 200) return { state: "unavailable" };
   const data = (result.body as { data?: WalletDetail }).data;
   return data?.id && Array.isArray(data.networks) ? { state: "ok", wallet: data } : { state: "unavailable" };
+}
+
+export type TransactionsState =
+  | { state: "ok"; transactions: Transaction[]; next: string | null }
+  | { state: "unavailable" };
+export type TransactionState = { state: "ok"; transaction: Transaction } | { state: "not_found" } | { state: "unavailable" };
+
+/**
+ * One page of the customer's payments, newest first. Both participants of an
+ * internal transfer see it under the same transaction and reference.
+ */
+export async function loadTransactions(cursor?: string): Promise<TransactionsState> {
+  const after = cursor && isTransactionId(cursor) ? `&cursor=${cursor.toLowerCase()}` : "";
+  const result = await customerRead(`/api/v1/transactions?limit=20${after}`);
+  if (result === "expired") leaveExpired("/app/payments");
+  if (result?.status !== 200) return { state: "unavailable" };
+  const body = result.body as { data?: unknown; meta?: { next_cursor?: unknown } };
+  if (!Array.isArray(body.data)) return { state: "unavailable" };
+  const next = typeof body.meta?.next_cursor === "string" ? body.meta.next_cursor : null;
+  return { state: "ok", transactions: body.data as Transaction[], next };
+}
+
+/** One transaction the customer took part in. */
+export async function loadTransaction(id: string): Promise<TransactionState> {
+  if (!isTransactionId(id)) return { state: "not_found" };
+  const result = await customerRead(`/api/v1/transactions/${id.toLowerCase()}`);
+  if (result === "expired") leaveExpired(`/app/payments/${id}`);
+  if (result?.status === 404) return { state: "not_found" };
+  if (result?.status !== 200) return { state: "unavailable" };
+  const data = (result.body as { data?: Transaction }).data;
+  return data?.id ? { state: "ok", transaction: data } : { state: "unavailable" };
 }

@@ -88,7 +88,7 @@ fn code(body: &Value) -> &str {
 }
 
 /// Credits a verified deposit through the ledger's poster role.
-async fn deposit(pool: &PgPool, customer: Uuid, symbol: &str, minor: &str) {
+pub(super) async fn deposit(pool: &PgPool, customer: Uuid, symbol: &str, minor: &str) {
     sqlx::raw_sql(&format!(
         "INSERT INTO ledger.capability_activations(capability, asset_id, approval_reference, max_operation_minor)
          SELECT 'CUSTOMER_CREDIT', id, 'TEST-FIXTURE', 1000000000000 FROM wallets.assets WHERE symbol = '{symbol}'

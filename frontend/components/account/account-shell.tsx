@@ -1,6 +1,6 @@
 "use client";
 
-import { LayoutDashboard, LogOut, ShieldCheck, SlidersHorizontal, UserRound, Wallet } from "lucide-react";
+import { ArrowLeftRight, LayoutDashboard, LogOut, ShieldCheck, SlidersHorizontal, UserRound, Wallet } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import * as React from "react";
@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 const navigation = [
   { href: "/app", label: "Overview", icon: LayoutDashboard },
   { href: "/app/wallets", label: "Wallets", icon: Wallet },
+  { href: "/app/payments", label: "Payments", icon: ArrowLeftRight },
   { href: "/app/profile", label: "Profile", icon: UserRound },
   { href: "/app/preferences", label: "Preferences", icon: SlidersHorizontal },
   { href: "/app/security", label: "Security", icon: ShieldCheck },
@@ -122,7 +123,7 @@ export function AccountShell({ children }: { children: React.ReactNode }) {
         aria-label="Account"
         className="fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-30 rounded-[1.4rem] bg-ink-950/95 p-1.5 shadow-pop backdrop-blur-xl lg:hidden"
       >
-        <ul className="grid grid-cols-5">
+        <ul className="grid grid-cols-6">
           {navigation.map(({ href, label, icon: Icon }) => {
             const active = isActive(pathname, href);
             return (
@@ -131,7 +132,7 @@ export function AccountShell({ children }: { children: React.ReactNode }) {
                   href={href}
                   aria-current={active ? "page" : undefined}
                   className={cn(
-                    "flex flex-col items-center gap-1 rounded-[1.05rem] py-2 text-[0.6875rem] font-medium transition-colors duration-200",
+                    "flex min-w-0 flex-col items-center gap-1 truncate rounded-[1.05rem] px-0.5 py-2 text-[0.625rem] font-medium transition-colors duration-200",
                     active ? "bg-white/10 text-white" : "text-ink-400 hover:text-ink-200",
                   )}
                 >

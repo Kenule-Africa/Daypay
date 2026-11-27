@@ -16,7 +16,7 @@
 - **Accepted Phase 4 work:** IMP-P4-001–004 remain completed and engineering-accepted. PR #10's IMP-P4-002 persistence work is a follow-up, not a reopening of the accepted task.
 - **Account status:** IMP-P3-002 remains In testing pending real Resend staging delivery and confirmation; IMP-P3-003 remains Deferred — Post-MVP; IMP-P3-013 is Deferred — Owner Decision. P3-008/009/012 are engineering-accepted but production authentication is not activated.
 - **Next planned work:**
-  - The approved schedule (order 3) continues with Phase 7 internal transfers (IMP-P7-001–010) and Phase 8 provider-framework foundations (IMP-P8-001–013). No agent assignment is recorded yet.
+  - Phase 7 internal transfers (IMP-P7-001–010) are In review in [PR #23](https://github.com/Kenule-Africa/Daypay/pull/23) after the handoff from Claude to Codex. Phase 8 provider-framework foundations (IMP-P8-001–013) come next in the approved schedule (order 3); no agent assignment is recorded yet.
   - Codex's authentication environment activation remains outstanding.
   - The early account frontend milestone is merged (PR #15, #17, #19); the owner browser walkthrough is pending.
   - These are priorities, not new roadmap task IDs or evidence that deployment prerequisites are met.
@@ -55,6 +55,27 @@
     - `CUSTOMER_CREDIT` and the other activations until approval;
     - granting the provisioner role until an authenticated adapter exists;
     - deposits, transfers and withdrawals.
+- **Phase 7 internal transfers (Claude → Codex):** IMP-P7-001–010 are In review in [PR #23](https://github.com/Kenule-Africa/Daypay/pull/23) on `feat/claude-phase7-internal-transfers`. See [PROGRESS.md](PROGRESS.md) for the lookup diagnosis, task assessment and CI evidence. Transfers stay disabled.
+  - **What it does:**
+    - Customers find a recipient by exact username, review terms the server binds to the session, confirm, and send once.
+    - One PostgreSQL transaction records the business transaction, consumes the single-use proof, posts the balanced journal through `ledger.transfer_between_customers`, completes the transfer, stores the idempotent result and queues `INTERNAL_TRANSFER_COMPLETED` for both parties.
+    - Both participants see the transfer under the same transaction ID and reference.
+  - **Install:** after the Phase 6 steps, apply migrations `202611271601` and `202611271602`, then `payments-roles.psql` (cluster administrator), `ledger-grants.psql`, `wallet-grants.psql` and `payments-grants.psql`, as the DBA or a migration administrator that may act as the ledger, wallet and payments owners.
+  - **Roles:**
+    - NOLOGIN `deypay_payments_owner` owns the payments functions. It is granted to no login.
+    - `deypay_app` executes seven customer payments functions and writes no table.
+    - No new environment variables.
+  - **Endpoints:** behind the customer session guard, served from `/api/v1`:
+    - `GET /recipients/resolve`;
+    - `POST /transaction-authorizations` and `POST /transaction-authorizations/{challenge_id}/confirm`;
+    - `POST /transfers/internal` (requires `Idempotency-Key`);
+    - `GET /transactions` and `GET /transactions/{transaction_id}`.
+    - The web app shows them at `/app/payments`.
+  - **Test:** run `--test transfers` with the infrastructure suite, `registration_http` (which includes the transfer HTTP cases), and the frontend tests in Actions. The browser test confirms the displayed terms and retries with the same proof and key.
+  - **Must stay disabled until approved:** see the Phase 7 row in [BLOCKERS.md](BLOCKERS.md).
+    - Keep `NoApprovedPolicy` until an approved policy replaces it.
+    - Record no `CUSTOMER_TRANSFER` activation until regulatory treatment, limits, step-up and fees are approved.
+    - Record no `payments.recipient_lookup_policy` row until Security approves the lookup budget.
 - **Local workstation environment:** Windows and Git Bash steps for starting, stopping and updating the local HTTPS stack are in [LOCAL-DEVELOPMENT.md](LOCAL-DEVELOPMENT.md). On 2026-11-27 it was brought up to `main` at `1386d1b` with migrations `202611260001` and `202611261401` and the ledger and wallet roles and grants (see [PROGRESS.md](PROGRESS.md)).
 - **Release boundary:** CI success is not PR acceptance, production deployment, provider capability evidence, legal/regulatory approval or authorization for live financial execution.
 
@@ -103,8 +124,9 @@ Next planned work is Claude's production account frontend and Codex's authentica
 2. Codex owns authentication environment activation. Verify and record live configuration/secrets custody, PostgreSQL connectivity and roles, HTTPS ingress/routing, approved admission policies and monitoring. Keep authentication disabled/fail-closed until applicable gates are cleared.
 3. Keep IMP-P3-002 In testing until authorized real Resend staging delivery and confirmation are recorded. CI does not establish external delivery. Local token generation, redemption and HTTPS sign-in were exercised on the workstation with the [local outbox example](LOCAL-EMAIL-VERIFICATION.md) on 2026-11-26. That is not delivery evidence. The sign-in redirect and Windows startup fixes merged in PR #17. `next dev` still exposes request cookies by design of Next.js 15.5, so signed-in testing should use a production build. The owner browser walkthrough is pending: run it through `https://127.0.0.2:8443` as described in [LOCAL-DEVELOPMENT.md](LOCAL-DEVELOPMENT.md). See [PROGRESS.md](PROGRESS.md).
 4. Keep PR #10 open and on hold. Do not resume KYC verification implementation until the first account UI and internal transaction validation are complete and the owner authorizes resumption.
-5. Continue the approved financial-backend sequence, and record the assignment in [TASKS.md](TASKS.md) first.
-   - Phase 7 internal transfers build on the Phase 5 ledger and Phase 6 wallets.
+5. Owner reviews Phase 7 [PR #23](https://github.com/Kenule-Africa/Daypay/pull/23) and the Phase 7 engineering defaults in [DECISIONS.md](DECISIONS.md).
+6. Continue the approved financial-backend sequence, and record the assignment in [TASKS.md](TASKS.md) first.
+   - Phase 7 internal transfers are implemented on the Phase 5 ledger and Phase 6 wallets and await review.
    - Phase 8 delivers the provider adapters, provisioning worker, webhook verification and sandbox routing listed in [PROVIDER-CAPABILITIES.md](PROVIDER-CAPABILITIES.md#phase-8-handoff).
    - Before customer transfers can be enabled, Phase 7 needs owner input on:
      - the regulatory treatment of internal transfers (FRS §16.6);
@@ -112,7 +134,7 @@ Next planned work is Claude's production account frontend and Codex's authentica
      - whether customers may send to themselves (FR-INT-007);
      - which recipient identifiers are in MVP scope (FRS §16.1);
      - the step-up verification method for transaction authorization (API §20).
-   - Until then, transfers stay fail-closed in `ledger.capability_activations`.
+   - Until then, transfers stay fail-closed: `NoApprovedPolicy` refuses them and no `CUSTOMER_TRANSFER` activation exists.
    - Maintain fail-closed financial eligibility and all provider, KYC, compliance and release gates.
 
 The Cycle 2 assignments are complete: Codex's rate limiting (PR #13) and Claude's password recovery, username availability and email-verification work (PR #14). Claude's Phase 4 PR #10 remains on hold. Record the next assignments in [TASKS.md](TASKS.md). Preserve separate worktrees and migration/API coordination. The repository owner reviews and merges; this handoff grants no merge, deployment, provider or live-execution approval.

@@ -1,5 +1,22 @@
 # Engineering progress
 
+## 2026-11-27 · Phase 7 internal transfers in owner review
+
+[PR #23](https://github.com/Kenule-Africa/Daypay/pull/23) continues Claude’s two commits on `feat/claude-phase7-internal-transfers`, based on accepted `main` at `d2aa9ea`. Codex retained the eight uncommitted Phase 7 documentation edits in the original worktree.
+
+| Roadmap tasks | At the handoff head `831cdf3` | Takeover work |
+|---|---|---|
+| IMP-P7-001–002 | Exact username resolution and per-customer lookup budgets worked under the restricted API login after Claude’s fix. | Verified the PostgreSQL diagnosis and added a direct SQL contract check for a retired handle. |
+| IMP-P7-003–005, 007 | Request validation, the financial gate, Phase 6 wallet restrictions, the per-operation ceiling, available-funds checks and atomic Phase 5 posting were implemented. | Retained the existing ledger and tested the authorization and posting paths with both allowed and refused fixture transfers. |
+| IMP-P7-006 | Session-bound confirmation and single-use proofs existed. Concurrent challenge replacement and expiry after lock waits needed correction. | Serialized replacement per session, bounded proof lifetime by session expiry and enforced the shipped policy at confirmation. |
+| IMP-P7-008 | Concurrent repeats posted once. The response still read the recipient’s current profile. | Captured the accepted result in the existing idempotency record. For earlier internal-test records, the upgrade captures the permitted names available at migration time. |
+| IMP-P7-009 | Both participants had history and a shared reference. A full last page exposed an unnecessary continuation. | Verified that a cursor leads to an older participant-visible row before returning it. Connected the eligible wallet’s Send action to its asset. |
+| IMP-P7-010 | Rust, PostgreSQL, HTTP and frontend suites existed. Browser confirmation/retry and the edge cases above lacked coverage. | Added database, HTTP and headless Chromium regressions. The browser test exercises the built frontend against a test API fixture. The authenticated Rust routes exercise the real ledger and PostgreSQL in the separate HTTP suite. |
+
+**Recipient lookup diagnosis.** The linked failure ran on `b92e25166349c56e4bc7e7b9d630d766771e6844`. On an isolated PostgreSQL 18 cluster with the branch migrations and grants, `deypay_app` received SQLSTATE `42804` at `IF NOT FOUND`. PL/pgSQL resolved the record variable named `found` instead of its Boolean status flag. Rust mapped this database error to `Unavailable` before decoding any row. With Claude’s rename and identical grants, the exact case-insensitive lookup returned the four API fields and a prefix returned zero rows. Both CI jobs then passed on `831cdf36a41deffaadf96b59a9f25eb9e6873eda`. [Original backend job](https://github.com/Kenule-Africa/Daypay/actions/runs/45982882904/job/140450995773) · [Handoff-head CI](https://github.com/Kenule-Africa/Daypay/actions/runs/45984272305)
+
+**Activation.** `NoApprovedPolicy` remains the production gate. The migrations seed neither a transfer activation nor a lookup budget. Windowed limits depend on held IMP-P4-007 and DEC-011. Regulatory treatment, KYC, risk, step-up, fees and lookup-policy approvals remain open. Phase 15 owns receipts and delivery of participant notifications from the durable completion event. [Blockers](BLOCKERS.md)
+
 ## 2026-11-27 · Phase 6 accepted; workstation environment upgraded to Phases 5 and 6
 
 **Merges and CI.** Each push run below completed with conclusion `success`. Backend passed 13/13 steps and frontend 11/11, with no skipped or non-successful steps.

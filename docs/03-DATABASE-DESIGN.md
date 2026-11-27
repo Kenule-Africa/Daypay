@@ -1161,6 +1161,23 @@ Scope internal-transfer list, detail and receipt reads by sender_user_id or reci
 
 Concurrent transfers must be serialized or otherwise protected against overspending.
 
+## 18.5 Phase 7 Implementation (migrations 202611271601 and 202611271602)
+
+**Transfer record**
+- `payments.internal_transfers` holds one row per completed transfer, inserted in the transaction that posts its journal. It records the sender, recipient, asset, amount, zero fee (constrained until DEC-010), status, the unique `ledger_journal_id` and the consumed `authorization_proof_id`.
+- Rows are immutable, and a completed `INTERNAL_TRANSFER` in `payments.transactions` cannot be changed or deleted.
+
+**Workflow**
+- The business transaction records CREATED → VALIDATED → AUTHORIZED → COMPLETED in `payments.transaction_status_history`.
+- The idempotency record (§31) stores the request fingerprint, transaction ID and the sender’s accepted result, including the permitted recipient details at acceptance. A retry reads that snapshot even if the recipient later edits their profile. Records are never deleted.
+- Authorization uses `identity.verification_challenges` (financial, session-bound, binding version 1) and `identity.transaction_proofs` (digest only, consumed with acceptance).
+
+**Concurrency**
+- `wallets.transfer_wallets` creates missing wallets and locks the sender's and recipient's wallet rows FOR SHARE in id order. The ledger then locks balances in account order, so a concurrent status change waits or is seen, and concurrent transfers cannot overspend.
+
+**Recipient lookups**
+- `payments.recipient_lookup_policy` (DBA-only) and `payments.recipient_lookup_usage` budget recipient lookups per customer and window.
+
 ---
 
 # 19. FX QUOTE AND CONVERSION TABLES

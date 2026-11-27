@@ -68,7 +68,7 @@ GRANT EXECUTE ON FUNCTION wallets.set_wallet_status(uuid,text,text,uuid) TO deyp
 DO $$
 DECLARE
     candidates CONSTANT text[] := ARRAY['deypay_app','deypay_wallet_provisioner','deypay_ledger_poster',
-        'deypay_ledger_evidence','deypay_ledger_controller','deypay_ledger_reader'];
+        'deypay_ledger_evidence','deypay_ledger_controller','deypay_ledger_reader','deypay_payments_owner'];
     runtime text[];
     offending text;
 BEGIN
@@ -157,7 +157,10 @@ BEGIN
         ('deypay_wallet_provisioner', 'wallets.verify_deposit_address(uuid,text,bytea)'),
         ('deypay_wallet_provisioner', 'wallets.reject_deposit_address(uuid,text)'),
         ('deypay_wallet_provisioner', 'wallets.retire_deposit_address(uuid,text)'),
-        ('deypay_ledger_controller', 'wallets.set_wallet_status(uuid,text,text,uuid)'))
+        ('deypay_ledger_controller', 'wallets.set_wallet_status(uuid,text,text,uuid)'),
+        -- Internal transfers (payments-grants.psql): eligibility and the locked transfer wallets.
+        ('deypay_payments_owner', 'wallets.customer_eligible(uuid)'),
+        ('deypay_payments_owner', 'wallets.transfer_wallets(uuid,uuid,uuid)'))
     SELECT string_agg(r.name || ' → ' || p.oid::regprocedure::text, ', ') INTO offending
     FROM pg_proc p CROSS JOIN unnest(runtime) AS r(name)
     WHERE p.pronamespace = 'wallets'::regnamespace

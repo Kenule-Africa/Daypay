@@ -8,6 +8,7 @@ import { once } from "node:events";
 import { createServer, request as httpRequest } from "node:http";
 import { after, before, beforeEach, test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
+import { chromium } from "playwright-core";
 
 const SESSION = "__Host-deypay_session";
 const TOKEN = "a".repeat(64);
@@ -65,6 +66,33 @@ const network = (code, status, address) => ({
   withdrawal: { available: false },
 });
 
+const sent = {
+  id: "3f7cf7a9-1f2d-4d6b-a830-8cf41a1e9ad4",
+  reference: "DP-3F7CF7A91F2D4D6B",
+  type: "internal_transfer",
+  status: "completed",
+  direction: "debit",
+  source_asset: "USDT",
+  source_amount: "25.500000",
+  destination_asset: "USDT",
+  destination_amount: "25.500000",
+  fee: "0.000000",
+  description: "Lunch",
+  counterparty: { id: "5c07fb70-71f6-43d8-95b3-a987304679b9", username: "bobmensah", display_name: "Bob Mensah" },
+  created_at: "2026-11-27T10:00:00.000000Z",
+  completed_at: "2026-11-27T10:00:00.100000Z",
+};
+const received = {
+  ...sent,
+  id: "4a7cf7a9-1f2d-4d6b-a830-8cf41a1e9ad5",
+  reference: "DP-4A7CF7A91F2D4D6C",
+  direction: "credit",
+  source_amount: "3.000000",
+  destination_amount: "3.000000",
+  description: null,
+  counterparty: { id: "6c07fb70-71f6-43d8-95b3-a987304679b9", username: "chidiobi", display_name: "Chidi Obi" },
+};
+
 let state;
 let api;
 let web;
@@ -72,7 +100,7 @@ let origin;
 let output = "";
 
 function reset() {
-  state = { ready: true, me: 200, legal: 200, wallets: 200, seen: [] };
+  state = { ready: true, me: 200, legal: 200, wallets: 200, transactions: 200, send: false, seen: [] };
 }
 
 function json(res, status, body) {
@@ -93,11 +121,15 @@ before(async () => {
     if (req.url.startsWith("/api/v1/wallets")) {
       if (req.headers.cookie !== `${SESSION}=${TOKEN}`) return json(res, 401, { error: { code: "AUTHENTICATION_REQUIRED" } });
       if (state.wallets !== 200) return json(res, state.wallets, { error: { code: "SERVICE_UNAVAILABLE" } });
-      if (req.url === "/api/v1/wallets") return json(res, 200, { data: [usdcWallet, usdtWallet] });
+      if (req.url === "/api/v1/wallets") {
+        const capabilities = { deposit: false, send: state.send };
+        return json(res, 200, { data: [usdcWallet, usdtWallet].map(wallet => ({ ...wallet, capabilities })) });
+      }
       if (req.url === `/api/v1/wallets/${usdcWallet.id}`) {
         return json(res, 200, {
           data: {
             ...usdcWallet,
+            capabilities: { deposit: false, send: state.send },
             networks: [
               network("base-fixture", "active", { address: VERIFIED_ADDRESS, memo: null }),
               network("polygon-fixture", "pending", null),
@@ -106,6 +138,15 @@ before(async () => {
         });
       }
       return json(res, 404, { error: { code: "NOT_FOUND", message: "Wallet not found", details: {} } });
+    }
+    if (req.url.startsWith("/api/v1/transactions")) {
+      if (req.headers.cookie !== `${SESSION}=${TOKEN}`) return json(res, 401, { error: { code: "AUTHENTICATION_REQUIRED" } });
+      if (state.transactions !== 200) return json(res, state.transactions, { error: { code: "SERVICE_UNAVAILABLE" } });
+      if (req.url === "/api/v1/transactions?limit=20") {
+        return json(res, 200, { data: [sent, received], meta: { next_cursor: null } });
+      }
+      if (req.url === `/api/v1/transactions/${sent.id}`) return json(res, 200, { data: sent });
+      return json(res, 404, { error: { code: "TRANSACTION_NOT_FOUND", message: "Transaction not found", details: {} } });
     }
     switch (req.url) {
       case "/health/ready":
@@ -370,6 +411,10 @@ test("wallet details show a deposit address only once it is verified", async () 
   assert.ok(html.includes("Copy address"));
   assert.ok(html.includes("Being prepared"), "a pending address is described, never invented");
   assert.ok(html.includes("Not yet available"), "moving money stays unavailable");
+  assert.ok(!html.includes('href="/app/payments/send?asset=USDC"'));
+  state.send = true;
+  const enabled = await (await get(`/app/wallets/${usdcWallet.id}`, signedIn)).text();
+  assert.ok(enabled.includes('href="/app/payments/send?asset=USDC"'));
 });
 
 test("unknown and malformed wallets are not found without leaking anything", async () => {
@@ -379,4 +424,124 @@ test("unknown and malformed wallets are not found without leaking anything", asy
   const malformed = await get("/app/wallets/not-a-wallet", signedIn);
   assert.equal(malformed.status, 404);
   assert.ok(!state.seen.slice(before).some(entry => entry.url.startsWith("/api/v1/wallets/")), "no API call for a malformed id");
+});
+
+test("payments show both directions exactly, with the reference both customers share", async () => {
+  const response = await get("/app/payments", signedIn);
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("cache-control") ?? "", /no-store/);
+  const html = await response.text();
+  for (const shown of [
+    "Sent to Bob Mensah (@bobmensah)",
+    "−25.50",
+    "Received from Chidi Obi (@chidiobi)",
+    "+3.00",
+    sent.reference,
+    received.reference,
+    "Send to a DEYPAY user",
+  ]) {
+    assert.ok(html.includes(shown), shown);
+  }
+  for (const read of state.seen.filter(entry => entry.url.startsWith("/api/v1/transactions"))) {
+    assert.equal(read.cookie, signedIn, "only the session cookie is forwarded");
+  }
+});
+
+test("an unavailable payment service never shows an invented history", async () => {
+  state.transactions = 503;
+  const html = await (await get("/app/payments", signedIn)).text();
+  assert.ok(html.includes("load your payments right now"));
+  assert.ok(!html.includes(sent.reference));
+});
+
+test("payment details render for a participant; unknown and malformed ids are not found", async () => {
+  const response = await get(`/app/payments/${sent.id}`, signedIn);
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  for (const shown of [sent.reference, "Lunch", "Bob Mensah (@bobmensah)", "same reference"]) {
+    assert.ok(html.includes(shown), shown);
+  }
+  assert.equal((await get(`/app/payments/${received.counterparty.id}`, signedIn)).status, 404);
+  const before = state.seen.length;
+  assert.equal((await get("/app/payments/not-a-payment", signedIn)).status, 404);
+  assert.ok(
+    !state.seen.slice(before).some(entry => entry.url.startsWith("/api/v1/transactions/")),
+    "no API call for a malformed id",
+  );
+});
+
+test("sending stays closed until a wallet may send, then shows the confirmation flow", async () => {
+  const closed = await (await get("/app/payments/send", signedIn)).text();
+  assert.ok(closed.includes("Sending isn"), "the closed state is explained");
+  assert.ok(!closed.includes("Review transfer"));
+  state.send = true;
+  const open = await (await get("/app/payments/send", signedIn)).text();
+  for (const shown of ["Review transfer", "username", "Available: 1,234,567.50 USDC"]) {
+    assert.ok(open.includes(shown), shown);
+  }
+  const selected = await (await get("/app/payments/send?asset=USDT", signedIn)).text();
+  assert.ok(selected.includes("Available: 0.00 USDT"));
+});
+
+test("the browser confirms the displayed terms and retries an uncertain payment with its original key", async () => {
+  state.send = true;
+  const browser = await chromium.launch();
+  try {
+    const context = await browser.newContext();
+    await context.addCookies([{ name: SESSION, value: TOKEN, domain: "127.0.0.1", path: "/", secure: true, httpOnly: true }]);
+    const page = await context.newPage();
+    const recipient = sent.counterparty;
+    const terms = { recipient, asset: "USDC", amount: "2.500000", fee: "0.000000", total: "2.500000", description: "Lunch" };
+    const challenge = "58ff51bd-4fa0-4eb3-a676-2162123bd994";
+    const proof = "b".repeat(64);
+    const calls = [];
+    await page.route("**/api/v1/**", async route => {
+      const req = route.request();
+      const url = new URL(req.url());
+      const path = url.pathname + url.search;
+      const key = await req.headerValue("idempotency-key");
+      calls.push({ path, method: req.method(), key, body: req.postDataJSON() });
+      if (path.startsWith("/api/v1/recipients/resolve?")) {
+        return route.fulfill({ json: { data: { recipient_id: recipient.id, username: recipient.username, display_name: recipient.display_name, can_receive: true } } });
+      }
+      if (path === "/api/v1/transaction-authorizations") {
+        return route.fulfill({ status: 201, json: { data: { challenge_id: challenge, verification_method: "confirmation", operation_type: "internal_transfer", expires_at: "2030-01-01T00:05:00Z", terms } } });
+      }
+      if (path === `/api/v1/transaction-authorizations/${challenge}/confirm`) {
+        return route.fulfill({ json: { data: { authorization_token: proof, expires_at: "2030-01-01T00:02:00Z" } } });
+      }
+      if (path === "/api/v1/transfers/internal") {
+        if (calls.filter(call => call.path === path).length === 1) return route.abort("connectionreset");
+        return route.fulfill({ status: 201, headers: { "Idempotency-Replayed": "true" }, json: { data: {
+          ...terms, recipient, transaction_id: sent.id, reference: sent.reference, status: "completed", type: "internal_transfer"
+        } } });
+      }
+      return route.abort();
+    });
+    await page.goto(origin + "/app/payments/send");
+    await page.getByPlaceholder("@username").fill("@" + recipient.username);
+    await page.getByRole("button", { name: "Find", exact: true }).click();
+    await page.getByLabel("Amount", { exact: true }).fill("2.5");
+    await page.getByLabel("Note (optional)").fill("Lunch");
+    await page.getByRole("button", { name: "Review transfer" }).click();
+    await page.getByRole("heading", { name: "Check and confirm" }).waitFor();
+    await page.getByRole("button", { name: "Confirm and send" }).click();
+    await page.getByRole("button", { name: "Retry payment" }).waitFor();
+    assert.ok(await page.getByRole("button", { name: "Edit" }).isDisabled());
+    await page.getByRole("button", { name: "Retry payment" }).click();
+    await page.getByRole("link", { name: "View payment" }).waitFor();
+    assert.deepEqual(calls.map(c => [c.method, c.path]), [
+      ["GET", "/api/v1/recipients/resolve?username=" + recipient.username],
+      ["POST", "/api/v1/transaction-authorizations"],
+      ["POST", `/api/v1/transaction-authorizations/${challenge}/confirm`],
+      ["POST", "/api/v1/transfers/internal"], ["POST", "/api/v1/transfers/internal"],
+    ]);
+    assert.deepEqual(calls[1].body, { operation_type: "internal_transfer", recipient_id: recipient.id, asset: "USDC", amount: "2.5", description: "Lunch" });
+    assert.deepEqual(calls[2].body, { confirm: true });
+    assert.match(calls[3].key, /^[A-Za-z0-9_.:-]{8,128}$/);
+    assert.deepEqual(calls[3].body, { recipient_id: recipient.id, authorization_token: proof, asset: terms.asset, amount: terms.amount, description: terms.description });
+    assert.deepEqual(calls[4], calls[3]);
+  } finally {
+    await browser.close();
+  }
 });

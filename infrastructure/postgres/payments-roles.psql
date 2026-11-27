@@ -1,0 +1,19 @@
+-- Cluster administrator prerequisite for migration 202611271601 (Phase 7
+-- internal transfers). Creates the NOLOGIN role that owns the payments
+-- functions. Safe to rerun. It is granted to no login: deypay_app executes the
+-- customer functions, which run as this role.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'deypay_payments_owner') THEN
+        BEGIN
+            CREATE ROLE deypay_payments_owner NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+        EXCEPTION WHEN duplicate_object OR unique_violation THEN
+            NULL; -- created concurrently
+        END;
+    END IF;
+    IF EXISTS (SELECT FROM pg_catalog.pg_roles
+               WHERE rolname = 'deypay_payments_owner'
+                 AND (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls OR rolcanlogin)) THEN
+        RAISE EXCEPTION 'Unsafe pre-existing payments role';
+    END IF;
+END $$;
