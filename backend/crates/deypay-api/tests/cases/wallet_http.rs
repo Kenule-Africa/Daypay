@@ -100,22 +100,33 @@ async fn deposit(pool: &PgPool, customer: Uuid, symbol: &str, minor: &str) {
     .execute(pool)
     .await
     .unwrap();
+    // Resolved as the administrator: the poster role reads no ledger tables.
+    let (custody, available, asset): (Uuid, Uuid, Uuid) = sqlx::query_as(
+        "SELECT (SELECT a.id FROM ledger.accounts a WHERE a.chart_code = '1100' AND a.asset_id = s.id),
+                (SELECT a.id FROM ledger.accounts a WHERE a.owner_id = $1 AND a.customer_role = 'AVAILABLE'
+                    AND a.asset_id = s.id),
+                s.id
+         FROM wallets.assets s WHERE s.symbol = $2",
+    )
+    .bind(customer)
+    .bind(symbol)
+    .fetch_one(pool)
+    .await
+    .unwrap();
     let mut tx = pool.begin().await.unwrap();
     sqlx::query("SET LOCAL ROLE deypay_ledger_poster")
         .execute(&mut *tx)
         .await
         .unwrap();
     sqlx::query(
-        "SELECT * FROM ledger.post_journal('DEPOSIT_CONFIRMED', 'chain:http:' || $1::text, 'RECOGNITION', NULL,
-             ARRAY[(SELECT a.id FROM ledger.accounts a JOIN wallets.assets s ON s.id = a.asset_id
-                    WHERE a.chart_code = '1100' AND s.symbol = $2),
-                   (SELECT a.id FROM ledger.accounts a JOIN wallets.assets s ON s.id = a.asset_id
-                    WHERE a.owner_id = $1 AND a.customer_role = 'AVAILABLE' AND s.symbol = $2)],
-             ARRAY[(SELECT id FROM wallets.assets WHERE symbol = $2), (SELECT id FROM wallets.assets WHERE symbol = $2)],
-             ARRAY['DEBIT','CREDIT'], ARRAY[$3, $3], NULL, 'SYSTEM', NULL, NULL)",
+        "SELECT * FROM ledger.post_journal('DEPOSIT_CONFIRMED', $1, 'RECOGNITION', NULL,
+             ARRAY[$2, $3]::uuid[], ARRAY[$4, $4]::uuid[], ARRAY['DEBIT','CREDIT'], ARRAY[$5, $5],
+             NULL, 'SYSTEM', NULL, NULL)",
     )
-    .bind(customer)
-    .bind(symbol)
+    .bind(format!("chain:http:{customer}"))
+    .bind(custody)
+    .bind(available)
+    .bind(asset)
     .bind(minor)
     .execute(&mut *tx)
     .await
