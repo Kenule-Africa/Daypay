@@ -307,6 +307,36 @@ impl World {
         provider
     }
 
+    /// A KYC-approved customer with an open USDC deposit-address request.
+    async fn requested(&self, name: &str) -> (Uuid, Uuid) {
+        let customer = customer(&self.pool, name, "KYC_APPROVED").await;
+        let wallet = self.wallet_of(customer, "USDC").await.id;
+        assert_eq!(
+            self.service
+                .request_deposit_address(customer, wallet, NETWORK)
+                .await,
+            Ok(DepositAddress::Pending { created: true }),
+            "{name}"
+        );
+        (customer, wallet)
+    }
+
+    /// Status, error code and attempt count of a wallet's latest request.
+    async fn latest_request(&self, wallet: Uuid) -> (String, Option<String>, i32) {
+        sqlx::query_as(
+            "SELECT status, last_error_code, attempt_count FROM wallets.wallet_provisioning_requests
+             WHERE wallet_profile_id = $1 ORDER BY created_at DESC LIMIT 1",
+        )
+        .bind(wallet)
+        .fetch_one(&self.pool)
+        .await
+        .unwrap()
+    }
+
+    async fn admin(&self, sql: &str) {
+        sqlx::raw_sql(sql).execute(&self.pool).await.unwrap();
+    }
+
     async fn address_state(&self, customer: Uuid, wallet: Uuid) -> AddressState {
         self.service
             .deposit_address(customer, wallet, NETWORK)
@@ -1855,4 +1885,519 @@ async fn deposit_addresses_follow_the_provider_boundary(pool: PgPool) {
         0
     );
     assert!(world.violations().await.is_empty());
+}
+
+/// Review finding 1: a pending request is revalidated when the provisioning
+/// worker picks it up. Anything revoked since the request was opened fails it
+/// with the reason, before the provider is contacted.
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn provider_submission_revalidates_eligibility(pool: PgPool) {
+    use deypay_application::wallets::WalletStatus as Status;
+    let world = setup(pool).await;
+    let (network, usdc_network, _) = world.deposit_network().await;
+    world.activate("CUSTOMER_CREDIT", world.usdc).await;
+    world.activate("CUSTOMER_CREDIT", world.usdt).await;
+    let provider_a = world.provider("FIXTURE_A", 50).await;
+    let (admin, staff, _, _) = operator(&world).await;
+    let a = ScriptedProvider::new("FIXTURE_A");
+    let store = PgProvisioning::new(world.pool.clone());
+    let addresses = || count(&world.pool, "SELECT count(*) FROM wallets.wallet_addresses");
+
+    // Each revocation, applied after the request was opened, with its restore.
+    // `{customer}` is replaced by the requesting customer.
+    let usdc = world.usdc;
+    let scenarios = [
+        (
+            "kyc",
+            "UPDATE identity.users SET status = 'KYC_PENDING' WHERE id = '{customer}'".to_owned(),
+            String::new(),
+            "KYC_REQUIRED",
+        ),
+        (
+            "restricted",
+            "INSERT INTO compliance.account_restrictions(user_id, restriction_type, reason_code, active)
+             VALUES ('{customer}', 'FINANCIAL', 'TEST', true)"
+                .to_owned(),
+            String::new(),
+            "ACCOUNT_RESTRICTED",
+        ),
+        (
+            "suspended-asset",
+            format!(
+                "UPDATE wallets.assets SET suspended_at = now(), suspension_reason = 'Incident' WHERE id = '{usdc}'"
+            ),
+            format!(
+                "UPDATE wallets.assets SET suspended_at = NULL, suspension_reason = NULL WHERE id = '{usdc}'"
+            ),
+            "ASSET_UNAVAILABLE",
+        ),
+        (
+            "held-asset",
+            format!(
+                "INSERT INTO ledger.asset_holds(asset_id, reason) VALUES ('{usdc}', 'Reconciliation shortfall')"
+            ),
+            format!(
+                "UPDATE ledger.asset_holds SET active = false, lifted_at = now(), lifted_by = '{staff}',
+                 lift_reason = 'Resolved' WHERE asset_id = '{usdc}' AND active"
+            ),
+            "ASSET_ON_HOLD",
+        ),
+        (
+            "credit-deactivated",
+            format!(
+                "UPDATE ledger.capability_activations SET deactivated_at = now(), deactivated_by = session_user,
+                 deactivation_reason = 'Approval withdrawn'
+                 WHERE capability = 'CUSTOMER_CREDIT' AND asset_id = '{usdc}' AND deactivated_at IS NULL"
+            ),
+            format!(
+                "INSERT INTO ledger.capability_activations(capability, asset_id, approval_reference,
+                     max_operation_minor)
+                 VALUES ('CUSTOMER_CREDIT', '{usdc}', 'TEST-FIXTURE', {CEILING})"
+            ),
+            "DEPOSITS_NOT_ENABLED",
+        ),
+        (
+            "contract-deposits-off",
+            format!(
+                "UPDATE wallets.asset_networks SET deposit_enabled = false WHERE id = '{usdc_network}'"
+            ),
+            format!(
+                "UPDATE wallets.asset_networks SET deposit_enabled = true WHERE id = '{usdc_network}'"
+            ),
+            "DEPOSITS_NOT_ENABLED",
+        ),
+        (
+            "network-off",
+            format!(
+                "UPDATE wallets.networks SET deposits_enabled = false, enabled = false WHERE id = '{network}'"
+            ),
+            format!(
+                "UPDATE wallets.networks SET enabled = true, deposits_enabled = true WHERE id = '{network}'"
+            ),
+            "NETWORK_UNAVAILABLE",
+        ),
+        (
+            "provider-withdrawn",
+            format!(
+                "UPDATE integrations.provider_capabilities SET verification_level = 'SANDBOX_TESTED',
+                 production_approved = false WHERE provider_id = '{provider_a}'"
+            ),
+            format!(
+                "UPDATE integrations.provider_capabilities SET verification_level = 'PRODUCTION_ENABLED',
+                 production_approved = true WHERE provider_id = '{provider_a}'"
+            ),
+            "PROVIDER_NOT_SELECTABLE",
+        ),
+    ];
+    for (name, revoke, restore, reason) in scenarios {
+        let (customer, wallet) = world.requested(name).await;
+        world
+            .admin(&revoke.replace("{customer}", &customer.to_string()))
+            .await;
+        let before = (a.requests(), addresses().await);
+        let report = run(&store, vec![&a]).await.unwrap();
+        assert_eq!((report.submitted, report.looked_up), (0, 0), "{name}");
+        assert_eq!(
+            (a.requests(), addresses().await),
+            before,
+            "{name}: the provider was never asked"
+        );
+        assert_eq!(
+            world.latest_request(wallet).await,
+            ("FAILED".to_owned(), Some(reason.to_owned()), 0),
+            "{name}"
+        );
+        if !restore.is_empty() {
+            world.admin(&restore).await;
+        }
+    }
+
+    // A wallet suspended by an operator after the request was opened.
+    let (_, suspended) = world.requested("suspended-wallet").await;
+    admin
+        .set_status(suspended, Status::Suspended, "Fraud review", staff)
+        .await
+        .unwrap();
+    let before = a.requests();
+    run(&store, vec![&a]).await.unwrap();
+    assert_eq!(a.requests(), before);
+    assert_eq!(
+        world.latest_request(suspended).await,
+        (
+            "FAILED".to_owned(),
+            Some("WALLET_NOT_RECEIVABLE".to_owned()),
+            0
+        )
+    );
+
+    // The request's own provider, still eligible, is used even when routing
+    // now prefers another one; the newer provider is not contacted.
+    let (_, rerouted) = world.requested("rerouted").await;
+    world.provider("FIXTURE_B", 1).await;
+    let b = ScriptedProvider::new("FIXTURE_B");
+    let before = a.requests();
+    a.answer(provisioned(
+        "0x00000000000000000000000000000000000000f1",
+        "a-wallet-f1",
+    ))
+    .confirm(confirmed());
+    let report = run(&store, vec![&a, &b]).await.unwrap();
+    assert_eq!((report.submitted, report.activated), (1, 1));
+    assert_eq!((a.requests(), b.requests()), (before + 1, 0));
+    assert_eq!(world.latest_request(rerouted).await.0, "PROVISIONED");
+    world
+        .admin(
+            "UPDATE integrations.provider_capabilities SET operational = false
+             WHERE provider_id = (SELECT id FROM integrations.providers WHERE provider_code = 'FIXTURE_B')",
+        )
+        .await;
+
+    // An attempt already submitted is only looked up after revocation; its
+    // outcome is kept, and the address stays hidden until the wallet may receive.
+    let (holder, uncertain) = world.requested("uncertain").await;
+    a.answer(ProviderResult::Unknown);
+    assert_eq!(run(&store, vec![&a]).await.unwrap().submitted, 1);
+    admin
+        .set_status(uncertain, Status::Suspended, "Account review", staff)
+        .await
+        .unwrap();
+    let before = a.requests();
+    a.answer(provisioned(
+        "0x00000000000000000000000000000000000000f2",
+        "a-wallet-f2",
+    ))
+    .confirm(confirmed());
+    let report = run(&store, vec![&a]).await.unwrap();
+    assert_eq!(
+        (report.submitted, report.looked_up, report.activated),
+        (0, 1, 1)
+    );
+    assert_eq!(a.requests(), before, "never resubmitted");
+    let (status, provider): (String, Uuid) = sqlx::query_as(
+        "SELECT status, provider_id FROM wallets.wallet_addresses WHERE wallet_profile_id = $1",
+    )
+    .bind(uncertain)
+    .fetch_one(&world.pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        (status.as_str(), provider),
+        ("ACTIVE", provider_a),
+        "the evidence is kept"
+    );
+    assert_eq!(
+        world.address_state(holder, uncertain).await,
+        AddressState::Unavailable
+    );
+    admin
+        .set_status(uncertain, Status::Active, "Review cleared", staff)
+        .await
+        .unwrap();
+    assert!(matches!(
+        world.address_state(holder, uncertain).await,
+        AddressState::Active { .. }
+    ));
+
+    // A suspension racing the worker: the worker waits for the wallet row and
+    // then sees the suspension, so nothing is submitted.
+    let (_, raced) = world.requested("raced").await;
+    let request: Uuid = sqlx::query_scalar(
+        "SELECT id FROM wallets.wallet_provisioning_requests WHERE wallet_profile_id = $1 AND status = 'PENDING'",
+    )
+    .bind(raced)
+    .fetch_one(&world.pool)
+    .await
+    .unwrap();
+    let mut suspension = world.pool.begin().await.unwrap();
+    sqlx::query(
+        "UPDATE wallets.wallet_profiles SET status = 'SUSPENDED', status_reason = 'Concurrent review'
+         WHERE id = $1",
+    )
+    .bind(raced)
+    .execute(&mut *suspension)
+    .await
+    .unwrap();
+    let mut worker = std::pin::pin!(store.begin(request));
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(500), worker.as_mut())
+            .await
+            .is_err(),
+        "the worker waits for the wallet"
+    );
+    suspension.commit().await.unwrap();
+    assert_eq!(worker.await, Ok(ProvisioningStep::Done));
+    assert_eq!(
+        world.latest_request(raced).await,
+        (
+            "FAILED".to_owned(),
+            Some("WALLET_NOT_RECEIVABLE".to_owned()),
+            0
+        )
+    );
+    assert_eq!(
+        count(&world.pool, "SELECT count(*) FROM ledger.journals").await,
+        0
+    );
+    assert!(world.violations().await.is_empty());
+}
+
+/// A provider with one capability row per (asset, network, level, priority).
+async fn routed_provider(
+    pool: &PgPool,
+    code: &str,
+    lifecycle: &str,
+    rows: &[(Option<Uuid>, Option<Uuid>, &str, i32)],
+) -> Uuid {
+    let provider: Uuid = sqlx::query_scalar(
+        "INSERT INTO integrations.providers(provider_code, provider_name, provider_type, enabled, lifecycle_status)
+         VALUES ($1, 'Routing fixture', 'TEST', $2 = 'APPROVED', $2) RETURNING id",
+    )
+    .bind(code)
+    .bind(lifecycle)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    for (asset, network, level, priority) in rows {
+        sqlx::query(
+            "INSERT INTO integrations.provider_capabilities(provider_id, service, asset_id, network_id, environment,
+                 available, production_approved, verification_level, evidence_reference, routing_priority)
+             VALUES ($1, 'DEPOSIT_ADDRESS_PROVISIONING', $2, $3, 'production', $4 <> 'UNSUPPORTED',
+                 $4 = 'PRODUCTION_ENABLED', $4, 'TEST-FIXTURE', $5)",
+        )
+        .bind(provider)
+        .bind(*asset)
+        .bind(*network)
+        .bind(*level)
+        .bind(*priority)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+    provider
+}
+
+/// Review finding 2: overlapping capability rows resolve by one documented,
+/// deterministic precedence, and an explicit restriction is never overridden.
+#[sqlx::test(migrator = "MIGRATOR")]
+async fn capability_precedence_is_deterministic_and_restrictive(pool: PgPool) {
+    const PE: &str = "PRODUCTION_ENABLED";
+    const PENDING: &str = "PENDING_CONFIRMATION";
+    const UNSUPPORTED: &str = "UNSUPPORTED";
+    let world = setup(pool).await;
+    let (first, usdc_first, usdt_first) = world.deposit_network().await;
+    let second: Uuid = sqlx::query_scalar(
+        "INSERT INTO wallets.networks(code, name, chain_family, chain_identifier, enabled, deposits_enabled,
+             required_confirmations, evidence_reference)
+         VALUES ('evm-second', 'EVM second fixture', 'EVM', '31338', true, true, 12, 'TEST-FIXTURE') RETURNING id",
+    )
+    .fetch_one(&world.pool)
+    .await
+    .unwrap();
+    let usdc_second: Uuid = sqlx::query_scalar(
+        "INSERT INTO wallets.asset_networks(asset_id, network_id, token_contract, token_decimals,
+             verification_status, evidence_reference, verified_at, status, deposit_enabled)
+         VALUES ($1, $2, '0x3333333333333333333333333333333333333333', 6, 'VERIFIED', 'TEST-FIXTURE', now(),
+             'ENABLED', true) RETURNING id",
+    )
+    .bind(world.usdc)
+    .bind(second)
+    .fetch_one(&world.pool)
+    .await
+    .unwrap();
+    let (usdc, net) = (Some(world.usdc), Some(first));
+    let pool = &world.pool;
+
+    // Provider-wide approvals, with a code tie-break at equal priority.
+    routed_provider(pool, "WIDE", "APPROVED", &[(None, None, PE, 50)]).await;
+    routed_provider(pool, "ALPHA", "APPROVED", &[(None, None, PE, 50)]).await;
+    // The exact asset/network row decides over the provider-wide row.
+    routed_provider(
+        pool,
+        "EXACT_NO",
+        "APPROVED",
+        &[(None, None, PE, 30), (usdc, net, PENDING, 30)],
+    )
+    .await;
+    routed_provider(
+        pool,
+        "EXACT_YES",
+        "APPROVED",
+        &[(None, None, PENDING, 40), (usdc, net, PE, 20)],
+    )
+    .await;
+    // Asset-only and network-only rows are equally specific: they must agree,
+    // whatever order they were recorded in.
+    routed_provider(
+        pool,
+        "SPLIT",
+        "APPROVED",
+        &[(usdc, None, PE, 15), (None, net, PENDING, 15)],
+    )
+    .await;
+    routed_provider(
+        pool,
+        "SPLIT_REVERSED",
+        "APPROVED",
+        &[(None, net, PENDING, 15), (usdc, None, PE, 15)],
+    )
+    .await;
+    let both = routed_provider(
+        pool,
+        "BOTH",
+        "APPROVED",
+        &[(usdc, None, PE, 5), (None, net, PE, 9)],
+    )
+    .await;
+    // Explicit restrictions at any applicable scope win over any approval.
+    routed_provider(
+        pool,
+        "VETO",
+        "APPROVED",
+        &[(None, None, UNSUPPORTED, 1), (usdc, net, PE, 1)],
+    )
+    .await;
+    routed_provider(
+        pool,
+        "NARROW_VETO",
+        "APPROVED",
+        &[(None, None, PE, 2), (usdc, net, UNSUPPORTED, 2)],
+    )
+    .await;
+    let down = routed_provider(
+        pool,
+        "DOWN",
+        "APPROVED",
+        &[(None, None, PE, 3), (usdc, net, PE, 3)],
+    )
+    .await;
+    world
+        .admin(&format!(
+            "UPDATE integrations.provider_capabilities SET operational = false
+             WHERE provider_id = '{down}' AND asset_id IS NULL"
+        ))
+        .await;
+    // Provider lifecycle and enablement, environment and scope fail closed.
+    routed_provider(pool, "SUSPENDED", "SUSPENDED", &[(None, None, PE, 1)]).await;
+    routed_provider(pool, "RETIRED", "RETIRED", &[(None, None, PE, 1)]).await;
+    let disabled = routed_provider(pool, "DISABLED", "APPROVED", &[(None, None, PE, 1)]).await;
+    world
+        .admin(&format!(
+            "UPDATE integrations.providers SET enabled = false WHERE id = '{disabled}'"
+        ))
+        .await;
+    let sandbox = routed_provider(pool, "SANDBOX", "APPROVED", &[]).await;
+    let corridor = routed_provider(pool, "CORRIDOR", "APPROVED", &[]).await;
+    world
+        .admin(&format!(
+            "INSERT INTO integrations.provider_capabilities(provider_id, service, environment, available,
+                 production_approved, verification_level, evidence_reference, routing_priority)
+             VALUES ('{sandbox}', 'DEPOSIT_ADDRESS_PROVISIONING', 'sandbox', true, true, 'PRODUCTION_ENABLED',
+                 'TEST-FIXTURE', 1);
+             INSERT INTO integrations.provider_capabilities(provider_id, service, currency_corridor, environment,
+                 available, production_approved, verification_level, evidence_reference, routing_priority)
+             VALUES ('{corridor}', 'DEPOSIT_ADDRESS_PROVISIONING', 'USDC-NGN', 'production', true, true,
+                 'PRODUCTION_ENABLED', 'TEST-FIXTURE', 1);"
+        ))
+        .await;
+
+    let eligible = |mapping: Uuid| async move {
+        let rows: Vec<(String, i32)> = sqlx::query_as(
+            "SELECT provider_code, routing_priority
+             FROM wallets.eligible_address_providers($1) WITH ORDINALITY ORDER BY ordinality",
+        )
+        .bind(mapping)
+        .fetch_all(pool)
+        .await
+        .unwrap();
+        rows
+    };
+    let selected = |mapping: Uuid| async move {
+        sqlx::query_scalar::<_, String>(
+            "SELECT provider_code FROM wallets.select_address_provider($1)",
+        )
+        .bind(mapping)
+        .fetch_optional(pool)
+        .await
+        .unwrap()
+    };
+    let expect = |rows: &[(&str, i32)]| -> Vec<(String, i32)> {
+        rows.iter()
+            .map(|(code, priority)| ((*code).to_owned(), *priority))
+            .collect()
+    };
+    let cases = [
+        (
+            usdc_first,
+            expect(&[("BOTH", 5), ("EXACT_YES", 20), ("ALPHA", 50), ("WIDE", 50)]),
+        ),
+        (
+            usdt_first,
+            expect(&[
+                ("NARROW_VETO", 2),
+                ("BOTH", 9),
+                ("EXACT_NO", 30),
+                ("ALPHA", 50),
+                ("WIDE", 50),
+            ]),
+        ),
+        (
+            usdc_second,
+            expect(&[
+                ("NARROW_VETO", 2),
+                ("BOTH", 5),
+                ("SPLIT", 15),
+                ("SPLIT_REVERSED", 15),
+                ("EXACT_NO", 30),
+                ("ALPHA", 50),
+                ("WIDE", 50),
+            ]),
+        ),
+    ];
+    for _ in 0..20 {
+        for (mapping, expected) in &cases {
+            assert_eq!(&eligible(*mapping).await, expected);
+            assert_eq!(selected(*mapping).await.as_ref(), Some(&expected[0].0));
+        }
+    }
+
+    // A customer request is routed by the same rule.
+    world.activate("CUSTOMER_CREDIT", world.usdc).await;
+    let (_, wallet) = world.requested("routed").await;
+    let routed: Uuid = sqlx::query_scalar(
+        "SELECT provider_id FROM wallets.wallet_provisioning_requests WHERE wallet_profile_id = $1",
+    )
+    .bind(wallet)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert_eq!(routed, both);
+
+    // A restriction applies only where its scope reaches: BOTH loses the first
+    // network but keeps the second, and routing on the first moves on.
+    world
+        .admin(&format!(
+            "UPDATE integrations.provider_capabilities SET operational = false
+             WHERE provider_id = '{both}' AND network_id IS NOT NULL"
+        ))
+        .await;
+    assert_eq!(
+        eligible(usdc_first).await,
+        expect(&[("EXACT_YES", 20), ("ALPHA", 50), ("WIDE", 50)])
+    );
+    assert_eq!(eligible(usdt_first).await[1], ("EXACT_NO".to_owned(), 30));
+    assert_eq!(eligible(usdc_second).await[1], ("BOTH".to_owned(), 5));
+    assert_eq!(selected(usdc_first).await.as_deref(), Some("EXACT_YES"));
+
+    // With nothing approved there is no provider at all.
+    world
+        .admin(
+            "UPDATE integrations.provider_capabilities SET available = false, production_approved = false,
+                 verification_level = 'SANDBOX_TESTED'
+             WHERE verification_level = 'PRODUCTION_ENABLED'",
+        )
+        .await;
+    for mapping in [usdc_first, usdt_first, usdc_second] {
+        assert!(eligible(mapping).await.is_empty());
+        assert_eq!(selected(mapping).await, None);
+    }
 }

@@ -630,28 +630,77 @@ LANGUAGE sql STABLE SET search_path = pg_catalog, pg_temp AS $$
     WHERE w.id = p_wallet;
 $$;
 
--- The provider DEYPAY routes a new deposit-address request to, if any: the
--- most specific production capability row per provider decides, and it must
--- be production-enabled, approved, available and operational, for an
--- approved and enabled provider.
+-- Providers that may provision deposit addresses for one asset network, in
+-- routing order. Precedence among a provider's applicable production rows
+-- (service DEPOSIT_ADDRESS_PROVISIONING, no corridor or country scope):
+--   1. An explicit restriction at any applicable scope excludes the provider:
+--      a row that is UNSUPPORTED or not operational. A broader or equally
+--      specific approval never overrides it.
+--   2. Otherwise the most specific scope present decides: exact asset and
+--      network, then asset-only or network-only (equal), then provider-wide.
+--      Every row at that scope must be PRODUCTION_ENABLED, production-approved
+--      and available; rows that disagree at the same scope exclude the provider.
+--   3. The provider itself must be APPROVED and enabled.
+-- Order: the lowest routing priority among the deciding rows, then provider code.
+CREATE FUNCTION wallets.eligible_address_providers(p_asset_network uuid)
+RETURNS TABLE(provider_id uuid, provider_code text, routing_priority integer)
+LANGUAGE sql STABLE SET search_path = pg_catalog, pg_temp AS $$
+    WITH target AS (
+        SELECT an.asset_id, an.network_id FROM wallets.asset_networks an WHERE an.id = p_asset_network),
+    applicable AS (
+        SELECT c.provider_id, c.verification_level, c.production_approved, c.available, c.operational,
+               c.routing_priority, (c.asset_id IS NOT NULL)::integer + (c.network_id IS NOT NULL)::integer AS scope
+        FROM integrations.provider_capabilities c CROSS JOIN target t
+        WHERE c.service = 'DEPOSIT_ADDRESS_PROVISIONING' AND c.environment = 'production'
+          AND c.currency_corridor IS NULL AND c.country_code IS NULL
+          AND (c.asset_id IS NULL OR c.asset_id = t.asset_id)
+          AND (c.network_id IS NULL OR c.network_id = t.network_id)),
+    deciding AS (
+        SELECT a.* FROM applicable a
+        WHERE a.scope = (SELECT max(b.scope) FROM applicable b WHERE b.provider_id = a.provider_id))
+    SELECT p.id, p.provider_code, min(d.routing_priority)::integer
+    FROM deciding d JOIN integrations.providers p ON p.id = d.provider_id
+    WHERE p.enabled AND p.lifecycle_status = 'APPROVED'
+      AND NOT EXISTS (SELECT 1 FROM applicable x WHERE x.provider_id = d.provider_id
+                      AND (x.verification_level = 'UNSUPPORTED' OR NOT x.operational))
+    GROUP BY p.id, p.provider_code
+    HAVING bool_and(d.verification_level = 'PRODUCTION_ENABLED' AND d.production_approved AND d.available)
+    ORDER BY min(d.routing_priority), p.provider_code;
+$$;
+
+-- The provider a new deposit-address request is routed to, if any.
 CREATE FUNCTION wallets.select_address_provider(p_asset_network uuid)
 RETURNS TABLE(provider_id uuid, provider_code text)
 LANGUAGE sql STABLE SET search_path = pg_catalog, pg_temp AS $$
-    SELECT s.provider_id, s.provider_code FROM (
-        SELECT DISTINCT ON (p.id) p.id AS provider_id, p.provider_code, c.verification_level, c.production_approved,
-               c.available, c.operational, c.routing_priority, p.enabled, p.lifecycle_status
-        FROM wallets.asset_networks an
-        JOIN integrations.provider_capabilities c
-          ON c.service = 'DEPOSIT_ADDRESS_PROVISIONING' AND c.environment = 'production'
-         AND c.currency_corridor IS NULL AND c.country_code IS NULL
-         AND (c.asset_id = an.asset_id OR c.asset_id IS NULL) AND (c.network_id = an.network_id OR c.network_id IS NULL)
-        JOIN integrations.providers p ON p.id = c.provider_id
-        WHERE an.id = p_asset_network
-        ORDER BY p.id, (c.asset_id IS NULL)::integer + (c.network_id IS NULL)::integer) s
-    WHERE s.verification_level = 'PRODUCTION_ENABLED' AND s.production_approved AND s.available AND s.operational
-      AND s.enabled AND s.lifecycle_status = 'APPROVED'
-    ORDER BY s.routing_priority, s.provider_code
+    SELECT e.provider_id, e.provider_code FROM wallets.eligible_address_providers(p_asset_network) e
+    ORDER BY e.routing_priority, e.provider_code
     LIMIT 1;
+$$;
+
+-- IMP-P6-009: the first reason the wallet cannot receive deposits on this asset
+-- network right now, or NULL when it can. One definition serves request
+-- creation and the provider-submission revalidation in begin_provisioning.
+CREATE FUNCTION wallets.deposit_blocker(p_wallet uuid, p_asset_network uuid) RETURNS text
+LANGUAGE sql STABLE SET search_path = pg_catalog, pg_temp AS $$
+    SELECT CASE
+        WHEN w.id IS NULL THEN 'WALLET_UNKNOWN'
+        WHEN w.status NOT IN ('ACTIVE','RESTRICTED') THEN 'WALLET_NOT_RECEIVABLE'
+        WHEN r.limits @> ARRAY['ACCOUNT_RESTRICTED'] THEN 'ACCOUNT_RESTRICTED'
+        WHEN r.limits @> ARRAY['ASSET_UNAVAILABLE'] THEN 'ASSET_UNAVAILABLE'
+        WHEN r.limits @> ARRAY['ASSET_ON_HOLD'] THEN 'ASSET_ON_HOLD'
+        WHEN r.limits @> ARRAY['KYC_REQUIRED'] THEN 'KYC_REQUIRED'
+        WHEN m.id IS NULL THEN 'NETWORK_UNAVAILABLE'
+        WHEN NOT (m.deposit_enabled AND m.network_deposits) OR NOT c.activated @> ARRAY['CUSTOMER_CREDIT']
+            THEN 'DEPOSITS_NOT_ENABLED'
+    END
+    FROM (SELECT 1) AS one
+    LEFT JOIN wallets.wallet_profiles w ON w.id = p_wallet
+    LEFT JOIN LATERAL (SELECT wallets.restrictions(w.id) AS limits) r ON w.id IS NOT NULL
+    LEFT JOIN LATERAL (SELECT an.id, an.deposit_enabled, n.deposits_enabled AS network_deposits
+                       FROM wallets.asset_networks an JOIN wallets.networks n ON n.id = an.network_id
+                       WHERE an.id = p_asset_network AND an.asset_id = w.asset_id AND an.status = 'ENABLED'
+                         AND an.verification_status = 'VERIFIED' AND n.enabled) m ON true
+    LEFT JOIN LATERAL ledger.asset_controls(w.asset_id) c ON true;
 $$;
 
 -- Supported asset networks of one wallet, with what the customer may do on each.
@@ -841,7 +890,7 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp SET lock
 #variable_conflict use_column
 DECLARE
     wallet wallets.wallet_profiles%ROWTYPE := wallets.owned_wallet(p_customer, p_wallet);
-    limits text[];
+    blocker text;
     network record;
     provider record;
     opened uuid;
@@ -851,12 +900,11 @@ BEGIN
     IF NOT FOUND THEN
         RAISE EXCEPTION 'network is not supported for this wallet' USING ERRCODE = 'WA005';
     END IF;
-    limits := wallets.restrictions(wallet.id);
-    IF wallet.status NOT IN ('ACTIVE','RESTRICTED')
-       OR limits && ARRAY['ACCOUNT_RESTRICTED','ASSET_UNAVAILABLE','ASSET_ON_HOLD'] THEN
+    blocker := wallets.deposit_blocker(wallet.id, network.asset_network_id);
+    IF blocker IN ('WALLET_NOT_RECEIVABLE','ACCOUNT_RESTRICTED','ASSET_UNAVAILABLE','ASSET_ON_HOLD') THEN
         RAISE EXCEPTION 'this wallet cannot receive deposits' USING ERRCODE = 'WA006';
     END IF;
-    IF limits @> ARRAY['KYC_REQUIRED'] THEN
+    IF blocker = 'KYC_REQUIRED' THEN
         RAISE EXCEPTION 'deposit addresses require KYC approval' USING ERRCODE = 'WA012';
     END IF;
     IF network.address_status = 'ACTIVE' AND network.address IS NOT NULL THEN
@@ -867,8 +915,7 @@ BEGIN
         RETURN QUERY SELECT 'PENDING'::text, NULL::text, NULL::text, false;
         RETURN;
     END IF;
-    IF NOT network.deposits_enabled OR NOT (SELECT c.activated @> ARRAY['CUSTOMER_CREDIT']
-                                             FROM ledger.asset_controls(wallet.asset_id) c) THEN
+    IF blocker IS NOT NULL THEN
         RAISE EXCEPTION 'deposits are not enabled for this asset and network' USING ERRCODE = 'WA007';
     END IF;
     SELECT * INTO provider FROM wallets.select_address_provider(network.asset_network_id);
@@ -909,13 +956,32 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
 $$;
 
 -- Marks a request SUBMITTED before the provider is called (returns SUBMIT), or
--- tells the caller to look up an earlier attempt (LOOKUP). A pending request
--- whose provider is no longer selectable fails without being submitted.
+-- tells the caller to look up an earlier attempt (LOOKUP).
+--
+-- A pending request is revalidated here, at execution time, against everything
+-- that allowed it: wallet status, account and compliance state, KYC, asset
+-- suspension and holds, network and contract enablement, CUSTOMER_CREDIT
+-- activation and the eligibility of the request's own provider. If anything
+-- was revoked, the request fails with that reason and nothing is submitted;
+-- it was never sent, so no outcome is lost, and the record stays.
+--
+-- The wallet row is locked first (the order request_deposit_address and
+-- set_wallet_status use), so a concurrent status change either commits before
+-- this check or waits until the submission is recorded. Other revocations
+-- apply from the moment they commit.
+--
+-- SUBMITTED and UNKNOWN requests are only looked up with their original
+-- provider, even after revocation: their outcome is recorded as evidence, and
+-- an address assigned to a wallet that cannot receive stays hidden.
 CREATE FUNCTION wallets.begin_provisioning(p_request uuid) RETURNS text
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp SET lock_timeout = '10s' AS $$
 DECLARE
     request wallets.wallet_provisioning_requests%ROWTYPE;
+    blocker text;
 BEGIN
+    PERFORM 1 FROM wallets.wallet_profiles w
+    WHERE w.id = (SELECT r.wallet_profile_id FROM wallets.wallet_provisioning_requests r WHERE r.id = p_request)
+    FOR SHARE;
     SELECT * INTO request FROM wallets.wallet_provisioning_requests r WHERE r.id = p_request FOR UPDATE;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'unknown provisioning request' USING ERRCODE = 'WA004';
@@ -926,9 +992,13 @@ BEGIN
     IF request.status <> 'PENDING' THEN
         RETURN 'DONE';
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM wallets.select_address_provider(request.asset_network_id) s
-                   WHERE s.provider_id = request.provider_id) THEN
-        UPDATE wallets.wallet_provisioning_requests r SET status = 'FAILED', last_error_code = 'PROVIDER_NOT_SELECTABLE',
+    blocker := wallets.deposit_blocker(request.wallet_profile_id, request.asset_network_id);
+    IF blocker IS NULL AND NOT EXISTS (SELECT 1 FROM wallets.eligible_address_providers(request.asset_network_id) e
+                                       WHERE e.provider_id = request.provider_id) THEN
+        blocker := 'PROVIDER_NOT_SELECTABLE';
+    END IF;
+    IF blocker IS NOT NULL THEN
+        UPDATE wallets.wallet_provisioning_requests r SET status = 'FAILED', last_error_code = blocker,
             completed_at = now() WHERE r.id = p_request;
         RETURN 'DONE';
     END IF;
