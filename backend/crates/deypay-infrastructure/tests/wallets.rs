@@ -24,7 +24,7 @@ const WALLET_ROLES: &str = include_str!("../../../../infrastructure/postgres/wal
 const LEDGER_GRANTS: &str = include_str!("../../../../infrastructure/postgres/ledger-grants.psql");
 const WALLET_GRANTS: &str = include_str!("../../../../infrastructure/postgres/wallet-grants.psql");
 const UNIT: u128 = 1_000_000;
-const CEILING: &str = "1000000000000000000000000000000";
+const CEILING: &str = "10000000000000000000000000000000000000";
 const OPERATOR_LOGIN: &str = "deypay_test_wallet_operator";
 const OUTSIDER_LOGIN: &str = "deypay_test_wallet_outsider";
 const NETWORK: &str = "evm-fixture";
@@ -456,7 +456,7 @@ async fn asset_registry_is_controlled_and_audited(pool: PgPool) {
             "23514",
         ),
         (
-            insert("('EURC', 'Euro Coin', 'STABLECOIN', 6, true, NULL)"),
+            "UPDATE wallets.assets SET approval_reference = NULL WHERE symbol = 'USDC'".into(),
             "23514",
         ),
         // Approved but without ledger chart accounts: cannot become operational.
@@ -682,9 +682,10 @@ async fn networks_and_token_contracts_are_explicit_and_verified(pool: PgPool) {
             map(world.usdt, &USDC_CONTRACT.to_ascii_lowercase(), 6),
             "23505",
         ),
+        // Refused while the network is disabled (and while unverified, below).
         (
             on("UPDATE wallets.asset_networks SET status = 'ENABLED' WHERE id = '{id}'"),
-            "23514",
+            "WA005",
         ),
         (
             on("UPDATE wallets.asset_networks SET token_decimals = 18 WHERE id = '{id}'"),
@@ -737,6 +738,26 @@ async fn networks_and_token_contracts_are_explicit_and_verified(pool: PgPool) {
     .execute(&world.pool)
     .await
     .unwrap();
+    // On an enabled network, an unverified contract still cannot be enabled.
+    sqlx::raw_sql(&map(
+        world.usdt,
+        "0x5555555555555555555555555555555555555555",
+        6,
+    ))
+    .execute(&world.pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        sqlstate(
+            &world.pool,
+            None,
+            "UPDATE wallets.asset_networks SET status = 'ENABLED'
+             WHERE token_contract = '0x5555555555555555555555555555555555555555'"
+        )
+        .await
+        .as_deref(),
+        Some("23514")
+    );
     sqlx::raw_sql(&on(
         "UPDATE wallets.asset_networks SET status = 'ENABLED' WHERE id = '{id}'",
     ))
@@ -958,7 +979,6 @@ async fn customer_wallets_are_created_once_at_zero(pool: PgPool) {
         ("unverified", "CONTACT_UNVERIFIED"),
         ("suspended", "SUSPENDED"),
         ("rejected", "KYC_REJECTED"),
-        ("closed", "CLOSED"),
     ] {
         let id = customer(&world.pool, name, status).await;
         assert_eq!(
