@@ -33,6 +33,8 @@ type RequestOptions = {
   contentType?: string;
   session?: SessionMode;
   signal?: AbortSignal;
+  /** Extra request headers, such as Idempotency-Key. */
+  headers?: Record<string, string>;
 };
 
 let refreshing: Promise<boolean> | null = null;
@@ -72,7 +74,7 @@ export async function request<T = Record<string, never>>(
   options: RequestOptions = {},
 ): Promise<ApiResult<T>> {
   const session = options.session ?? "required";
-  const headers: Record<string, string> = { Accept: "application/json" };
+  const headers: Record<string, string> = { ...options.headers, Accept: "application/json" };
   if (options.json !== undefined) headers["Content-Type"] = "application/json";
   else if (options.contentType) headers["Content-Type"] = options.contentType;
   const send = () =>

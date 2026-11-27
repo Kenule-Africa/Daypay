@@ -155,18 +155,18 @@ $$;
 CREATE FUNCTION payments.active_session(p_customer uuid, p_digest text) RETURNS uuid
 LANGUAGE plpgsql STABLE SET search_path = pg_catalog, pg_temp AS $$
 DECLARE
-    found uuid;
+    live uuid;
 BEGIN
     IF p_customer IS NOT NULL AND p_digest ~ '^[a-f0-9]{64}$' THEN
-        SELECT s.id INTO found FROM identity.sessions s
+        SELECT s.id INTO live FROM identity.sessions s
         WHERE s.user_id = p_customer AND s.token_hash = p_digest AND s.revoked_at IS NULL
           AND NOT s.refresh_required AND s.expires_at > clock_timestamp()
           AND s.absolute_expires_at > clock_timestamp();
     END IF;
-    IF found IS NULL THEN
+    IF live IS NULL THEN
         RAISE EXCEPTION 'session is not active' USING ERRCODE = 'TR015';
     END IF;
-    RETURN found;
+    RETURN live;
 END;
 $$;
 
@@ -357,7 +357,7 @@ RETURNS TABLE(recipient_id uuid, username text, display_name text, can_receive b
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
 #variable_conflict use_column
 DECLARE
-    found record;
+    hit record;
 BEGIN
     IF p_customer IS NULL THEN
         RAISE EXCEPTION 'a customer is required' USING ERRCODE = 'TR001';
@@ -368,7 +368,7 @@ BEGIN
         RETURN;
     END IF;
     SELECT n.user_id, ltrim(n.username, '@') AS username,
-           nullif(btrim(concat_ws(' ', p.first_name, p.last_name)), '') AS display_name INTO found
+           nullif(btrim(concat_ws(' ', p.first_name, p.last_name)), '') AS display_name INTO hit
     FROM customers.usernames n
     LEFT JOIN customers.profiles p ON p.user_id = n.user_id
     WHERE n.normalized_username = lower(ltrim(p_username, '@')) AND n.is_active
@@ -376,8 +376,8 @@ BEGIN
     IF NOT FOUND THEN
         RETURN;
     END IF;
-    RETURN QUERY SELECT found.user_id, found.username, found.display_name,
-        found.user_id <> p_customer AND payments.can_receive(found.user_id);
+    RETURN QUERY SELECT hit.user_id, hit.username, hit.display_name,
+        hit.user_id <> p_customer AND payments.can_receive(hit.user_id);
 END;
 $$;
 

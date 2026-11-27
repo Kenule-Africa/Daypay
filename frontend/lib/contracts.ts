@@ -127,3 +127,75 @@ export type WalletNetwork = {
 };
 
 export type WalletDetail = Wallet & { networks: WalletNetwork[] };
+
+// Internal transfer APIs (API §§16.2, 20, 28; backend deypay-api transfers.rs).
+// Amounts are exact decimal strings at the asset's accounting precision.
+export type Recipient = {
+  recipient_id: string;
+  username: string;
+  display_name: string | null;
+  can_receive: boolean;
+};
+
+export type TransferChallenge = {
+  challenge_id: string;
+  operation_type: "internal_transfer";
+  expires_at: string;
+  verification_method: "confirmation";
+  terms: {
+    recipient: { id: string; username: string | null; display_name: string | null };
+    asset: string;
+    amount: string;
+    fee: string;
+    total: string | null;
+    description: string | null;
+  };
+};
+
+export type TransferProof = { authorization_token: string; expires_at: string };
+
+export type TransactionStatus =
+  | "created"
+  | "awaiting_authorization"
+  | "pending"
+  | "processing"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "under_review"
+  | "pending_reconciliation"
+  | "reversed"
+  | "refunded";
+
+export type Counterparty = { id: string; username: string | null; display_name: string | null };
+
+export type TransferResult = {
+  transaction_id: string;
+  reference: string;
+  type: "internal_transfer";
+  status: TransactionStatus;
+  asset: string;
+  amount: string;
+  fee: string;
+  description: string | null;
+  recipient: Counterparty;
+  created_at: string;
+  completed_at: string | null;
+};
+
+export type Transaction = {
+  id: string;
+  reference: string;
+  type: "internal_transfer";
+  status: TransactionStatus;
+  direction: "debit" | "credit";
+  source_asset: string;
+  source_amount: string;
+  destination_asset: string;
+  destination_amount: string;
+  fee: string;
+  description: string | null;
+  counterparty: Counterparty;
+  created_at: string;
+  completed_at: string | null;
+};
