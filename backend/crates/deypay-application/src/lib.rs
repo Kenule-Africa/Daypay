@@ -11,5 +11,6 @@ pub mod passwords;
 pub mod profile;
 pub mod registration;
 pub mod repositories;
+pub mod transfers;
 pub mod usernames;
 pub mod wallets;

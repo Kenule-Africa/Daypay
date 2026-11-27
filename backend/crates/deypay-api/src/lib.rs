@@ -6,5 +6,6 @@ pub mod profile;
 pub mod registration;
 mod registration_config;
 pub mod sessions;
+pub mod transfers;
 pub mod usernames;
 pub mod wallets;

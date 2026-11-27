@@ -48,7 +48,7 @@ jobs:
           export DATABASE_URL="postgresql://postgres:${POSTGRES_PASSWORD}@127.0.0.1:5432/postgres"
           unset POSTGRES_PASSWORD DEYPAY_DB_PASSWORD
           cargo clippy --locked -p deypay-infrastructure --all-targets --features postgres-tests -- -D warnings
-          cargo test --locked -p deypay-infrastructure --features postgres-tests --test persistence --test registration --test ledger --test wallets
+          cargo test --locked -p deypay-infrastructure --features postgres-tests --test persistence --test registration --test ledger --test wallets --test transfers
           cargo clippy --locked -p deypay-api --all-targets --features postgres-tests -- -D warnings
           cargo test --locked -p deypay-api --features postgres-tests --test registration_http --test email_verification
       - name: Require the resolved dependency lockfile in the reviewed commit

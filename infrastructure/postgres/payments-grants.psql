@@ -1,0 +1,159 @@
+-- Apply after migration 202611271601, payments-roles.psql and the ledger and
+-- wallet scripts (ledger-roles, wallet-roles, ledger-grants, wallet-grants),
+-- and again after any later payments migration, as a DBA or a migration
+-- administrator that owns the payments objects, may SET ROLE to
+-- deypay_payments_owner and may grant EXECUTE on the ledger and wallet
+-- functions named below. ledger-grants.psql and wallet-grants.psql already
+-- allow exactly these functions for deypay_payments_owner. The verification at
+-- the end aborts the whole transaction if any rule below does not hold.
+--
+-- deypay_app executes only the seven customer payments functions, always for
+-- the authenticated customer; it gains no table write, no ledger access and no
+-- access to authorization challenges, proofs or other customers' records.
+BEGIN;
+GRANT USAGE ON SCHEMA payments, identity, customers, wallets, compliance, audit, integrations, ledger
+    TO deypay_payments_owner;
+GRANT SELECT, INSERT, UPDATE ON payments.transactions TO deypay_payments_owner;
+GRANT SELECT, INSERT ON payments.transaction_status_history, payments.internal_transfers,
+    payments.idempotency_records TO deypay_payments_owner;
+GRANT SELECT ON payments.recipient_lookup_policy TO deypay_payments_owner;
+GRANT SELECT, INSERT, UPDATE, DELETE ON payments.recipient_lookup_usage TO deypay_payments_owner;
+GRANT SELECT, INSERT, UPDATE ON identity.verification_challenges, identity.transaction_proofs
+    TO deypay_payments_owner;
+GRANT SELECT (id, user_id, token_hash, revoked_at, refresh_required, expires_at, absolute_expires_at)
+    ON identity.sessions TO deypay_payments_owner;
+GRANT SELECT (id, status, email_verified_at) ON identity.users TO deypay_payments_owner;
+GRANT SELECT (user_id, username, normalized_username, is_active) ON customers.usernames TO deypay_payments_owner;
+GRANT SELECT (user_id, first_name, last_name) ON customers.profiles TO deypay_payments_owner;
+GRANT SELECT (user_id, active) ON compliance.account_restrictions TO deypay_payments_owner;
+GRANT SELECT (id, symbol, accounting_precision) ON wallets.assets TO deypay_payments_owner;
+GRANT INSERT (actor_type, actor_id, action, resource_type, resource_id, metadata) ON audit.audit_events
+    TO deypay_payments_owner;
+GRANT INSERT (aggregate_type, aggregate_id, event_type, payload) ON integrations.outbox_events
+    TO deypay_payments_owner;
+-- The ledger and wallets stay encapsulated: the balanced customer transfer and
+-- activation state; wallet eligibility and the locked transfer wallets.
+GRANT EXECUTE ON FUNCTION
+    ledger.transfer_between_customers(text,uuid,uuid,uuid,text,uuid,text,uuid,uuid),
+    ledger.asset_controls(uuid)
+TO deypay_payments_owner;
+GRANT EXECUTE ON FUNCTION
+    wallets.customer_eligible(uuid),
+    wallets.transfer_wallets(uuid,uuid,uuid)
+TO deypay_payments_owner;
+
+GRANT CREATE ON SCHEMA payments TO deypay_payments_owner;
+DO $$
+DECLARE
+    routine regprocedure;
+BEGIN
+    FOR routine IN SELECT p.oid::regprocedure FROM pg_proc p WHERE p.pronamespace = 'payments'::regnamespace LOOP
+        EXECUTE format('ALTER FUNCTION %s OWNER TO deypay_payments_owner', routine);
+    END LOOP;
+END $$;
+REVOKE CREATE ON SCHEMA payments FROM deypay_payments_owner;
+
+-- Customer API: always called with the authenticated customer's identifier
+-- and, where a session binding applies, the digest of its session cookie.
+GRANT USAGE ON SCHEMA payments TO deypay_app;
+GRANT EXECUTE ON FUNCTION
+    payments.resolve_recipient(uuid,text),
+    payments.transfer_assets(),
+    payments.authorize_internal_transfer(uuid,text,uuid,text,text,text),
+    payments.confirm_transfer_authorization(uuid,text,uuid,text),
+    payments.execute_internal_transfer(uuid,text,text,text,uuid,text,text,text),
+    payments.customer_transactions(uuid,uuid,integer),
+    payments.customer_transaction(uuid,uuid)
+TO deypay_app;
+
+DO $$
+DECLARE
+    candidates CONSTANT text[] := ARRAY['deypay_app','deypay_auth','deypay_wallet_provisioner',
+        'deypay_ledger_poster','deypay_ledger_evidence','deypay_ledger_controller','deypay_ledger_reader'];
+    runtime text[];
+    offending text;
+BEGIN
+    -- Only roles that exist; privilege functions fail on unknown roles and
+    -- PostgreSQL does not promise to evaluate an existence filter first.
+    runtime := ARRAY(SELECT c.name FROM unnest(candidates) AS c(name) WHERE EXISTS (SELECT FROM pg_roles WHERE rolname = c.name));
+    -- No runtime role writes payments records, authorization challenges or proofs.
+    SELECT string_agg(r.name || ' → ' || c.oid::regclass::text, ', ') INTO offending
+    FROM pg_class c CROSS JOIN unnest(runtime) AS r(name)
+    WHERE c.relkind IN ('r','p')
+      AND (c.relnamespace = 'payments'::regnamespace
+           OR c.oid IN ('identity.verification_challenges'::regclass, 'identity.transaction_proofs'::regclass))
+      AND has_table_privilege(r.name, c.oid, 'INSERT,UPDATE,DELETE,TRUNCATE');
+    IF offending IS NOT NULL THEN
+        RAISE EXCEPTION 'A runtime role can write payments or authorization tables directly: %', offending;
+    END IF;
+    -- The payments owner records history append-only, and never sets its own lookup budget.
+    SELECT string_agg(c.oid::regclass::text, ', ') INTO offending FROM pg_class c
+    WHERE c.oid IN ('payments.transaction_status_history'::regclass, 'payments.internal_transfers'::regclass,
+                    'payments.idempotency_records'::regclass, 'payments.recipient_lookup_policy'::regclass)
+      AND has_table_privilege('deypay_payments_owner', c.oid, 'UPDATE,DELETE,TRUNCATE');
+    IF offending IS NOT NULL
+       OR has_table_privilege('deypay_payments_owner', 'payments.recipient_lookup_policy', 'INSERT') THEN
+        RAISE EXCEPTION 'Payments history must be append-only and the lookup policy DBA-only: %', offending;
+    END IF;
+    -- It reaches the ledger and wallets only through the four functions above.
+    SELECT string_agg(c.oid::regclass::text, ', ') INTO offending FROM pg_class c
+    WHERE c.relnamespace IN ('ledger'::regnamespace, 'operations'::regnamespace) AND c.relkind IN ('r','p')
+      AND (has_table_privilege('deypay_payments_owner', c.oid, 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE')
+           OR has_any_column_privilege('deypay_payments_owner', c.oid, 'SELECT,INSERT,UPDATE'));
+    IF offending IS NOT NULL THEN
+        RAISE EXCEPTION 'The payments owner must not read or write ledger tables: %', offending;
+    END IF;
+    SELECT string_agg(c.oid::regclass::text, ', ') INTO offending FROM pg_class c
+    WHERE c.relnamespace = 'wallets'::regnamespace AND c.relkind IN ('r','p')
+      AND (has_table_privilege('deypay_payments_owner', c.oid, 'INSERT,UPDATE,DELETE,TRUNCATE')
+           OR has_any_column_privilege('deypay_payments_owner', c.oid, 'INSERT,UPDATE'));
+    IF offending IS NOT NULL THEN
+        RAISE EXCEPTION 'The payments owner must not write wallet tables: %', offending;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_proc p WHERE p.pronamespace = 'payments'::regnamespace
+               AND p.proowner <> 'deypay_payments_owner'::regrole) THEN
+        RAISE EXCEPTION 'Payments routines must belong to deypay_payments_owner';
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+               WHERE p.pronamespace = 'payments'::regnamespace AND a.grantee = 0) THEN
+        RAISE EXCEPTION 'Payments routines must not be executable by PUBLIC';
+    END IF;
+    SELECT string_agg(p.oid::regprocedure::text, ', ') INTO offending FROM pg_proc p
+    WHERE p.pronamespace = 'payments'::regnamespace
+      AND NOT coalesce('search_path=pg_catalog, pg_temp' = ANY (p.proconfig), false);
+    IF offending IS NOT NULL THEN
+        RAISE EXCEPTION 'Payments routines must pin search_path to pg_catalog, pg_temp: %', offending;
+    END IF;
+    -- Nothing acts as the payments owner except administrators.
+    SELECT string_agg(r.rolname, ', ') INTO offending FROM pg_roles r
+    WHERE NOT r.rolsuper AND r.rolname <> 'deypay_payments_owner'
+      AND pg_has_role(r.oid, 'deypay_payments_owner', 'MEMBER')
+      AND (r.rolname = ANY (runtime)
+           OR (r.rolcanlogin AND (pg_has_role(r.oid, 'deypay_ledger_poster', 'MEMBER')
+               OR pg_has_role(r.oid, 'deypay_ledger_evidence', 'MEMBER')
+               OR pg_has_role(r.oid, 'deypay_ledger_controller', 'MEMBER')
+               OR (EXISTS (SELECT FROM pg_roles WHERE rolname = 'deypay_app')
+                   AND pg_has_role(r.oid, 'deypay_app', 'MEMBER')))));
+    IF offending IS NOT NULL THEN
+        RAISE EXCEPTION 'Runtime logins must not act as deypay_payments_owner: %', offending;
+    END IF;
+
+    -- Every runtime role executes exactly its payments interface.
+    WITH allowed(role_name, routine) AS (VALUES
+        ('deypay_app', 'payments.resolve_recipient(uuid,text)'::regprocedure),
+        ('deypay_app', 'payments.transfer_assets()'),
+        ('deypay_app', 'payments.authorize_internal_transfer(uuid,text,uuid,text,text,text)'),
+        ('deypay_app', 'payments.confirm_transfer_authorization(uuid,text,uuid,text)'),
+        ('deypay_app', 'payments.execute_internal_transfer(uuid,text,text,text,uuid,text,text,text)'),
+        ('deypay_app', 'payments.customer_transactions(uuid,uuid,integer)'),
+        ('deypay_app', 'payments.customer_transaction(uuid,uuid)'))
+    SELECT string_agg(r.name || ' → ' || p.oid::regprocedure::text, ', ') INTO offending
+    FROM pg_proc p CROSS JOIN unnest(runtime) AS r(name)
+    WHERE p.pronamespace = 'payments'::regnamespace
+      AND has_function_privilege(r.name, p.oid, 'EXECUTE')
+      AND NOT EXISTS (SELECT 1 FROM allowed a WHERE a.role_name = r.name AND a.routine::oid = p.oid);
+    IF offending IS NOT NULL THEN
+        RAISE EXCEPTION 'Runtime roles may execute only their payments interface: %', offending;
+    END IF;
+END $$;
+COMMIT;
