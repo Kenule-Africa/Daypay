@@ -294,9 +294,10 @@ impl World {
         .await
         .unwrap();
         sqlx::query(
-            "INSERT INTO integrations.provider_capabilities(provider_id, capability, verification_level,
-                 evidence_reference, routing_priority)
-             VALUES ($1, 'DEPOSIT_ADDRESS_PROVISIONING', 'PRODUCTION_ENABLED', 'TEST-FIXTURE', $2)",
+            "INSERT INTO integrations.provider_capabilities(provider_id, service, environment, available,
+                 production_approved, verification_level, evidence_reference, routing_priority)
+             VALUES ($1, 'DEPOSIT_ADDRESS_PROVISIONING', 'production', true, true, 'PRODUCTION_ENABLED',
+                 'TEST-FIXTURE', $2)",
         )
         .bind(provider)
         .bind(priority)
@@ -1670,7 +1671,7 @@ async fn deposit_addresses_follow_the_provider_boundary(pool: PgPool) {
     assert_eq!(run(&store, vec![&a]).await.unwrap().submitted, 1);
     let provider_b = world.provider("FIXTURE_B", 1).await;
     sqlx::query(
-        "UPDATE integrations.provider_capabilities SET available = false WHERE provider_id = $1",
+        "UPDATE integrations.provider_capabilities SET operational = false WHERE provider_id = $1",
     )
     .bind(provider_a)
     .execute(&world.pool)

@@ -5,7 +5,8 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
-import type { Preferences, Profile } from "../contracts";
+import type { Preferences, Profile, Wallet, WalletDetail } from "../contracts";
+import { isWalletId } from "../wallets";
 
 export const SESSION_COOKIE = "__Host-deypay_session";
 
@@ -81,4 +82,48 @@ export async function loadPreferences(): Promise<Preferences | null> {
   } catch {
     return null;
   }
+}
+
+export type WalletsState = { state: "ok"; wallets: Wallet[] } | { state: "unavailable" };
+export type WalletState = { state: "ok"; wallet: WalletDetail } | { state: "not_found" } | { state: "unavailable" };
+
+/** Reads one customer API path. 401 means the session ended since the layout checked it. */
+async function customerRead(path: string): Promise<{ status: number; body: unknown } | "expired" | null> {
+  const token = await sessionCookie();
+  if (!token || token === "invalid") return "expired";
+  try {
+    const response = await customerFetch(path, token);
+    if (response.status === 401) return "expired";
+    return { status: response.status, body: response.ok ? await response.json() : null };
+  } catch {
+    return null;
+  }
+}
+
+function leaveExpired(next: string): never {
+  redirect(`/login?reason=expired&next=${encodeURIComponent(next)}`);
+}
+
+/**
+ * The signed-in customer's wallets with their ledger balances. An unavailable
+ * API is reported as such; no balance is ever substituted.
+ */
+export async function loadWallets(): Promise<WalletsState> {
+  const result = await customerRead("/api/v1/wallets");
+  if (result === "expired") leaveExpired("/app/wallets");
+  if (result?.status !== 200) return { state: "unavailable" };
+  const data = (result.body as { data?: unknown }).data;
+  return Array.isArray(data) ? { state: "ok", wallets: data as Wallet[] } : { state: "unavailable" };
+}
+
+/** One of the customer's wallets with its supported networks. */
+export async function loadWallet(id: string): Promise<WalletState> {
+  if (!isWalletId(id)) return { state: "not_found" };
+  const next = `/app/wallets/${id}`;
+  const result = await customerRead(`/api/v1/wallets/${id.toLowerCase()}`);
+  if (result === "expired") leaveExpired(next);
+  if (result?.status === 404) return { state: "not_found" };
+  if (result?.status !== 200) return { state: "unavailable" };
+  const data = (result.body as { data?: WalletDetail }).data;
+  return data?.id && Array.isArray(data.networks) ? { state: "ok", wallet: data } : { state: "unavailable" };
 }

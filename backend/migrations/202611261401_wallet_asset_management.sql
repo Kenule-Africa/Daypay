@@ -314,27 +314,35 @@ INSERT INTO integrations.providers(provider_code, provider_name, provider_type, 
     ('IMPORTAPAY', 'ImportaPay', 'INFRASTRUCTURE', false)
 ON CONFLICT (provider_code) DO NOTHING;
 
-CREATE TABLE integrations.provider_capabilities (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    provider_id uuid NOT NULL REFERENCES integrations.providers,
-    capability text NOT NULL CHECK (capability IN ('DEPOSIT_ADDRESS_PROVISIONING')),
-    -- NULL: provider-wide. A row for a specific asset/network overrides it.
-    asset_network_id uuid REFERENCES wallets.asset_networks,
-    verification_level text NOT NULL CHECK (verification_level IN ('PENDING_CONFIRMATION','DOCUMENTED',
+-- The Phase 2 capability register (integrations.provider_capabilities) already
+-- scopes a provider capability by service, asset, network, corridor, country
+-- and environment. Phase 6 adds the verification stage, its evidence, routing
+-- priority and operational health. A row with a NULL asset or network covers
+-- all of them; a more specific row overrides it.
+ALTER TABLE integrations.provider_capabilities
+    ADD COLUMN verification_level text NOT NULL DEFAULT 'PENDING_CONFIRMATION',
+    ADD COLUMN evidence_reference text,
+    ADD COLUMN routing_priority integer NOT NULL DEFAULT 100,
+    ADD COLUMN operational boolean NOT NULL DEFAULT true,
+    ADD COLUMN created_at timestamptz NOT NULL DEFAULT now(),
+    ADD COLUMN updated_at timestamptz NOT NULL DEFAULT now(),
+    ADD CONSTRAINT capability_service_format CHECK (service ~ '^[A-Z][A-Z0-9_]{2,63}$'),
+    ADD CONSTRAINT capability_environment CHECK (environment IN ('production','sandbox')),
+    ADD CONSTRAINT capability_verification_level CHECK (verification_level IN ('PENDING_CONFIRMATION','DOCUMENTED',
         'TECHNICALLY_VERIFIED','SANDBOX_TESTED','CONTRACTUALLY_APPROVED','PRODUCTION_ENABLED','UNSUPPORTED')),
-    evidence_reference text CHECK ((evidence_reference IS NULL OR (btrim(evidence_reference) <> '' AND length(evidence_reference) <= 256 AND evidence_reference !~ '[[:cntrl:]]'))),
-    routing_priority integer NOT NULL DEFAULT 100 CHECK (routing_priority BETWEEN 1 AND 1000),
-    available boolean NOT NULL DEFAULT true,
-    created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now(),
-    CHECK (verification_level IN ('PENDING_CONFIRMATION','UNSUPPORTED') OR evidence_reference IS NOT NULL),
-    UNIQUE NULLS NOT DISTINCT (provider_id, capability, asset_network_id)
-);
+    ADD CONSTRAINT capability_evidence CHECK ((evidence_reference IS NULL OR (btrim(evidence_reference) <> ''
+        AND length(evidence_reference) <= 256 AND evidence_reference !~ '[[:cntrl:]]'))
+        AND (verification_level IN ('PENDING_CONFIRMATION','UNSUPPORTED') OR evidence_reference IS NOT NULL)),
+    ADD CONSTRAINT production_approval_is_enabled_level CHECK (production_approved = (verification_level = 'PRODUCTION_ENABLED')),
+    ADD CONSTRAINT unsupported_is_unavailable CHECK (verification_level <> 'UNSUPPORTED' OR NOT available),
+    ADD CONSTRAINT capability_routing_priority CHECK (routing_priority BETWEEN 1 AND 1000);
 CREATE FUNCTION wallets.guard_capability() RETURNS trigger
 LANGUAGE plpgsql SET search_path = pg_catalog, pg_temp AS $$
 BEGIN
-    IF TG_OP = 'UPDATE' AND (NEW.id, NEW.provider_id, NEW.capability, NEW.asset_network_id, NEW.created_at)
-       IS DISTINCT FROM (OLD.id, OLD.provider_id, OLD.capability, OLD.asset_network_id, OLD.created_at) THEN
+    IF TG_OP = 'UPDATE' AND (NEW.id, NEW.provider_id, NEW.service, NEW.asset_id, NEW.network_id, NEW.currency_corridor,
+            NEW.country_code, NEW.environment, NEW.created_at)
+       IS DISTINCT FROM (OLD.id, OLD.provider_id, OLD.service, OLD.asset_id, OLD.network_id, OLD.currency_corridor,
+            OLD.country_code, OLD.environment, OLD.created_at) THEN
         RAISE EXCEPTION 'capability identity is immutable' USING ERRCODE = '55000';
     END IF;
     NEW.updated_at := now();
@@ -622,18 +630,26 @@ LANGUAGE sql STABLE SET search_path = pg_catalog, pg_temp AS $$
     WHERE w.id = p_wallet;
 $$;
 
--- The provider DEYPAY routes a new deposit-address request to, if any.
+-- The provider DEYPAY routes a new deposit-address request to, if any: the
+-- most specific production capability row per provider decides, and it must
+-- be production-enabled, approved, available and operational, for an
+-- approved and enabled provider.
 CREATE FUNCTION wallets.select_address_provider(p_asset_network uuid)
 RETURNS TABLE(provider_id uuid, provider_code text)
 LANGUAGE sql STABLE SET search_path = pg_catalog, pg_temp AS $$
     SELECT s.provider_id, s.provider_code FROM (
-        SELECT DISTINCT ON (p.id) p.id AS provider_id, p.provider_code, c.verification_level, c.available,
-               c.routing_priority, p.enabled, p.lifecycle_status
-        FROM integrations.provider_capabilities c JOIN integrations.providers p ON p.id = c.provider_id
-        WHERE c.capability = 'DEPOSIT_ADDRESS_PROVISIONING'
-          AND (c.asset_network_id = p_asset_network OR c.asset_network_id IS NULL)
-        ORDER BY p.id, (c.asset_network_id IS NULL)) s
-    WHERE s.verification_level = 'PRODUCTION_ENABLED' AND s.available AND s.enabled AND s.lifecycle_status = 'APPROVED'
+        SELECT DISTINCT ON (p.id) p.id AS provider_id, p.provider_code, c.verification_level, c.production_approved,
+               c.available, c.operational, c.routing_priority, p.enabled, p.lifecycle_status
+        FROM wallets.asset_networks an
+        JOIN integrations.provider_capabilities c
+          ON c.service = 'DEPOSIT_ADDRESS_PROVISIONING' AND c.environment = 'production'
+         AND c.currency_corridor IS NULL AND c.country_code IS NULL
+         AND (c.asset_id = an.asset_id OR c.asset_id IS NULL) AND (c.network_id = an.network_id OR c.network_id IS NULL)
+        JOIN integrations.providers p ON p.id = c.provider_id
+        WHERE an.id = p_asset_network
+        ORDER BY p.id, (c.asset_id IS NULL)::integer + (c.network_id IS NULL)::integer) s
+    WHERE s.verification_level = 'PRODUCTION_ENABLED' AND s.production_approved AND s.available AND s.operational
+      AND s.enabled AND s.lifecycle_status = 'APPROVED'
     ORDER BY s.routing_priority, s.provider_code
     LIMIT 1;
 $$;
