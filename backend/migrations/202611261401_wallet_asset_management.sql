@@ -66,7 +66,7 @@ DECLARE
     alphabet constant text := '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
     value numeric := 0;
     leading_zeros integer := 0;
-    leading boolean := true;
+    in_prefix boolean := true;
     digit integer;
     bytes integer := 0;
 BEGIN
@@ -78,10 +78,10 @@ BEGIN
         IF digit < 0 THEN
             RETURN NULL;
         END IF;
-        IF leading AND digit = 0 THEN
+        IF in_prefix AND digit = 0 THEN
             leading_zeros := leading_zeros + 1;
         ELSE
-            leading := false;
+            in_prefix := false;
         END IF;
         value := value * 58 + digit;
     END LOOP;
